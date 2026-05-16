@@ -1,0 +1,4 @@
+# PAuth reproduction dependencies.
+# Python 3.12+ recommended (developed and verified on 3.14).
+agentdojo==0.1.35
+openai>=2.0,<3.0

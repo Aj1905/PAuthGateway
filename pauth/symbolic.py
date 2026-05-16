@@ -1,0 +1,64 @@
+"""Symbolic-expression utilities shared across the PAuth pipeline.
+
+A *symbolic value* in PAuth (paper sec. 3.3 / 3.4) is the computation that
+produces a concrete value, expressed over tool calls, constants and helper
+functions.  Internally we keep symbolic expressions as Python ``ast`` nodes
+and canonicalise them to a stable string when they are used as envelope-store
+keys.
+"""
+
+from __future__ import annotations
+
+import ast
+
+# The five "standard function" tools the paper adds to AgentDojo (sec. 4.1.1).
+HELPERS = {"len", "min", "max", "first", "last"}
+
+
+def canon(node: ast.AST) -> str:
+    """Return the canonical string form of a symbolic expression.
+
+    This is the stable key used to index the envelope store (paper sec. 3.4,
+    "The envelope store is implemented as a dictionary indexed by the symbolic
+    value").  ``ast.unparse`` gives a deterministic normalisation, so the same
+    sub-expression always produces the same key whether it appears in a slice
+    or in a rule's recorded call.
+    """
+    return ast.unparse(node)
+
+
+def call_name(node: ast.AST) -> str | None:
+    """Name of the called function for a ``name(...)`` or ``a.b(...)`` call."""
+    if not isinstance(node, ast.Call):
+        return None
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return None
+
+
+def names_in(node: ast.AST) -> set[str]:
+    """All free identifier names referenced (loaded) by an expression.
+
+    Lambda-bound parameters are excluded, since they are not data dependencies
+    of the slice -- they are local to a helper predicate.
+    """
+    found: set[str] = set()
+    bound: set[str] = set()
+
+    class _V(ast.NodeVisitor):
+        def visit_Lambda(self, n: ast.Lambda) -> None:
+            params = {a.arg for a in n.args.args}
+            added = params - bound
+            bound.update(added)
+            self.generic_visit(n)
+            bound.difference_update(added)
+
+        def visit_Name(self, n: ast.Name) -> None:
+            if isinstance(n.ctx, ast.Load) and n.id not in bound:
+                found.add(n.id)
+
+    _V().visit(node)
+    return found
