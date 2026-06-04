@@ -29,10 +29,10 @@ Edit `~/.claude/settings.json` (or the project-local `.claude/settings.json`):
 {
   "hooks": {
     "UserPromptSubmit": [
-      { "type": "command", "command": "/Users/aj/Documents/PAuth_test/gateway/hooks/submit_prompt.sh" }
+      { "type": "command", "command": "/Users/aj/Documents/PAuthGateway/gateway/hooks/submit_prompt.sh" }
     ],
     "PreToolUse": [
-      { "type": "command", "command": "/Users/aj/Documents/PAuth_test/gateway/hooks/pretool.sh" }
+      { "type": "command", "command": "/Users/aj/Documents/PAuthGateway/gateway/hooks/pretool.sh" }
     ]
   }
 }
