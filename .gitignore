@@ -2,5 +2,10 @@
 __pycache__/
 *.pyc
 .env
-experiment/cache/
-experiment/results/
+me.env
+.DS_Store
+
+# experiment caches (large, regenerable)
+tests/experiment/cache/
+tests/experiment/results/
+gateway/cache/

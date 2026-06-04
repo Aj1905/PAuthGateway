@@ -94,6 +94,26 @@ Shopping スイートは reference code を同梱するため、これも API �
 .venv/bin/python -m experiment.run_experiment --suites shopping
 ```
 
+### 想定外攻撃プローブ（API キー不要）
+
+AgentDojo の injection task 由来ではない攻撃を、正しい slice が生成済みという前提で
+直接 enforcer に投げるテストです。Shopping に加え、AgentDojo の banking / slack /
+travel / workspace の実ツールでも確認します:
+
+```bash
+.venv/bin/python -m tests.test_unexpected_attacks
+```
+
+検証する攻撃:
+- off-slice な sensitive operator / read operator
+- 宛先・金額・件名・日付・商品名の改ざん
+- upstream envelope が存在しない状態での direct call
+- guard が false の branch にある呼び出しの強制
+- signed envelope の改ざん
+
+結果の解釈は厳密にしてください。PAuth は task-scope 認可なので off-slice 攻撃は拒否できますが、
+**正規 slice と完全一致する replay は許可されます**。これは実装バグではなく、PAuth の認可境界です。
+
 ---
 
 ## 2. フル実験（OpenAI API キーが必要）

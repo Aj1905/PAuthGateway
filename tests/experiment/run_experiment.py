@@ -327,7 +327,7 @@ def main(argv: list[str] | None = None) -> int:
         if name == "shopping":
             suites.append(build_shopping_suite())
         else:
-            from experiment.agentdojo_adapter import load_suite
+            from tests.experiment.agentdojo_adapter import load_suite
             suites.append(load_suite(name))
 
     needs_api = any(
