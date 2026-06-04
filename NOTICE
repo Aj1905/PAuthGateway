@@ -1,0 +1,19 @@
+PAuth Gateway
+Copyright 2026 Aj1905
+
+Licensed under the Apache License, Version 2.0 (the "License");
+see the LICENSE file for the full terms.
+
+------------------------------------------------------------------------
+
+This project is a reproduction and gateway-style extension of the
+algorithm described in:
+
+    PAuth — Precise Task-Scoped Authorization For Agents
+    Reshabh K Sharma (University of Washington),
+    Linxi Jiang & Zhiqiang Lin (The Ohio State University),
+    Shuo Chen (Microsoft Research).
+    arXiv:2603.17170 [cs.CR], 17 Mar 2026.
+    https://arxiv.org/abs/2603.17170
+
+The paper itself is the work of its authors, not of this repository.
