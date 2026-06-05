@@ -1,6 +1,6 @@
 # Auto-Authorizing AI Gateway — Talk Script
 
-Speaker notes for `slides/index.html`. One section per slide.
+Speaker notes for `slides/LabMeeting_2026_6_5/index.html`. One section per slide.
 
 ---
 
