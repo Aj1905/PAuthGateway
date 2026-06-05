@@ -1189,29 +1189,7 @@
   </div>
 </section>
 
-<!-- 14. NL slice — remaining challenges -->
-<section class="slide">
-  <div class="chapter">PAuth &middot; Remaining challenges</div>
-  <h2>What is still hard about<br>generating the NL slice.</h2>
-  <p class="lead">
-    Two distinct reasons why edge A still has the LLM &mdash; and why it can still fail.
-  </p>
-  <div class="grid-2">
-    <div class="card">
-      <h3>1. Ambiguity in natural language</h3>
-      <p>What the user actually wants cannot always be read perfectly from the prompt alone. &ldquo;Send it to my usual account&rdquo; &mdash; what is <em>usual</em>? Intent is sometimes underspecified at the input.</p>
-    </div>
-    <div class="card">
-      <h3>2. LLM behaviour</h3>
-      <p>Even given an unambiguous prompt, the LLM does not always emit faithful imperative code. The distribution is wide; failure modes are nondeterministic. The output needs to be checked, not trusted.</p>
-    </div>
-  </div>
-  <p class="note">
-    These two are the open problems edge A has to face &mdash; one at the input, one at the model.
-  </p>
-</section>
-
-<!-- 15. PAuth — the critical question -->
+<!-- 14. PAuth — the critical question -->
 <section class="slide">
   <div class="chapter">PAuth &middot; The critical question</div>
   <h2>How do we generate faithful imperative code<br>from natural-language prompts?</h2>
@@ -1224,7 +1202,7 @@
   </p>
 </section>
 
-<!-- 16. Approach 1 — specialize the LLM -->
+<!-- 15. Approach 1 — specialize the LLM -->
 <section class="slide">
   <div class="chapter">PAuth &middot; Approach 1 / 2</div>
   <h2>1. Specialize the LLM.</h2>
@@ -1243,7 +1221,7 @@
   </div>
 </section>
 
-<!-- 17. Approach 2 — validator + retry loop -->
+<!-- 16. Approach 2 — validator + retry loop -->
 <section class="slide">
   <div class="chapter">PAuth &middot; Approach 2 / 2</div>
   <h2>2. Validator + retry loop.</h2>
@@ -1263,7 +1241,7 @@
   </div>
 </section>
 
-<!-- 18. Closing -->
+<!-- 17. Closing -->
 <section class="slide">
   <div class="chapter">Closing</div>
   <div class="closing-layout">
