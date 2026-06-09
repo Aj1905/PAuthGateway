@@ -208,7 +208,18 @@ pauth/                  PAuth コア機構（フレームワーク非依存・�
   codegen.py            A1: OpenAI によるコード生成（Appendix A プロンプト）
   pipeline.py           A1→A2→A3 の結線
   suites/shopping.py    論文の Shopping スイート（自己完結）
-experiment/
+gateway/
+  api_spec_monitor.py   OpenAPI仕様の変更検知・通知用レポート生成
+  gateway.py            plan once / enforce every call のランタイム境界
+  openapi_suite.py      OpenAPI 3.x 仕様 → SuiteSpec 自動反映
+  planner.py            差し替え可能な A1 戦略（決定的recognizer / LLM free-form）
+  agent_channel.py      エージェント向け JSON メッセージ境界
+  http_server.py        ローカルHTTP daemon
+  BUSINESS_OPERATIONS.md OSS無料範囲 / 商用運用 / 課金境界の整理
+  DESIGN_STATUS.md      現状設計 / 議論中 / 不可能 / ボトルネックの整理
+  PLANNING_STRATEGIES.md A1 戦略カタログ（対話構造化 / 専用モデル / 形式解析）
+  SELF_HOSTING.md       セルフホスト版・ネットワーク接続版の設計境界
+tests/experiment/
   agentdojo_adapter.py  AgentDojo 4 スイートを共通 IF に正規化
   forced_injection.py   forced injection 生成（sec. 5.1）
   run_experiment.py     FP/FN 実験ランナー（Table 2 / Fig. 10）

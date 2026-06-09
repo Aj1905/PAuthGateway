@@ -4,6 +4,8 @@ PAuth-based task-scoped authorization gateway for unmodified agents
 (Claude Code is the first target). This document captures the
 system-level design that the implementation in `pauth/`, `gateway/`,
 and `tests/` realises. Decision history lives in `grill.md`.
+Current design status, open implementation ideas, rejected claims, and
+development bottlenecks are separated in `gateway/DESIGN_STATUS.md`.
 
 ## 1. System overview
 
@@ -65,6 +67,182 @@ and `tests/` realises. Decision history lives in `grill.md`.
                                   └─────────────────────────────────┘
 ```
 
+## 1.1 Loose-coupling map
+
+The gateway should stay stable while three volatile areas change:
+
+1. how an agent's traffic enters the gateway;
+2. how a user prompt becomes restricted imperative code;
+3. which real app / mock suite / SaaS backend provides tools.
+
+Those areas are intentionally separated by small contracts.
+
+```mermaid
+flowchart LR
+    subgraph AgentSide["Agent side (replaceable ingress)"]
+        ClaudeHooks["Claude Code hooks\nsubmit_prompt.sh / pretool.sh"]
+        FutureProxy["Future network/MCP/HTTP proxy"]
+        CustomClient["Custom agent client"]
+    end
+
+    subgraph GatewayBoundary["Gateway normalized protocol"]
+        AgentChannel["AgentChannel\nPromptMessage / ToolCallMessage"]
+    end
+
+    subgraph PlanningBoundary["A1 planner boundary (replaceable)"]
+        PlannerSwitch["PAUTH_PLANNER_STRATEGY"]
+        Deterministic["deterministic"]
+        Freeform["llm-freeform"]
+        Interactive["interactive-structuring\n(slot)"]
+        Specialized["specialized-codegen\n(slot)"]
+        Formal["formal-semantic\n(slot)"]
+    end
+
+    subgraph StableCore["Stable deterministic core"]
+        Prepare["pauth.prepare()\ngrammar -> slices -> rules"]
+        Enforcer["Enforcer\nB1-B4 default-deny"]
+        Envelope["EnvelopeStore\nsigned observations"]
+    end
+
+    subgraph ToolSourceBoundary["Tool source boundary (replaceable providers)"]
+        SuiteSpec["SuiteSpec\nnames / schemas / runner"]
+        Shopping["shopping demo suite"]
+        AgentDojo["AgentDojo adapter\ntests/experiment only"]
+        MCP["MCP suite adapter"]
+        OpenAPI["OpenAPI suite adapter\nspec reflection"]
+        FutureSaaS["future SaaS adapters"]
+    end
+
+    ClaudeHooks --> AgentChannel
+    FutureProxy --> AgentChannel
+    CustomClient --> AgentChannel
+
+    AgentChannel --> PlannerSwitch
+    PlannerSwitch --> Deterministic
+    PlannerSwitch --> Freeform
+    PlannerSwitch --> Interactive
+    PlannerSwitch --> Specialized
+    PlannerSwitch --> Formal
+
+    Deterministic --> Prepare
+    Freeform --> Prepare
+    Interactive --> Prepare
+    Specialized --> Prepare
+    Formal --> Prepare
+
+    Prepare --> Enforcer
+    Enforcer --> Envelope
+    Enforcer --> SuiteSpec
+
+    Shopping --> SuiteSpec
+    AgentDojo --> SuiteSpec
+    MCP --> SuiteSpec
+    OpenAPI --> SuiteSpec
+    FutureSaaS --> SuiteSpec
+```
+
+### Coupling boundaries
+
+| Boundary | Contract | Replaceable parts | Stable owner |
+|---|---|---|---|
+| Agent ingress | `PromptMessage` and `ToolCallMessage` | Claude hooks, future MCP/HTTP proxy, custom clients | `gateway/agent_channel.py` |
+| Planner | restricted imperative `def run(...): ...` | deterministic recognizer, LLM free-form, interactive structuring, specialized model, formal parser | `gateway/planner.py` |
+| Tool source | `SuiteSpec` (`tools`, `make_env`, `runner_factory`) | shopping demo, AgentDojo, MCP servers, OpenAPI specs, future SaaS adapters | `pauth/suites/base.py` |
+| Authorization core | compiled rules + envelope-backed operand checks | should not vary per provider | `pauth/` |
+
+AgentDojo belongs behind the **Tool source** boundary. It is a provider used
+for benchmarks and mock environments, not the architectural center. If real
+apps replace AgentDojo, they should implement or adapt into `SuiteSpec`; the
+PAuth core and planner contract should not know whether the backing tool came
+from AgentDojo, MCP, OpenAPI, or a hand-written suite.
+
+OpenAPI-backed providers add one more operational loop: `gateway/openapi_suite.py`
+reflects the spec at load time, while `gateway/api_spec_monitor.py` detects
+spec changes and emits a notification-ready diff. The gateway should not
+silently absorb upstream API changes without surfacing the changed tool surface
+to the user.
+
+## 1.2 Reference mental model
+
+This is the working mental model from the user's white-background sketch
+(`cloud local.pdf`, shared 2026-06-09). Future design discussion should keep
+these three red-dotted zones separate.
+
+```mermaid
+flowchart LR
+    User["User"] -->|"prompt"| Agent["Existing agent\n(unmodified)"]
+    User -->|"prompt"| NL["Natural language\nprompt"]
+    NL --> Code["Imperative\ncode"]
+    Code --> Gateway["gateway"]
+
+    subgraph PromptCapture["Prompt capture adapters"]
+        HookPrompt["agent hook/plugin"]
+        MCPPrompt["MCP/session metadata"]
+        BrowserPrompt["browser/desktop extension"]
+        ManualPrompt["manual fallback"]
+    end
+
+    Agent --> HookPrompt
+    Agent --> MCPPrompt
+    Agent --> BrowserPrompt
+    HookPrompt --> Gateway
+    MCPPrompt --> Gateway
+    BrowserPrompt --> Gateway
+    ManualPrompt --> Gateway
+
+    Gateway --> SaaS1["SaaS 1"]
+    Gateway --> SaaS2["SaaS 2"]
+    Gateway --> SaaS3["SaaS 3"]
+    Gateway --> SaaS4["SaaS 4"]
+
+    subgraph NetworkFirewall["Gateway integration boundary\nhook/plugin + network route"]
+        Agent
+        PromptCapture
+    end
+
+    subgraph CodegenLayer["Imperative code generation layer"]
+        NL
+        Code
+    end
+
+    subgraph SelfHostLayer["Self-host / gateway configuration layer"]
+        Gateway
+    end
+
+    subgraph SaaSLayer["SaaS configuration layer"]
+        SaaS1
+        SaaS2
+        SaaS3
+        SaaS4
+    end
+
+    style NetworkFirewall stroke:#111,stroke-width:2px,stroke-dasharray:4 4,fill:#fff
+    style CodegenLayer stroke:#d00,stroke-width:2px,stroke-dasharray:4 4,fill:#fff
+    style SelfHostLayer stroke:#d00,stroke-width:2px,stroke-dasharray:4 4,fill:#fff
+    style SaaSLayer stroke:#d00,stroke-width:2px,stroke-dasharray:4 4,fill:#fff
+```
+
+Interpretation:
+
+| Red-dotted zone | Meaning | Current repo anchor |
+|---|---|---|
+| Imperative code generation layer | The unresolved A1 problem: natural language to restricted `run()` code. | `gateway/planner.py`, `gateway/PLANNING_STRATEGIES.md`, `pauth/codegen.py`, `gateway/agentic_a1.py` |
+| Self-host / gateway configuration layer | How users run/configure the gateway, choose planner strategy, manage sessions, reload changed specs, and receive audit/notification output. | `gateway/http_server.py`, `gateway/config.py`, `gateway/SELF_HOSTING.md`, `gateway/api_spec_monitor.py` |
+| SaaS configuration layer | How real apps/SaaS APIs are registered, reflected, monitored, and adapted into `SuiteSpec`. | `pauth/suites/base.py`, `gateway/mcp_suite.py`, `gateway/openapi_suite.py`, `gateway/registry.py` |
+
+The black dotted zone around the existing agent represents the gateway
+integration boundary: a lifecycle hook/plugin forwards the clean prompt and
+attempted tool calls, while network/tool routing prevents bypass. The existing
+agent itself is deliberately outside the red design zones. The product goal is
+to keep the agent runtime and day-to-day user workflow unmodified after setup,
+while moving variability into gateway ingress, planner strategy, and
+tool-source adapters.
+
+Prompt capture is adapter-based. Different agents will expose different
+signals, but every capture path must normalize into `PromptMessage` before it
+reaches `AgentChannel`. The design target is not one universal prompt hook; it
+is one universal prompt event contract.
+
 ## 2. Component responsibilities
 
 | Component | Responsibility |
@@ -72,6 +250,8 @@ and `tests/` realises. Decision history lives in `grill.md`.
 | `pauth/` | Pure PAuth algorithm. `codegen` (A1 LLM prompt), `grammar` (Appendix A parser), `slicing` (A2), `rules` (A3, Algorithm 1), `enforcer` (B1–B4), `envelope` (signed observations), `evaluator` (deterministic symbolic eval), `suites/base` (SuiteSpec interface). No knowledge of agents, hooks or HTTP. |
 | `pauth/suites/shopping.py` | Self-contained demo suite: tools, environment, runner, and the worked-example reference codes / task definitions. Used by both paper reproduction (`tests/`) and gateway demos. |
 | `gateway/core.py` | NL → run() recognizer (deterministic, regex-driven). Used only for the strict path; the agentic/freeform path skips it. |
+| `gateway/planner.py` | Pluggable A1 boundary. Planner strategies emit restricted imperative code; `Gateway` compiles and enforces it through the stable PAuth pipeline. |
+| `gateway/PLANNING_STRATEGIES.md` | A1 strategy catalogue: interactive structuring, specialized imperative-code model, and formal NL analysis. |
 | `gateway/agentic_a1.py` | LLM A1 with grammar-feedback loop (Q12). Wraps `pauth.codegen.SYSTEM_PROMPT`, catches `RestrictedGrammarError`, feeds the violated rule back to the LLM, retries up to N times. |
 | `gateway/gateway.py` | `Gateway` class. Holds one task lifecycle. Two entry points: `submit_user_prompt(prompt)` (plan once) and `handle_tool_call(tool, args)` (enforce per call). |
 | `gateway/agent_channel.py` | Agent-facing API. Two message kinds: `prompt` and `tool_call`. Enforces "prompt first, exactly once" structurally. JSON-serialisable wire shape. |
@@ -100,10 +280,11 @@ and `tests/` realises. Decision history lives in `grill.md`.
          Gateway.submit_user_prompt(prompt)
                          │
             ┌────────────┴────────────┐
-            │ A1: deterministic       │   strict path
-            │     recognizer          │
-            │ OR                      │
-            │ A1: agentic LLM + repair│   freeform path
+            │ gateway.planner         │
+            │  - deterministic        │   strict path
+            │    recognizer           │
+            │  - agentic LLM + repair │   freeform path
+            │  - future planner       │   self-hosted app
             └────────────┬────────────┘
                          │
                          ▼
@@ -207,10 +388,10 @@ What the gateway does **not** defend against (explicitly out of scope):
 | Decision | Location |
 |---|---|
 | Plan once, enforce per call | gateway/gateway.py docstring; Q12 derivation |
-| Recognizer-canonical path vs LLM A1 | gateway/core.py, gateway/agentic_a1.py; Q9, Q12 |
+| Recognizer-canonical path vs LLM A1 | gateway/planner.py, gateway/core.py, gateway/agentic_a1.py; Q9, Q12 |
 | Grammar feedback loop with explicit "you MUST obey rule X" | gateway/agentic_a1.py; Q12 answer |
 | Agent-facing channel and trust shift | gateway/agent_channel.py; Q13 |
-| Self-hosted, user-registered SaaS | not yet implemented; Q10–Q11 |
+| Self-hosted, user-registered SaaS | gateway/SELF_HOSTING.md; not yet implemented |
 | Test data layered into L1 / L2 / L3 | tests/fixtures/; user discussion 2026-06-04 |
 | AI-generated fixtures separated for review | tests/fixtures/ai_generated/ |
 

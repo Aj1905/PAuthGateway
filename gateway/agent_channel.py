@@ -32,12 +32,19 @@ through JSON.
 from __future__ import annotations
 
 import dataclasses
-from pathlib import Path
+import os
 from typing import Any, Callable, Literal
 
 from pauth.suites.base import SuiteSpec
 
 from .gateway import CallResult, Gateway, SubmissionResult
+from .planner import (
+    STRATEGY_DETERMINISTIC,
+    STRATEGY_LLM_FREEFORM,
+    PlanGenerationError,
+    build_planner,
+    normalize_strategy_name,
+)
 
 
 # --------------------------------------------------------------------------
@@ -50,13 +57,17 @@ class PromptMessage:
 
     kind: Literal["prompt"] = "prompt"
     prompt: str = ""
-    # Free-form path knobs. The default path uses the deterministic
-    # recognizer; pass ``suite_name`` to switch to LLM A1.
+    # Planner strategy. If omitted, AgentChannel reads PAUTH_PLANNER_STRATEGY.
+    # ``use_freeform`` remains as a backwards-compatible alias for
+    # strategy="llm-freeform".
+    strategy: str | None = None
     use_freeform: bool = False
     suite_name: str | None = None
     model: str = "gpt-4.1"
     max_retries: int = 3
     cache_dir: str | None = None
+    enable_judge: bool = True
+    judge_model: str | None = None
 
 
 @dataclasses.dataclass
@@ -126,11 +137,14 @@ def message_from_dict(payload: dict[str, Any]) -> AgentMessage | None:
     if kind == "prompt":
         return PromptMessage(
             prompt=str(payload.get("prompt", "")),
-            use_freeform=bool(payload.get("use_freeform", False)),
+            strategy=payload.get("strategy"),
+            use_freeform=_payload_bool(payload.get("use_freeform", False)),
             suite_name=payload.get("suite_name"),
             model=str(payload.get("model", "gpt-4.1")),
-            max_retries=int(payload.get("max_retries", 3)),
+            max_retries=_payload_int(payload.get("max_retries", 3), 3),
             cache_dir=payload.get("cache_dir"),
+            enable_judge=_payload_bool(payload.get("enable_judge", True)),
+            judge_model=payload.get("judge_model"),
         )
     if kind == "tool_call":
         return ToolCallMessage(
@@ -199,26 +213,32 @@ class AgentChannel:
             )
         self._prompt_received = True
 
-        if message.use_freeform:
-            if not message.suite_name:
-                return ErrorResponse(error="freeform path requires suite_name")
-            cache_path: Path | None = None
-            if message.cache_dir:
-                # Caller-provided cache directory; one entry per prompt.
-                import hashlib
-                slug = hashlib.sha1(
-                    f"{message.model}::{message.prompt}::r{message.max_retries}".encode()
-                ).hexdigest()[:12]
-                cache_path = Path(message.cache_dir) / f"{slug}.py"
-            sub: SubmissionResult = self._gateway.submit_user_prompt_freeform(
-                message.prompt,
-                message.suite_name,
-                model=message.model,
-                cache_path=cache_path,
-                max_retries=message.max_retries,
+        try:
+            strategy = _resolve_strategy(message)
+            suite_name = message.suite_name or os.environ.get("PAUTH_PLANNER_SUITE")
+            model = _env_or_message("PAUTH_PLANNER_MODEL", message.model)
+            max_retries = _env_int("PAUTH_PLANNER_MAX_RETRIES", message.max_retries)
+            cache_dir = message.cache_dir or os.environ.get("PAUTH_PLANNER_CACHE_DIR")
+            enable_judge = _env_bool("PAUTH_PLANNER_ENABLE_JUDGE", message.enable_judge)
+            judge_model = message.judge_model or os.environ.get("PAUTH_PLANNER_JUDGE_MODEL")
+            canonical = normalize_strategy_name(strategy)
+            planner = build_planner(
+                canonical,
+                prompt=message.prompt,
+                suite_name=suite_name,
+                model=model,
+                max_retries=max_retries,
+                cache_dir=cache_dir,
+                enable_judge=enable_judge,
+                judge_model=judge_model,
             )
-        else:
-            sub = self._gateway.submit_user_prompt(message.prompt)
+        except PlanGenerationError as exc:
+            return PromptResponse(accepted=False, reason=str(exc), rule_count=0)
+        sub = self._gateway.submit_user_prompt_with_planner(
+            message.prompt,
+            planner,
+            generated_code_on_success=canonical != STRATEGY_DETERMINISTIC,
+        )
 
         return PromptResponse(
             accepted=sub.accepted,
@@ -267,3 +287,47 @@ def _to_wire(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_to_wire(v) for v in value]
     return repr(value)
+
+
+def _payload_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _payload_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _resolve_strategy(message: PromptMessage) -> str:
+    if message.strategy:
+        return message.strategy
+    if message.use_freeform:
+        return STRATEGY_LLM_FREEFORM
+    return os.environ.get("PAUTH_PLANNER_STRATEGY", STRATEGY_DETERMINISTIC)
+
+
+def _env_or_message(name: str, value: str) -> str:
+    return os.environ.get(name, value)
+
+
+def _env_int(name: str, value: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return value
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise PlanGenerationError(f"{name} must be an integer, got {raw!r}") from exc
+
+
+def _env_bool(name: str, value: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return value
+    return raw.strip().lower() in {"1", "true", "yes", "on"}

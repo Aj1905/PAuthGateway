@@ -6,10 +6,13 @@
 # Exit code: 0 = allow Claude Code to proceed, non-zero = block.
 #
 # Env vars (optional):
-#   GATEWAY_URL   base URL of gateway/http_server.py (default: http://127.0.0.1:8081)
-#   GATEWAY_MODE  "strict" (block on gateway reject) or "log" (log only, never block).
-#                 Default: strict for prompts -- a rejected prompt means PAuth has
-#                 no plan and every subsequent tool call would default-deny anyway.
+#   GATEWAY_URL              base URL of gateway/http_server.py (default: http://127.0.0.1:8081)
+#   GATEWAY_MODE             "strict" (block on gateway reject) or "log" (log only).
+#   PAUTH_PLANNER_STRATEGY   deterministic / llm-freeform / interactive-structuring /
+#                            specialized-codegen / formal-semantic
+#   PAUTH_PLANNER_SUITE      suite name required by llm-freeform, e.g. shopping
+#   PAUTH_PLANNER_MODEL      model id for LLM-backed strategies
+#   PAUTH_PLANNER_MAX_RETRIES retry budget for validator feedback loops
 
 set -uo pipefail
 
@@ -27,9 +30,25 @@ if [[ -z "$session_id" || -z "$prompt" ]]; then
 fi
 
 body=$(/usr/bin/python3 -c '
-import json, sys
+import json, os, sys
 p = sys.argv[1]
-print(json.dumps({"kind": "prompt", "prompt": p}))
+body = {"kind": "prompt", "prompt": p}
+mapping = {
+    "PAUTH_PLANNER_STRATEGY": "strategy",
+    "PAUTH_PLANNER_SUITE": "suite_name",
+    "PAUTH_PLANNER_MODEL": "model",
+    "PAUTH_PLANNER_CACHE_DIR": "cache_dir",
+    "PAUTH_PLANNER_JUDGE_MODEL": "judge_model",
+}
+for env_name, field in mapping.items():
+    value = os.environ.get(env_name)
+    if value:
+        body[field] = value
+if os.environ.get("PAUTH_PLANNER_MAX_RETRIES"):
+    body["max_retries"] = int(os.environ["PAUTH_PLANNER_MAX_RETRIES"])
+if os.environ.get("PAUTH_PLANNER_ENABLE_JUDGE"):
+    body["enable_judge"] = os.environ["PAUTH_PLANNER_ENABLE_JUDGE"].lower() in {"1", "true", "yes", "on"}
+print(json.dumps(body))
 ' "$prompt")
 
 response=$(curl --silent --show-error --fail-with-body \

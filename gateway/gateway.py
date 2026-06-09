@@ -41,14 +41,18 @@ from pathlib import Path
 from typing import Any, Callable
 
 from pauth import prepare
-from pauth.codegen import generate_code
 from pauth.enforcer import Enforcer
 from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.evaluator import wrap
 from pauth.suites.base import SuiteSpec
 
-from .agentic_a1 import generate_code_with_self_repair
-from .core import recognize_prompt, run_to_pauth_code
+from .planner import (
+    DeterministicRecognizerPlanner,
+    LLMFreeformPlanner,
+    PlanDraft,
+    PlanGenerationError,
+    Planner,
+)
 
 
 @dataclasses.dataclass
@@ -101,67 +105,20 @@ class Gateway:
         The agent must not have a reference to this method. Any caller that
         invokes it on behalf of the agent re-opens the input-path hole.
         """
-        run_doc = recognize_prompt(prompt)
-        if run_doc is None:
-            reason = "prompt is outside the deterministic recognised subset"
-            self._session = _Session(
-                prompt=prompt,
-                run_doc=None,
-                rejection_reason=reason,
-                enforcer=None,
-                runner=None,
-                tool_params={},
-            )
-            return SubmissionResult(accepted=False, reason=reason)
+        return self._submit_with_planner(prompt, DeterministicRecognizerPlanner())
 
-        suite_name = run_doc["suite"]
-        try:
-            suite = self._suite_loader(suite_name)
-        except Exception as exc:  # noqa: BLE001 -- surface as a clean rejection
-            reason = f"unknown suite {suite_name!r}: {type(exc).__name__}: {exc}"
-            self._session = _Session(
-                prompt=prompt,
-                run_doc=run_doc,
-                rejection_reason=reason,
-                enforcer=None,
-                runner=None,
-                tool_params={},
-            )
-            return SubmissionResult(accepted=False, reason=reason)
-
-        try:
-            code = run_to_pauth_code(run_doc)
-            prepared = prepare(code, suite.tool_names(), suite.tool_signer())
-        except Exception as exc:  # noqa: BLE001 -- compilation failure -> deny
-            reason = f"plan compilation failed: {type(exc).__name__}: {exc}"
-            self._session = _Session(
-                prompt=prompt,
-                run_doc=run_doc,
-                rejection_reason=reason,
-                enforcer=None,
-                runner=None,
-                tool_params={},
-            )
-            return SubmissionResult(accepted=False, reason=reason)
-
-        env = suite.make_env()
-        keyring = KeyRing()  # gateway-owned: the observation receipts are ours
-        store = EnvelopeStore(keyring)
-        enforcer = Enforcer(prepared.rules, store, suite.tool_signer())
-        runner = suite.runner_factory(env)
-
-        self._session = _Session(
-            prompt=prompt,
-            run_doc=run_doc,
-            rejection_reason=None,
-            enforcer=enforcer,
-            runner=runner,
-            tool_params=suite.tool_params(),
-        )
-        return SubmissionResult(
-            accepted=True,
-            reason=f"plan accepted ({suite_name}/{run_doc['intent']})",
-            rule_count=len(prepared.rules),
+    def submit_user_prompt_with_planner(
+        self,
+        prompt: str,
+        planner: Planner,
+        *,
+        generated_code_on_success: bool = True,
+    ) -> SubmissionResult:
+        """Translate the prompt using an explicit planner strategy."""
+        return self._submit_with_planner(
+            prompt,
+            planner,
+            generated_code_on_success=generated_code_on_success,
         )
 
     # ------------------------------------------------------------------
@@ -191,65 +148,72 @@ class Gateway:
         On acceptance, ``handle_tool_call`` enforcement is identical to
         the recognizer path.
         """
-        try:
-            suite = self._suite_loader(suite_name)
-        except Exception as exc:  # noqa: BLE001
-            reason = f"unknown suite {suite_name!r}: {type(exc).__name__}: {exc}"
-            self._session = _Session(
-                prompt=prompt,
-                run_doc=None,
-                rejection_reason=reason,
-                enforcer=None,
-                runner=None,
-                tool_params={},
-                generated_code=None,
-            )
-            return SubmissionResult(accepted=False, reason=reason)
+        planner = LLMFreeformPlanner(
+            suite_name=suite_name,
+            model=model,
+            cache_path=cache_path,
+            max_retries=max_retries,
+            enable_judge=enable_judge,
+            judge_model=judge_model,
+        )
+        return self._submit_with_planner(prompt, planner, generated_code_on_success=True)
 
+    def _submit_with_planner(
+        self,
+        prompt: str,
+        planner: Planner,
+        *,
+        generated_code_on_success: bool = False,
+    ) -> SubmissionResult:
         try:
-            if max_retries > 0:
-                kwargs: dict[str, Any] = {
-                    "model": model,
-                    "max_retries": max_retries,
-                    "cache_path": cache_path,
-                    "enable_judge": enable_judge,
-                }
-                if judge_model is not None:
-                    kwargs["judge_model"] = judge_model
-                agentic = generate_code_with_self_repair(
-                    prompt, suite.tool_docs(), **kwargs,
-                )
-                code = agentic.code
-            else:
-                result = generate_code(
-                    prompt, suite.tool_docs(), model=model, cache_path=cache_path
-                )
-                code = result.code
+            draft = planner.generate(prompt, self._suite_loader)
+        except PlanGenerationError as exc:
+            reason = str(exc)
+            self._session = self._rejected_session(prompt, reason)
+            return SubmissionResult(accepted=False, reason=reason)
         except Exception as exc:  # noqa: BLE001
             reason = f"A1 codegen failed: {type(exc).__name__}: {exc}"
-            self._session = _Session(
-                prompt=prompt,
-                run_doc=None,
-                rejection_reason=reason,
-                enforcer=None,
-                runner=None,
-                tool_params={},
-                generated_code=None,
+            self._session = self._rejected_session(prompt, reason)
+            return SubmissionResult(accepted=False, reason=reason)
+
+        return self._accept_draft(
+            prompt,
+            draft,
+            generated_code_on_success=generated_code_on_success,
+        )
+
+    def _accept_draft(
+        self,
+        prompt: str,
+        draft: PlanDraft,
+        *,
+        generated_code_on_success: bool,
+    ) -> SubmissionResult:
+        try:
+            suite = self._suite_loader(draft.suite_name)
+        except Exception as exc:  # noqa: BLE001 -- surface as a clean rejection
+            reason = f"unknown suite {draft.suite_name!r}: {type(exc).__name__}: {exc}"
+            self._session = self._rejected_session(
+                prompt,
+                reason,
+                run_doc=draft.run_doc,
+                generated_code=draft.code if generated_code_on_success else None,
             )
             return SubmissionResult(accepted=False, reason=reason)
 
         try:
-            prepared = prepare(code, suite.tool_names(), suite.tool_signer())
+            prepared = prepare(draft.code, suite.tool_names(), suite.tool_signer())
         except Exception as exc:  # noqa: BLE001
-            reason = f"A2/A3 failed: {type(exc).__name__}: {exc}"
-            self._session = _Session(
+            reason = (
+                f"A2/A3 failed: {type(exc).__name__}: {exc}"
+                if generated_code_on_success
+                else f"plan compilation failed: {type(exc).__name__}: {exc}"
+            )
+            self._session = self._rejected_session(
                 prompt=prompt,
-                run_doc=None,
-                rejection_reason=reason,
-                enforcer=None,
-                runner=None,
-                tool_params={},
-                generated_code=code,
+                reason=reason,
+                run_doc=draft.run_doc,
+                generated_code=draft.code if generated_code_on_success else None,
             )
             return SubmissionResult(accepted=False, reason=reason)
 
@@ -261,17 +225,35 @@ class Gateway:
 
         self._session = _Session(
             prompt=prompt,
-            run_doc=None,
+            run_doc=draft.run_doc,
             rejection_reason=None,
             enforcer=enforcer,
             runner=runner,
             tool_params=suite.tool_params(),
-            generated_code=code,
+            generated_code=draft.code if generated_code_on_success else None,
         )
         return SubmissionResult(
             accepted=True,
-            reason=f"plan accepted via LLM A1 ({suite_name})",
+            reason=draft.reason,
             rule_count=len(prepared.rules),
+        )
+
+    def _rejected_session(
+        self,
+        prompt: str,
+        reason: str,
+        *,
+        run_doc: dict[str, Any] | None = None,
+        generated_code: str | None = None,
+    ) -> _Session:
+        return _Session(
+            prompt=prompt,
+            run_doc=run_doc,
+            rejection_reason=reason,
+            enforcer=None,
+            runner=None,
+            tool_params={},
+            generated_code=generated_code,
         )
 
     # ------------------------------------------------------------------

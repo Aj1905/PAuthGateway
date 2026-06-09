@@ -11,6 +11,7 @@ Config schema (JSON for now -- swap to TOML if dependency budget allows)::
       "suites": [
         { "name": "shopping",  "kind": "shopping" },
         { "name": "gmail",     "kind": "mcp",      "url": "http://127.0.0.1:8090" },
+        { "name": "billing",   "kind": "openapi",  "spec_path": "billing.openapi.json" },
         { "name": "banking",   "kind": "agentdojo", "suite": "banking" }
       ]
     }
@@ -19,6 +20,7 @@ Config schema (JSON for now -- swap to TOML if dependency budget allows)::
 
 * ``shopping``   -- the self-contained demo suite.
 * ``mcp``        -- any MCP server reachable at ``url``.
+* ``openapi``    -- an HTTP API described by an OpenAPI 3.x document.
 * ``agentdojo``  -- an AgentDojo suite by name (``banking``/``slack``/...).
 
 The gateway loads the config and builds one ``SuiteSpec`` per entry,
@@ -37,6 +39,7 @@ from pauth.suites.base import SuiteSpec
 from pauth.suites.shopping import build_suite as build_shopping_suite
 
 from .mcp_suite import build_mcp_suite, build_mcp_suite_stdio
+from .openapi_suite import build_openapi_suite
 from .policy import PolicySpec
 from .registry import merge_suites
 from .suite_filter import SuiteFilter
@@ -77,9 +80,24 @@ def _build_agentdojo(entry: dict[str, Any]) -> SuiteSpec:
     return load_suite(suite_name)
 
 
+def _build_openapi(entry: dict[str, Any]) -> SuiteSpec:
+    headers = entry.get("headers") or {}
+    if not isinstance(headers, dict):
+        raise ValueError(f"openapi suite {entry.get('name')!r}: 'headers' must be an object")
+    return build_openapi_suite(
+        name=entry["name"],
+        spec_path=entry.get("spec_path"),
+        spec_url=entry.get("spec_url"),
+        base_url=entry.get("base_url"),
+        signer=entry.get("signer", entry["name"]),
+        headers={str(k): str(v) for k, v in headers.items()},
+    )
+
+
 _BUILDERS: dict[str, Callable[[dict[str, Any]], SuiteSpec]] = {
     "shopping": _build_shopping,
     "mcp": _build_mcp,
+    "openapi": _build_openapi,
     "agentdojo": _build_agentdojo,
 }
 
