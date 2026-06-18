@@ -232,9 +232,20 @@ validator は実質「LLM 出力に対するテスト関数」として動作し
 これは Q14 とは別レイヤの提案:
 
 - **Q14 PreAuth Grill Layer** — PAuth の手前で **ユーザに対話確認** を取る(interactive)
-- **Q15 Semantic judge** — agentic A1 の中で **LLM が LLM 出力を判定** する(non-interactive、自動)
+- **Q15 Semantic judge / validator** — agentic A1 の中で **LLM が LLM 出力を判定** し、必要なら deterministic validator も重ねる(non-interactive、自動)
 
 両者は補完的。Q15 は user 介入なしに自動回せるので Phase 1 に乗せやすい。Q14 はユーザに分かりやすいが UX コストが高い。
+
+**2026-06-09 方針更新:** Q15 の目的は「plan が prompt の intent を完璧に模倣していること」を証明することではない。自然言語の曖昧さが根にあるため、完全な intent 同値性の判定は不可能に近い。ここで狙うべきなのは、**prompt と slice / plan の意味論的整合性を片側安全性として検査し、prompt から正当化できない過剰認可(false-positive accept / over-authorization)だけを弾く**こと。
+
+このため validator は、ユーザ要求の一部を落とした「狭すぎる plan」を correctness 問題として扱う一方で、権限境界としては主に以下を拒否対象にする:
+
+- prompt にない side-effecting tool call を plan / slice が許可している
+- prompt にない recipient / account / file path / product / amount / channel などの operand を許可している
+- prompt にない read→write / read→external-send の data flow を許可している
+- prompt の条件・上限・比較・数量詞を外して、より広い実行を許可している
+
+validator が厳しすぎて正しい plan を reject する over-rejection は、security failure ではなく retry loop / clarification で回復する UX・可用性問題として扱う。逆に、過剰認可を accept することは PAuth の前提を壊すため最優先で避ける。
 
 **質問:** Semantic judge を agentic A1 の retry loop にどう組み込むか?
 
@@ -255,15 +266,16 @@ validator は実質「LLM 出力に対するテスト関数」として動作し
 - (J3) は順序が逆。生成→検証の自然な流れを崩す
 - (J4) は automated check の機会を捨てる、Q14 との両立は補完関係
 
-**判定プロンプトの要点:**
+**判定プロンプト / validator の要点:**
 
-1. **Coverage** — user が要求した全 tool が呼ばれているか
-2. **Conditions** — user の条件分岐が保たれているか
-3. **Quantifiers** — "cheapest", "most expensive", "all", "any" 等が保たれているか
-4. **Constraints** — bounds(価格上限、数量、宛先)が全て code に反映されているか
-5. **Side effects** — code が user の要求 *以上* / *以下* のことをしていないか
+1. **One-sided safety** — `intent_captured` ではなく「prompt から正当化できない権限が plan / slice に含まれるか」を第一判定にする
+2. **Action entailment** — side effecting action が prompt に明示・含意されているか
+3. **Resource / operand entailment** — recipient、account、file path、product、amount、channel、数量などが prompt の範囲を超えていないか
+4. **Data-flow entailment** — sensitive read の結果を外部送信・書き込みに使う flow が prompt から正当化できるか
+5. **Conditions / Quantifiers / Constraints** — "cheapest", "under $80", "if success", "all" 等の条件を外して広い認可にしていないか
+6. **Over-rejection tolerance** — 狭すぎる plan や厳しすぎる reject は retry / clarification に回し、過剰認可 accept を最小化する
 
-判定 LLM の出力は JSON: `{"intent_captured": bool, "issues": [str, ...]}`。fail なら `issues` を retry プロンプトに乗せて LLM に修正依頼。
+判定 LLM の出力は当面 JSON: `{"safe_to_authorize": bool, "over_authorization": [str, ...], "missing_or_ambiguous": [str, ...]}`。`safe_to_authorize=false` なら `over_authorization` / `missing_or_ambiguous` を retry プロンプトに乗せて LLM に修正依頼する。将来的には `ACCEPT` / `REJECT_OVER_AUTHORIZATION` / `NEEDS_CLARIFICATION` の tri-state に分ける。
 
 **底打ちの正しい挙動:**
 
@@ -278,10 +290,13 @@ Restricted grammar が **原理的に表現できない** intent(else / nested-i
 **残課題:**
 
 - (Q15-a) Judge LLM の確率性 — judge 自身が誤判定する。生成と同じモデルだと相関するので、production では別モデル / アンサンブルが要る
-- (Q15-b) Judge の overrejection — 正当に intent を捕捉してる code を「足りない」と誤判定すると新たな FR が発生
+- (Q15-b) Judge の overrejection — 正当に安全な code を「足りない」と誤判定すると retry / clarification が増える。これは許容可能だが UX・コスト指標として測る
 - (Q15-c) Judge の prompt injection 脆弱性 — code 中のコメントや変数名に「intent OK」と書かれたら騙されうる。Judge の system prompt で対策必要
+- (Q15-d) False-positive accept の定義 — PAuth runtime の FP/FN と混同しないよう、semantic validator では「prompt から正当化できない過剰認可を accept した」事象を最重要 failure として別名で記録する
+- (Q15-e) Deterministic validator との分担 — 明示禁止 tool、金額上限、宛先追加、read-only prompt から write tool への拡張など、LLM judge に任せず機械的に弾ける検査をどこまで前段化するか
+- (Q15-f) 実装未定 — 方針は one-sided semantic validator + retry loop で固めるが、具体的な prompt、IR、fixture、評価指標は研究課題として残す
 
-**ユーザの回答:** (J1) 採用、即時実装する方針。
+**ユーザの回答:** one-sided semantic validator + retry loop の方針を採用。ただし具体実装(prompt、IR、deterministic validator の分担、fixture 設計)は未定で、最も研究が必要な部分として残す。
 
 ---
 

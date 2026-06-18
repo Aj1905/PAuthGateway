@@ -32,7 +32,9 @@ PAuth ゲートウェイ設計の議論と実装の中で見えた未解決課�
 
 **関連:** Q14(PreAuth Grill Layer)
 
-**選択肢:** (1) 別 LLM で intent 差分検出、(2) ユーザに plan を提示して承認、(3) prompt を事前形式化。
+**方針:** 単純な「完全 intent 捕捉」判定ではなく、prompt と slice / plan の意味論的整合性を **片側安全性** として検査する validator を置く。自然言語の曖昧さは完全解決できないため、plan が intent を完璧に模倣しているかではなく、prompt から正当化できない side effect / operand / data flow / 条件緩和を含む **過剰認可(false-positive accept)** を弾くことを第一目標にする。validator が厳しすぎる over-reject は retry loop や clarification で回復する UX / availability 問題として扱う。
+
+**選択肢:** (1) 別 LLM で intent 差分検出、(2) deterministic validator を追加、(3) ユーザに plan を提示して承認、(4) prompt を事前形式化。
 
 ### A3. UI プロンプト内 injection は scope 外 ⚪
 
@@ -230,8 +232,9 @@ PAuth ゲートウェイ設計の議論と実装の中で見えた未解決課�
 - baseline: 現在の `judge=opus-4-8 + gpt-4.1 generator + 既存 fixture`
 - ablation: `--no-judge` で純 grammar 経路と比較
 - adversarial: `judge_adversarial_test.py` で reject 率(現在 8/8 = 100%)
-- false reject: judge ON で本来 accept すべきが reject される率
-- コスト: 1 prompt あたり追加 token / latency
+- false-positive accept / over-authorization accept: prompt から正当化できない plan / slice を judge が通した率(最重要 failure)
+- false reject / over-reject: judge ON で本来 accept すべき安全な plan が reject される率(retry / clarification で回復可能な UX・コスト指標)
+- コスト: 1 prompt あたり追加 token / latency / retry 回数
 
 **永続性の現れ方:**
 
