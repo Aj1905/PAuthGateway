@@ -56,7 +56,7 @@ from pauth.grammar import (
 # user can swap models for performance comparison (per design note Q15).
 DEFAULT_JUDGE_MODEL = "claude-opus-4-8"
 # me.env lives one directory above the project (shared across sibling repos).
-ME_ENV_PATH = Path(__file__).resolve().parents[2] / "me.env"
+ME_ENV_PATH = Path(__file__).resolve().parents[3] / "me.env"
 
 
 def load_me_env(path: Path = ME_ENV_PATH) -> None:

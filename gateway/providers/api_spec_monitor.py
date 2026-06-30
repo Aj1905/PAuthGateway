@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 
 from gateway.providers.openapi_suite import build_openapi_suite, load_openapi_document
 
