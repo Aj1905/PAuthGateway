@@ -34,7 +34,7 @@ if str(ROOT) not in sys.path:
 
 from pauth.suites.shopping import build_suite as build_shopping_suite
 
-from gateway.gateway import Gateway, SubmissionResult
+from gateway.runtime.gateway import Gateway, SubmissionResult
 from tests.fixtures.l1_prompts import FREEFORM_CASES as CANONICAL_FREEFORM, PromptCase
 
 try:

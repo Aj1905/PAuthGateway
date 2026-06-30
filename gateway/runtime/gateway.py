@@ -46,7 +46,7 @@ from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.evaluator import wrap
 from pauth.suites.base import SuiteSpec
 
-from .planner import (
+from gateway.planning.planner import (
     DeterministicRecognizerPlanner,
     LLMFreeformPlanner,
     PlanDraft,

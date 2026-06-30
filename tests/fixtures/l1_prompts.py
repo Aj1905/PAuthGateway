@@ -4,7 +4,7 @@ Two collections live here:
 
 * :data:`RECOGNIZER_CASES` -- inputs for the deterministic regex recognizer in
   ``gateway/core.py``. ``expected_accept`` reflects whether the regex matches.
-  Used by ``gateway/test_recognizer.py``.
+  Used by ``tests/test_recognizer.py``.
 
 * :data:`FREEFORM_CASES` -- free-form natural-language prompts for measuring
   the LLM A1 + A2/A3 pipeline (``gateway/agentic_a1.py``). ``expected_accept``

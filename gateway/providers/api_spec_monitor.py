@@ -20,7 +20,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 
-from gateway.openapi_suite import build_openapi_suite, load_openapi_document
+from gateway.providers.openapi_suite import build_openapi_suite, load_openapi_document
 
 
 @dataclasses.dataclass

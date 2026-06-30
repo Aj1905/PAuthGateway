@@ -12,7 +12,7 @@ from pauth import prepare
 from pauth.suites.shopping import build_suite as build_shopping_suite
 from tests.experiment.agentdojo_adapter import load_suite
 
-from gateway.core import (
+from gateway.planning.core import (
     CaseResult,
     build_llm_translator,
     canonical_json,

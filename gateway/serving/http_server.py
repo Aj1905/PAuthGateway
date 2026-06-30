@@ -37,8 +37,8 @@ if str(ROOT) not in sys.path:
 from pauth.suites.base import SuiteSpec
 from pauth.suites.shopping import build_suite as build_shopping_suite
 
-from gateway.agent_channel import AgentChannel
-from gateway.config import load_config, suite_loader_for
+from gateway.ingress.agent_channel import AgentChannel
+from gateway.serving.config import load_config, suite_loader_for
 
 
 def default_suite_loader(name: str) -> SuiteSpec:

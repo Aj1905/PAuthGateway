@@ -37,8 +37,8 @@ from typing import Any, Callable, Literal
 
 from pauth.suites.base import SuiteSpec
 
-from .gateway import CallResult, Gateway, SubmissionResult
-from .planner import (
+from gateway.runtime.gateway import CallResult, Gateway, SubmissionResult
+from gateway.planning.planner import (
     STRATEGY_DETERMINISTIC,
     STRATEGY_LLM_FREEFORM,
     PlanGenerationError,

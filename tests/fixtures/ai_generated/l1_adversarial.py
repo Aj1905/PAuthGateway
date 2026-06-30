@@ -15,7 +15,7 @@ Each case is one of:
 * ``extra_action`` -- the code performs more than asked
 * ``missing_action`` -- the code skips a step the user requested
 
-The companion runner ``gateway/judge_adversarial_test.py`` feeds each
+The companion runner ``tests/judge_adversarial_test.py`` feeds each
 ``(task, code)`` pair to the judge and reports the verdict. A passing
 run requires the judge to mark every entry as ``intent_captured=false``.
 A judge that rubber-stamps will fail visibly.

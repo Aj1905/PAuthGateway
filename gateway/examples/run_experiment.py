@@ -39,7 +39,7 @@ try:
 except Exception:  # noqa: BLE001 -- AgentDojo is optional for this demo
     load_agentdojo_suite = None  # type: ignore[assignment]
 
-from gateway.gateway import Gateway
+from gateway.runtime.gateway import Gateway
 from tests.fixtures.l2_scenarios import SCENARIOS as CANONICAL_SCENARIOS
 
 try:

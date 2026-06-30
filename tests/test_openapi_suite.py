@@ -10,8 +10,8 @@ import json
 import tempfile
 from pathlib import Path
 
-from gateway.api_spec_monitor import check_config
-from gateway.openapi_suite import build_openapi_suite
+from gateway.providers.api_spec_monitor import check_config
+from gateway.providers.openapi_suite import build_openapi_suite
 
 
 OPENAPI_DOC = {

@@ -10,8 +10,8 @@ here; this is the evidence the validator actually fires.
 
 Usage::
 
-    .venv/bin/python gateway/judge_adversarial_test.py
-    .venv/bin/python gateway/judge_adversarial_test.py --judge-model claude-opus-4-7
+    .venv/bin/python tests/judge_adversarial_test.py
+    .venv/bin/python tests/judge_adversarial_test.py --judge-model claude-opus-4-7
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from gateway.agentic_a1 import (
+from gateway.planning.agentic_a1 import (
     DEFAULT_JUDGE_MODEL,
     _get_anthropic_client,
     _judge_intent,

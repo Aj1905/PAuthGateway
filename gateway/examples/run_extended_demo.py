@@ -37,11 +37,11 @@ from pauth.evaluator import wrap
 from pauth.suites.base import SuiteSpec, ToolSpec
 from pauth.suites.shopping import build_suite as build_shopping_suite
 
-from gateway.gateway import Gateway
-from gateway.mcp_suite import StdioTransport, build_mcp_suite_from_transport
-from gateway.policy import PolicyAwareEnforcer, PolicySpec
-from gateway.registry import merge_suites
-from gateway.suite_filter import SuiteFilter
+from gateway.runtime.gateway import Gateway
+from gateway.providers.mcp_suite import StdioTransport, build_mcp_suite_from_transport
+from gateway.runtime.policy import PolicyAwareEnforcer, PolicySpec
+from gateway.providers.registry import merge_suites
+from gateway.providers.suite_filter import SuiteFilter
 
 
 def _section(title: str) -> None:

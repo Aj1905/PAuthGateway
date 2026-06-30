@@ -37,9 +37,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from gateway.gateway import Gateway
-from gateway.mcp_suite import build_mcp_suite
-from gateway.registry import merge_suites
+from gateway.runtime.gateway import Gateway
+from gateway.providers.mcp_suite import build_mcp_suite
+from gateway.providers.registry import merge_suites
 
 
 def _wait_for_port(host: str, port: int, timeout: float = 10.0) -> None:

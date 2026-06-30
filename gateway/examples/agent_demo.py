@@ -31,7 +31,7 @@ if str(ROOT) not in sys.path:
 from pauth.suites.base import SuiteSpec
 from pauth.suites.shopping import build_suite as build_shopping_suite
 
-from gateway.agent_channel import (
+from gateway.ingress.agent_channel import (
     AgentChannel,
     PromptMessage,
     ToolCallMessage,

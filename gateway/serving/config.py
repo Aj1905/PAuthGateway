@@ -38,11 +38,11 @@ from typing import Any, Callable
 from pauth.suites.base import SuiteSpec
 from pauth.suites.shopping import build_suite as build_shopping_suite
 
-from .mcp_suite import build_mcp_suite, build_mcp_suite_stdio
-from .openapi_suite import build_openapi_suite
-from .policy import PolicySpec
-from .registry import merge_suites
-from .suite_filter import SuiteFilter
+from gateway.providers.mcp_suite import build_mcp_suite, build_mcp_suite_stdio
+from gateway.providers.openapi_suite import build_openapi_suite
+from gateway.runtime.policy import PolicySpec
+from gateway.providers.registry import merge_suites
+from gateway.providers.suite_filter import SuiteFilter
 
 
 # --------------------------------------------------------------------------
