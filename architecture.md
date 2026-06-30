@@ -150,6 +150,16 @@ flowchart LR
 | Tool source | `SuiteSpec` (`tools`, `make_env`, `runner_factory`) | shopping demo, AgentDojo, MCP servers, OpenAPI specs, future SaaS adapters | `pauth/suites/base.py` |
 | Authorization core | compiled rules + envelope-backed operand checks | should not vary per provider | `pauth/` |
 
+**Terminology note — "ingress" here is the *adapter* level only.** In this map,
+"Agent ingress" names *which adapter* attaches an agent (hooks / proxy / custom
+client), all normalizing into `PromptMessage` / `ToolCallMessage`. It does **not**
+describe the wire-level direction of capture vs enforcement. The round-trip leg
+model (往路/復路 × ingress/egress — where the prompt is observed, where tool calls
+are observed, and the single leg where enforcement can act) is defined in
+`gateway/INGRESS_DESIGN.md` → "Directional model". Keep the two vocabularies
+distinct: this doc's "ingress" = adapter; that doc's 復路egress = the enforcement
+tap. They are not synonyms.
+
 AgentDojo belongs behind the **Tool source** boundary. It is a provider used
 for benchmarks and mock environments, not the architectural center. If real
 apps replace AgentDojo, they should implement or adapt into `SuiteSpec`; the
@@ -236,7 +246,9 @@ attempted tool calls, while network/tool routing prevents bypass. The existing
 agent itself is deliberately outside the red design zones. The product goal is
 to keep the agent runtime and day-to-day user workflow unmodified after setup,
 while moving variability into gateway ingress, planner strategy, and
-tool-source adapters.
+tool-source adapters. ("ingress" here = the adapter level; for the wire-level
+往路/復路 × ingress/egress leg model see `gateway/INGRESS_DESIGN.md` →
+"Directional model".)
 
 Prompt capture is adapter-based. Different agents will expose different
 signals, but every capture path must normalize into `PromptMessage` before it

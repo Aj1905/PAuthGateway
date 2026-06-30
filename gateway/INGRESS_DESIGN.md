@@ -8,8 +8,10 @@ built later.
 It follows the `DESIGN_STATUS.md` discipline: confirmed decisions and open
 questions are kept separate so the design does not look more settled than it is.
 
-Cross-references: `architecture.md` §1.1/§1.2 (ingress boundary, to be updated
-once interception is implemented), `issues.md` B5 (Bash escape hatch),
+Cross-references: `architecture.md` §1.1/§1.2 (ingress boundary — uses "ingress"
+at the *adapter* level; see its "Terminology note" pointing back to the
+directional model here; the leg model lands in architecture.md only once
+interception is implemented), `plan.md` issue B5 (Bash escape hatch),
 `DESIGN_STATUS.md` bottleneck #2 (prompt capture is the main product risk),
 `BUSINESS_STRATEGY.md` §3.1 (target segment decision).
 
@@ -24,6 +26,59 @@ Both ingress modes normalize into the **same** `PromptMessage` /
 `ToolCallMessage` contract (`gateway/agent_channel.py`) and feed the **same**
 deterministic core (`pauth/`). Only the ingress adapter differs. This is exactly
 what the loose-coupling boundary in `architecture.md` was built for.
+
+But note: **"ingress" is used at two levels in this memo** — the *adapter* (SDK
+vs interception, above) and the *wire-level direction* of each capture/enforcement
+tap. Capture and enforcement do **not** sit on the same leg of the round trip.
+See "Directional model" below before reading Mode 2.
+
+## Directional model: "ingress" ≠ a single direction (往路/復路 × ingress/egress)
+
+The agent↔provider exchange is a **round trip**, so relative to the gateway there
+are four legs, not one. Conflating them hides the fact that the gateway can only
+*observe* on some legs and only *enforce* on another.
+
+```text
+          往路ingress              往路egress
+agent ──────────────────▶ gateway ──────────────────▶ provider
+      ◀──────────────────         ◀──────────────────
+          復路egress              復路ingress
+```
+
+| Leg | Wire direction | What flows | Gateway's job |
+|---|---|---|---|
+| **往路ingress** | agent → gateway | user prompt (request in) | **observe** prompt → `PromptMessage`; plan-once (A1–A3) |
+| **往路egress** | gateway → provider | user prompt (request out) | relay; optional prompt redaction before it leaves |
+| **復路ingress** | provider → gateway | model's `tool_use` (response in) | **observe** tool calls → `ToolCallMessage` |
+| **復路egress** | gateway → agent | response (response out) | **enforce** — rewrite/block a denied `tool_use` before the agent sees it (B1–B4) |
+
+Two consequences fall straight out of this:
+
+1. **Observation lives on the ingress legs; enforcement lives on 復路egress.**
+   Capturing the prompt (往路ingress) and capturing tool calls (復路ingress) are
+   read-only taps. Actually *stopping* a tool call requires acting on
+   **復路egress** — a read-write tap. This is the wire-level statement of
+   "capture is not enforcement" (Mode 2 below).
+2. **The two contracts map to the two ingress legs.** `PromptMessage` = 往路ingress;
+   `ToolCallMessage` = 復路ingress. The core never touches egress directly — it
+   returns a decision that the **復路egress** leg applies.
+
+The **tool-execution channel** (agent ↔ MCP / external tool) is a *second* round
+trip with its own four legs. The tool proxy (B, below) acts on **its 往路**
+(agent → tool request), not on the inference round trip at all.
+
+How each mode occupies these legs:
+
+| | 往路ingress | 往路egress | 復路ingress | 復路egress |
+|---|---|---|---|---|
+| **Mode 1 SDK** | `submit_user_prompt` (out-of-band call) | — (agent calls provider itself) | `handle_tool_call` (out-of-band call) | decision = function return value; **the agent's own code applies it** |
+| **Mode 2 inference proxy** | proxy reads request | proxy relays | proxy reads response | proxy rewrites/blocks — path (A) |
+
+In **Mode 1 the gateway is not inline**: it is a callee beside the agent, so
+往路egress does not exist for it and "enforcement" is only the boolean the
+customer's code agrees to honor. In **Mode 2 the gateway is inline**, so all four
+legs are real and **復路egress is where the (fragile) response rewriting must
+happen** — which is exactly why it can desync the agent's state.
 
 ## Decision
 
@@ -114,18 +169,22 @@ Subscription walls (why inference proxy is not viable there):
 3. A trust-selling product must not ship a TOS-violating MITM. Prefer explicit
    "subscription not supported; API / Team / Enterprise only".
 
-Capture is not enforcement (applies to the inference-proxy path):
+Capture is not enforcement (applies to the inference-proxy path) — this is the
+往路/復路 split made concrete:
 
-- The inference proxy **observes** the tool calls the model emits; it does not by
-  itself **block** them.
-- **(A) Response rewriting** — rewrite a denied `tool_use` in the model's
-  response before it reaches the agent. Can gate agent-internal tools (Claude
-  Code `Bash`, file ops) that never leave the agent — the only no-modification
-  way to touch the B5 escape hatch. Fragile: can desync the agent's state.
-- **(B) Tool proxy** — route MCP / external tool calls through the gateway and
+- The inference proxy **observes** the tool calls the model emits at **復路ingress**;
+  it does not by itself **block** them. Blocking requires acting on **復路egress**.
+- **(A) Response rewriting** (acts on **復路egress** of the inference channel) —
+  rewrite a denied `tool_use` in the model's response before it reaches the agent.
+  Can gate agent-internal tools (Claude Code `Bash`, file ops) that never leave
+  the agent — the only no-modification way to touch the B5 escape hatch. Fragile:
+  rewriting the response mid-flight can desync the agent's state.
+- **(B) Tool proxy** (acts on the **往路 of the tool-execution channel**, not the
+  inference round trip) — route MCP / external tool calls through the gateway and
   deny there (`gateway/mcp_suite.py`). Robust, but agent-internal tools never
   route here.
-- Full L3 interception = (A) + (B).
+- Full L3 interception = (A) + (B) — because they cover **different legs on
+  different channels**, neither alone is complete.
 
 Prior art proving the relay is feasible (not novel): LiteLLM, Cloudflare AI
 Gateway, Helicone, OpenRouter. The novel part is loading PAuth onto the relay.
