@@ -13,3 +13,6 @@ gateway/cache/
 # real-user prompt corpus extracted from local Claude Code transcripts
 # (regenerable via tests/fixtures/extract_real_prompts.py)
 tests/fixtures/real_external_prompts.jsonl
+
+# business strategy memo — kept local, not pushed to remote
+BUSINESS_STRATEGY.md
