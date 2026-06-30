@@ -1,23 +1,23 @@
 # Claude Code hooks for the PAuth gateway
 
-This directory ships two Claude Code hook scripts that turn the gateway
-into a real firewall around an unmodified Claude Code session:
+このディレクトリは、未改変の Claude Code セッションの周囲でゲートウェイを実際の
+ファイアウォールに変える、2つの Claude Code hook スクリプトを提供する。
 
-These hooks are part of gateway setup. They do not modify Claude Code's
-runtime or the user's normal prompt workflow, but they are still an explicit
-integration requirement: without a prompt hook and a pre-tool hook, the gateway
-cannot reliably build a clean plan or enforce attempted actions before they
-run.
+これらの hook はゲートウェイのセットアップの一部だ。Claude Code のランタイムも
+ユーザの通常のプロンプトワークフローも変更しないが、それでも明示的な統合要件
+である。プロンプト hook と pre-tool hook がなければ、ゲートウェイはクリーンな
+計画を確実に構築することも、試行されたアクションが実行される前に強制することも
+できない。
 
 | Hook | Script | Purpose |
 |---|---|---|
-| `UserPromptSubmit` | `submit_prompt.sh` | Forward the user's prompt to the gateway for plan generation, **before** the LLM sees it. |
-| `PreToolUse` | `pretool.sh` | Offer every tool call to the gateway, which checks it against the active plan and permits or rejects. |
+| `UserPromptSubmit` | `submit_prompt.sh` | LLM がプロンプトを見る**前に**、ユーザのプロンプトを計画生成のためゲートウェイへ転送する。 |
+| `PreToolUse` | `pretool.sh` | すべてのツール呼び出しをゲートウェイへ提示する。ゲートウェイはそれを有効な計画と照合し、許可または拒否する。 |
 
-Both hooks talk to a long-running HTTP daemon (`gateway/serving/http_server.py`)
-over `localhost`. Session state is keyed by Claude Code's own
-`session_id`, so the two hooks operate on the same gateway session for
-the duration of a conversation.
+両方の hook は、`localhost` 経由で長時間稼働する HTTP daemon
+(`gateway/serving/http_server.py`) と通信する。セッション状態は Claude Code 自身の
+`session_id` をキーとするため、2つの hook は会話の継続中、同じゲートウェイ
+セッション上で動作する。
 
 ## 1. Start the gateway
 
@@ -25,11 +25,12 @@ the duration of a conversation.
 .venv/bin/python gateway/serving/http_server.py --host 127.0.0.1 --port 8081
 ```
 
-Leave this running. Restarting drops every active session.
+これは稼働させたままにする。再起動するとすべての有効なセッションが失われる。
 
 ## 2. Add the hooks to Claude Code settings
 
-Edit `~/.claude/settings.json` (or the project-local `.claude/settings.json`):
+`~/.claude/settings.json`（またはプロジェクトローカルの `.claude/settings.json`）を
+編集する。
 
 ```json
 {
@@ -44,30 +45,29 @@ Edit `~/.claude/settings.json` (or the project-local `.claude/settings.json`):
 }
 ```
 
-Adjust the absolute path for your checkout.
+絶対パスは自分のチェックアウトに合わせて調整する。
 
 ## 3. Choose enforcement mode
 
-The scripts honor environment variables:
+スクリプトは環境変数を尊重する。
 
 | Variable | Values | Default | Effect |
 |---|---|---|---|
-| `GATEWAY_URL` | URL | `http://127.0.0.1:8081` | Where to POST. |
-| `GATEWAY_MODE_PROMPT` | `strict` / `log` | `strict` | If the gateway rejects the prompt, block Claude Code (`strict`) or just log and proceed (`log`). |
-| `GATEWAY_MODE_TOOL` | `strict` / `log` | `log` | Same for tool calls. Default is `log` while integration is being validated; flip to `strict` once the enforced tool set is finalised. |
-| `GATEWAY_MODE` | `strict` / `log` | — | Fallback when the more-specific variant is unset. |
-| `PAUTH_PLANNER_STRATEGY` | `deterministic` / `llm-freeform` / `interactive-structuring` / `specialized-codegen` / `formal-semantic` | `deterministic` | Selects the A1 planning strategy. |
-| `PAUTH_PLANNER_SUITE` | suite name | — | Required by `llm-freeform`, e.g. `shopping`. |
-| `PAUTH_PLANNER_MODEL` | model id | `gpt-4.1` | Model for LLM-backed strategies. |
-| `PAUTH_PLANNER_MAX_RETRIES` | integer | `3` | Retry budget for validator feedback loops. |
-| `PAUTH_PLANNER_ENABLE_JUDGE` | boolean | `true` | Enables the semantic judge for `llm-freeform`. |
+| `GATEWAY_URL` | URL | `http://127.0.0.1:8081` | POST 先。 |
+| `GATEWAY_MODE_PROMPT` | `strict` / `log` | `strict` | ゲートウェイがプロンプトを拒否した場合、Claude Code をブロックする（`strict`）か、ログだけ取って続行する（`log`）か。 |
+| `GATEWAY_MODE_TOOL` | `strict` / `log` | `log` | ツール呼び出しに対する同様の設定。統合の検証中はデフォルトを `log` にし、強制対象のツール集合が確定したら `strict` へ切り替える。 |
+| `GATEWAY_MODE` | `strict` / `log` | — | より具体的な変種が未設定のときのフォールバック。 |
+| `PAUTH_PLANNER_STRATEGY` | `deterministic` / `llm-freeform` / `interactive-structuring` / `specialized-codegen` / `formal-semantic` | `deterministic` | A1 の計画 strategy を選ぶ。 |
+| `PAUTH_PLANNER_SUITE` | suite name | — | `llm-freeform` で必須。例: `shopping`。 |
+| `PAUTH_PLANNER_MODEL` | model id | `gpt-4.1` | LLM 裏付けの strategy 用モデル。 |
+| `PAUTH_PLANNER_MAX_RETRIES` | integer | `3` | validator フィードバックループのリトライ予算。 |
+| `PAUTH_PLANNER_ENABLE_JUDGE` | boolean | `true` | `llm-freeform` 向けの意味的 judge を有効化する。 |
 
-Set them in your shell rc, in the hook command itself, or via Claude
-Code's `env` block. Planner variables can be set either on the gateway
-daemon or on the prompt hook; `submit_prompt.sh` forwards them in the
-prompt message when present.
+これらはシェルの rc、hook コマンド自体、あるいは Claude Code の `env` ブロックで
+設定する。planner 変数は gateway daemon 側でもプロンプト hook 側でも設定でき、
+`submit_prompt.sh` は存在する場合それらをプロンプトメッセージで転送する。
 
-Example free-form planner:
+free-form planner の例:
 
 ```bash
 PAUTH_PLANNER_STRATEGY=llm-freeform \
@@ -77,33 +77,32 @@ PAUTH_PLANNER_SUITE=shopping \
 
 ## 4. Verify the round-trip
 
-With the daemon running and the hooks installed, open Claude Code and
-type the canonical Aurora prompt:
+daemon を稼働させ hook をインストールした状態で、Claude Code を開き、正規の
+Aurora プロンプトを打ち込む。
 
 > If the product "Aurora Noise Cancelling Headphones" is in stock and
 > costs less than $150.00, add 1 to my cart and pay the cart total to
 > IBAN GB33BUKB20201555555555 with subject "Order payment" on
 > 2024-06-11.
 
-The `submit_prompt.sh` hook should log `prompt accepted ::` to the
-Claude Code transcript / stderr, the gateway daemon's terminal should
-show the POST, and subsequent tool calls show up via `pretool.sh`.
+`submit_prompt.sh` hook は Claude Code のトランスクリプト／stderr に
+`prompt accepted ::` をログ出力し、gateway daemon の端末には POST が表示され、
+続くツール呼び出しが `pretool.sh` 経由で現れるはずだ。
 
 ## Failure modes to expect
 
-* **Gateway daemon down** → hook prints an HTTP error. With `strict`
-  mode this blocks; with `log` it allows. There is no automatic restart.
-* **Prompt outside the deterministic recognizer subset** → gateway
-  rejects, `strict` mode blocks Claude Code immediately. Switch to
-  `PAUTH_PLANNER_STRATEGY=llm-freeform` with `PAUTH_PLANNER_SUITE`
-  set, or extend the recognizer.
-* **Registered strategy not implemented** → `interactive-structuring`,
-  `specialized-codegen`, and `formal-semantic` currently reject
-  explicitly. They are named slots for future work, not fallbacks.
-* **Tool not in the plan** → `pretool.sh` reports REJECT. In `strict`
-  mode Claude Code can't run that tool. In `log` mode it proceeds but
-  the rejection is in the log -- useful for measuring real Claude Code
-  behaviour before committing to enforcement.
+* **Gateway daemon down** → hook が HTTP エラーを表示する。`strict` モードでは
+  これがブロックし、`log` では許可する。自動再起動はない。
+* **Prompt outside the deterministic recognizer subset** → ゲートウェイが拒否し、
+  `strict` モードでは即座に Claude Code をブロックする。`PAUTH_PLANNER_SUITE` を
+  設定したうえで `PAUTH_PLANNER_STRATEGY=llm-freeform` へ切り替えるか、recognizer を
+  拡張する。
+* **Registered strategy not implemented** → `interactive-structuring`、
+  `specialized-codegen`、`formal-semantic` は現状、明示的に拒否する。これらは
+  将来の作業のための名前付き枠であって、フォールバックではない。
+* **Tool not in the plan** → `pretool.sh` が REJECT を報告する。`strict` モードでは
+  Claude Code はそのツールを実行できない。`log` モードでは続行するが、拒否はログに
+  残る。強制にコミットする前に、実際の Claude Code の挙動を測定するのに有用だ。
 
-See `architecture.md` for the system-wide design and `grill.md` for the
-decision history (Q10 capture mechanism, Q13 trust shift, etc.).
+システム全体の設計については `architecture.md` を、決定の履歴（Q10 capture
+mechanism、Q13 trust shift など）については `grill.md` を参照。

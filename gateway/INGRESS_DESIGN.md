@@ -1,42 +1,40 @@
-# Ingress design: SDK-direct first, interception later
+# Ingress 設計: まず SDK 直結、interception は後で
 
-This memo records how the gateway attaches to an agent, and the decision to make
-**SDK / direct integration the first ingress (beachhead)** while keeping the
-**interception ingress (proxy / hooks) as a slot behind the same contract**,
-built later.
+このメモは gateway が agent にどう接続するか、そして **SDK / 直接統合を最初の
+ingress（beachhead）** とし、**interception ingress（proxy / hooks）は同じ
+contract の背後の slot として**後から構築する、という決定を記録する。
 
-It follows the `DESIGN_STATUS.md` discipline: confirmed decisions and open
-questions are kept separate so the design does not look more settled than it is.
+本メモは `DESIGN_STATUS.md` の規律に従う。確定した決定と未解決の問いを分離し、
+設計が実態以上に固まって見えないようにする。
 
-Cross-references: `architecture.md` §1.1/§1.2 (ingress boundary — uses "ingress"
-at the *adapter* level; see its "Terminology note" pointing back to the
-directional model here; the leg model lands in architecture.md only once
-interception is implemented), `plan.md` issue B5 (Bash escape hatch),
-`DESIGN_STATUS.md` bottleneck #2 (prompt capture is the main product risk),
-`BUSINESS_STRATEGY.md` §3.1 (target segment decision).
+相互参照: `architecture.md` §1.1/§1.2（ingress 境界 — *adapter* レベルで
+"ingress" を使う。ここの directional model を指し示す "Terminology note" を参照。
+leg モデルが architecture.md に載るのは interception 実装後だけ）、`plan.md`
+issue B5（Bash escape hatch）、`DESIGN_STATUS.md` bottleneck #2（prompt capture が
+主要なプロダクトリスク）、`BUSINESS_STRATEGY.md` §3.1（ターゲットセグメントの決定）。
 
-## Core principle: ingress mode is a function of who owns the agent
+## 中核原則: ingress モードは agent を誰が所有するかで決まる
 
-| Who owns the agent | Ingress mode | Why |
+| agent を所有するのは誰か | Ingress モード | 理由 |
 |---|---|---|
-| The customer builds it (self-developed agent) | **SDK / direct integration** | The customer owns the code, so they call the gateway (pauth core) directly. No interception needed. |
-| A third party (unmodified Claude Code, Codex, ...) | **Interception** (inference proxy / hooks) | The code cannot be changed, so prompt and tool events must be captured from outside. |
+| 顧客が構築する（自社開発 agent） | **SDK / 直接統合** | 顧客がコードを所有するので、gateway（pauth core）を直接呼ぶ。interception は不要。 |
+| サードパーティ製（無改変の Claude Code, Codex, ...） | **Interception**（inference proxy / hooks） | コードを変更できないので、prompt と tool イベントを外側から捕捉する必要がある。 |
 
-Both ingress modes normalize into the **same** `PromptMessage` /
-`ToolCallMessage` contract (`gateway/ingress/agent_channel.py`) and feed the **same**
-deterministic core (`pauth/`). Only the ingress adapter differs. This is exactly
-what the loose-coupling boundary in `architecture.md` was built for.
+どちらの ingress モードも **同一の** `PromptMessage` /
+`ToolCallMessage` contract（`gateway/ingress/agent_channel.py`）に正規化され、
+**同一の**決定的コア（`pauth/`）に流れ込む。異なるのは ingress adapter だけ。
+これはまさに `architecture.md` の疎結合境界が想定していた用途だ。
 
-But note: **"ingress" is used at two levels in this memo** — the *adapter* (SDK
-vs interception, above) and the *wire-level direction* of each capture/enforcement
-tap. Capture and enforcement do **not** sit on the same leg of the round trip.
-See "Directional model" below before reading Mode 2.
+ただし注意: **本メモでは "ingress" を2つのレベルで使う** — *adapter*（上記の
+SDK vs interception）と、各 capture/enforcement タップの *ワイヤレベルの方向* だ。
+capture と enforcement は往復のうち **同じ leg には乗らない**。
+Mode 2 を読む前に下記の "Directional model" を参照すること。
 
-## Directional model: "ingress" ≠ a single direction (往路/復路 × ingress/egress)
+## Directional model: "ingress" ≠ 単一方向ではない（往路/復路 × ingress/egress）
 
-The agent↔provider exchange is a **round trip**, so relative to the gateway there
-are four legs, not one. Conflating them hides the fact that the gateway can only
-*observe* on some legs and only *enforce* on another.
+agent↔provider のやり取りは **往復（round trip）** なので、gateway から見れば leg は
+1つではなく4つある。これらを混同すると、gateway がある leg では *observe* しか
+できず、別の leg でしか *enforce* できない、という事実が隠れてしまう。
 
 ```text
           往路ingress              往路egress
@@ -45,70 +43,69 @@ agent ──────────────────▶ gateway ──�
           復路egress              復路ingress
 ```
 
-| Leg | Wire direction | What flows | Gateway's job |
+| Leg | ワイヤ方向 | 流れるもの | Gateway の役割 |
 |---|---|---|---|
-| **往路ingress** | agent → gateway | user prompt (request in) | **observe** prompt → `PromptMessage`; plan-once (A1–A3) |
-| **往路egress** | gateway → provider | user prompt (request out) | relay; optional prompt redaction before it leaves |
-| **復路ingress** | provider → gateway | model's `tool_use` (response in) | **observe** tool calls → `ToolCallMessage` |
-| **復路egress** | gateway → agent | response (response out) | **enforce** — rewrite/block a denied `tool_use` before the agent sees it (B1–B4) |
+| **往路ingress** | agent → gateway | user prompt（リクエスト入） | prompt を **observe** → `PromptMessage`; plan-once (A1–A3) |
+| **往路egress** | gateway → provider | user prompt（リクエスト出） | 中継。送出前に任意で prompt redaction |
+| **復路ingress** | provider → gateway | model の `tool_use`（レスポンス入） | tool call を **observe** → `ToolCallMessage` |
+| **復路egress** | gateway → agent | response（レスポンス出） | **enforce** — agent が見る前に、拒否された `tool_use` を rewrite/block する (B1–B4) |
 
-Two consequences fall straight out of this:
+ここから2つの帰結が直ちに導かれる:
 
-1. **Observation lives on the ingress legs; enforcement lives on 復路egress.**
-   Capturing the prompt (往路ingress) and capturing tool calls (復路ingress) are
-   read-only taps. Actually *stopping* a tool call requires acting on
-   **復路egress** — a read-write tap. This is the wire-level statement of
-   "capture is not enforcement" (Mode 2 below).
-2. **The two contracts map to the two ingress legs.** `PromptMessage` = 往路ingress;
-   `ToolCallMessage` = 復路ingress. The core never touches egress directly — it
-   returns a decision that the **復路egress** leg applies.
+1. **observation は ingress leg 群に、enforcement は 復路egress に存在する。**
+   prompt の捕捉（往路ingress）と tool call の捕捉（復路ingress）は read-only の
+   タップだ。tool call を実際に *止める* には **復路egress** — read-write の
+   タップ — で動く必要がある。これは「capture is not enforcement」（下記 Mode 2）
+   のワイヤレベルでの言明だ。
+2. **2つの contract は2つの ingress leg に対応する。** `PromptMessage` = 往路ingress、
+   `ToolCallMessage` = 復路ingress。コアは egress に直接触れることはなく、
+   **復路egress** leg が適用する decision を返すだけだ。
 
-The **tool-execution channel** (agent ↔ MCP / external tool) is a *second* round
-trip with its own four legs. The tool proxy (B, below) acts on **its 往路**
-(agent → tool request), not on the inference round trip at all.
+**tool-execution channel**（agent ↔ MCP / 外部 tool）は、独自の4つの leg を持つ
+*2本目の* 往復だ。tool proxy（下記 B）は inference の往復ではなく、**その 往路**
+（agent → tool リクエスト）で動く。
 
-How each mode occupies these legs:
+各モードがこれらの leg をどう占有するか:
 
 | | 往路ingress | 往路egress | 復路ingress | 復路egress |
 |---|---|---|---|---|
-| **Mode 1 SDK** | `submit_user_prompt` (out-of-band call) | — (agent calls provider itself) | `handle_tool_call` (out-of-band call) | decision = function return value; **the agent's own code applies it** |
-| **Mode 2 inference proxy** | proxy reads request | proxy relays | proxy reads response | proxy rewrites/blocks — path (A) |
+| **Mode 1 SDK** | `submit_user_prompt`（帯域外呼び出し） | —（agent が自分で provider を呼ぶ） | `handle_tool_call`（帯域外呼び出し） | decision = 関数の戻り値; **agent 自身のコードがそれを適用する** |
+| **Mode 2 inference proxy** | proxy がリクエストを読む | proxy が中継する | proxy がレスポンスを読む | proxy が rewrite/block する — path (A) |
 
-In **Mode 1 the gateway is not inline**: it is a callee beside the agent, so
-往路egress does not exist for it and "enforcement" is only the boolean the
-customer's code agrees to honor. In **Mode 2 the gateway is inline**, so all four
-legs are real and **復路egress is where the (fragile) response rewriting must
-happen** — which is exactly why it can desync the agent's state.
+**Mode 1 では gateway は inline ではない**。agent の傍らにいる呼び出し先（callee）で
+あり、よって 往路egress は gateway にとって存在せず、「enforcement」は顧客のコードが
+従うことに同意する boolean に過ぎない。**Mode 2 では gateway は inline** なので、
+4つの leg すべてが実在し、**(壊れやすい) response rewriting が起きざるをえないのは
+復路egress** だ — これこそが agent の状態を desync させうる理由そのものだ。
 
-## Decision
+## 決定
 
-- **Beachhead = Mode 1 (SDK / direct), self-built-agent / ToB segment.** Build
-  now.
-- **Mode 2 (interception) is sequenced after.** Keep the ingress boundary open
-  so it can attach behind the same contract, but **do not implement the
-  interception adapter yet.**
-- **ToC is not a paying segment.** No subscription-based payment / billing path
-  for consumers. See `BUSINESS_STRATEGY.md`.
+- **Beachhead = Mode 1（SDK / 直接）、自社構築 agent / ToB セグメント。** 今すぐ
+  構築する。
+- **Mode 2（interception）は後回しにする。** ingress 境界を開いたままにして同じ
+  contract の背後に接続できるようにするが、**interception adapter はまだ実装しない。**
+- **ToC は課金セグメントではない。** 消費者向けの subscription ベースの支払い /
+  課金経路は設けない。`BUSINESS_STRATEGY.md` を参照。
 
-Build discipline (three layers, do not collapse them):
+構築の規律（3層、これらを潰さないこと）:
 
-| Layer | Build now? | Note |
+| 層 | 今すぐ構築? | 備考 |
 |---|---|---|
-| Shared core (`pauth/`, enforcer, envelope, `AgentChannel` contract) | **Yes** | Serves both modes. The foundation. |
-| Ingress boundary (clean, contract-stable seam) | **Already exists** | Keep it clean so Mode 2 can attach later. |
-| Mode 1 SDK ingress | **Yes** | The beachhead. First customers use this. |
-| Mode 2 interception ingress (proxy / hooks) | **No — slot only** | Speculative until Mode 1 is validated. Do not code the adapter yet. |
+| 共有コア（`pauth/`、enforcer、envelope、`AgentChannel` contract） | **Yes** | 両モードに供する。基盤だ。 |
+| Ingress 境界（クリーンで contract が安定した継ぎ目） | **既に存在** | Mode 2 を後から接続できるようクリーンに保つ。 |
+| Mode 1 SDK ingress | **Yes** | beachhead。最初の顧客はこれを使う。 |
+| Mode 2 interception ingress（proxy / hooks） | **No — slot のみ** | Mode 1 が検証されるまでは投機的。adapter はまだ実装しない。 |
 
-"Build both" means *prepare* both (shared core + open boundary), not *implement*
-both. Coding the Mode 2 adapter before Mode 1 is validated is premature
-abstraction against an unvalidated second use case.
+「両方を build する」とは、両方を *準備する*（共有コア + 開いた境界）という意味で
+あって、両方を *実装する* ことではない。Mode 1 が検証される前に Mode 2 adapter を
+書くのは、未検証の2つ目のユースケースに対する早すぎる抽象化だ。
 
 ---
 
-## Mode 1 — SDK / direct integration (beachhead, build now)
+## Mode 1 — SDK / 直接統合（beachhead、今すぐ構築）
 
-The customer's own agent code calls the gateway directly: submit the clean
-prompt once, then route each tool call through the enforcer before executing.
+顧客自身の agent コードが gateway を直接呼ぶ。clean な prompt を一度 submit し、
+その後は各 tool call を実行前に enforcer 経由でルーティングする。
 
 ```text
 customer agent code
@@ -119,102 +116,101 @@ customer agent code
         → denied  → refuse
 ```
 
-Why this is the beachhead (not just an option):
+なぜこれが（単なる選択肢ではなく）beachhead なのか:
 
-1. **It removes the hardest unsolved problem.** `DESIGN_STATUS.md` bottleneck #2
-   (robustly capturing the clean prompt from an unmodified agent) **does not
-   exist here** — the customer hands the clean prompt and tool calls to the SDK
-   directly. No base-URL MITM, no hook removal, no TLS pinning, no TOS grey area.
-2. **It removes the provider-controlled-surface strategic risk.** The
-   integration point is the customer's own code, not a provider's hook surface.
-   Provider incentives cannot degrade it.
-3. **It ships a provable L3 product now.** Full capture + full enforcement, with
-   no fragility, without waiting for interception tech to mature.
+1. **最も難しい未解決問題を取り除く。** `DESIGN_STATUS.md` bottleneck #2
+   （無改変の agent から clean な prompt を堅牢に捕捉する）は **ここには存在しない**
+   — 顧客が clean な prompt と tool call を SDK に直接手渡すからだ。base-URL の
+   MITM も、hook 除去も、TLS pinning も、TOS のグレーゾーンもない。
+2. **provider が制御する面という戦略的リスクを取り除く。** 統合点は provider の
+   hook 面ではなく顧客自身のコードだ。provider のインセンティブによってこれが
+   劣化させられることはない。
+3. **証明可能な L3 プロダクトを今すぐ出荷できる。** 完全な capture + 完全な
+   enforcement を、壊れやすさなしに、interception 技術の成熟を待たずに実現する。
 
-Market reality (do not romanticize):
+市場の実態（美化しないこと）:
 
-- **Narrower segment.** Most companies use off-the-shelf agents; the set that
-  builds its own agent *and* wants a third-party authorization framework is
-  smaller. But it is more sophisticated, higher-value, and stickier once
-  integrated. Matches the "narrow, defensible wedge" in `BUSINESS_STRATEGY.md`.
-- **Heavier competition.** The "secure your own agent" space has more direct
-  competitors than the unmodified-agent-firewall space (NeMo Guardrails,
-  Guardrails AI, Llama Guard, agent frameworks). Differentiation must lean hard
-  on **deterministic, provable task-scoping** vs ad-hoc / probabilistic checks.
-- **Framework-vs-DIY tension.** A team that can build its own agent can also
-  hand-roll its own checks. PAuth must be clearly better than rolling your own:
-  a principled, envelope-backed, plan-once authorization framework, proven with
-  honest FP/FN numbers.
+- **より狭いセグメント。** ほとんどの企業は既製の agent を使う。自社で agent を
+  構築し *かつ* サードパーティの認可フレームワークを望む層はより小さい。だが、
+  より洗練され、価値が高く、いったん統合されると粘着性が高い。
+  `BUSINESS_STRATEGY.md` の「狭く防御可能なウェッジ」に合致する。
+- **より激しい競争。** 「自社 agent を保護する」領域は、無改変 agent firewall 領域
+  よりも直接競合が多い（NeMo Guardrails, Guardrails AI, Llama Guard, agent
+  フレームワーク群）。差別化は、その場しのぎ / 確率的なチェックに対して
+  **決定的で証明可能な task-scoping** に強く依拠せねばならない。
+- **framework vs DIY の緊張。** 自社で agent を構築できるチームは、自前のチェックも
+  手で書ける。PAuth は自作よりも明確に優れていなければならない。すなわち、原則に
+  基づき、envelope に裏打ちされ、plan-once な認可フレームワークであり、正直な
+  FP/FN の数値で証明されたものだ。
 
 ---
 
-## Mode 2 — Interception (unmodified agents; later, slot only)
+## Mode 2 — Interception（無改変 agent; 後回し、slot のみ）
 
-For agents whose code cannot be changed (Claude Code, Codex). **Not built yet.**
-Recorded here so the boundary stays designed-for, not retrofitted.
+コードを変更できない agent（Claude Code, Codex）向け。**まだ構築していない。**
+境界が後付けではなく設計済みであり続けるよう、ここに記録しておく。
 
-The interception sub-mode depends on the agent's auth:
+interception のサブモードは agent の認証方式に依存する:
 
-| Agent auth | Interception | Notes |
+| Agent の認証 | Interception | 備考 |
 |---|---|---|
-| API key / API (Bedrock / Vertex / Azure) | **Inference proxy** (base-URL redirect, relay to provider) | Clean to MITM; the key is the customer's; API terms permit building on the API. The natural fit for ToB. |
-| Subscription (OAuth, per-seat) | **Hooks** (`UserPromptSubmit` + `PreToolUse`) | Inference proxy is blocked: first-party-bound token, possible TLS pinning, and TOS risk. Hooks run inside the agent runtime, auth-agnostic. |
+| API キー / API（Bedrock / Vertex / Azure） | **Inference proxy**（base-URL リダイレクト、provider へ中継） | MITM がクリーン。キーは顧客のもの。API 規約は API 上での構築を許容する。ToB に自然に適合。 |
+| Subscription（OAuth、席単位） | **Hooks**（`UserPromptSubmit` + `PreToolUse`） | Inference proxy は塞がれている。first-party に紐づくトークン、TLS pinning の可能性、TOS リスク。Hooks は agent ランタイム内で動き、認証方式に依存しない。 |
 
-Subscription walls (why inference proxy is not viable there):
+Subscription の壁（なぜそこで inference proxy が成立しないか）:
 
-1. The OAuth token is issued for the provider's first-party use; relaying it
-   through a third-party proxy is a likely TOS / "unintended use" violation.
-2. TLS pinning, if present, defeats local network MITM. (Unverified for current
-   Claude Code — needs real-device testing.)
-3. A trust-selling product must not ship a TOS-violating MITM. Prefer explicit
-   "subscription not supported; API / Team / Enterprise only".
+1. OAuth トークンは provider の first-party 利用のために発行される。サードパーティの
+   proxy 経由で中継するのは、TOS / 「意図しない利用」違反になる公算が高い。
+2. TLS pinning がある場合、ローカルネットワークの MITM は無効化される。（現行の
+   Claude Code については未検証 — 実機テストが必要。）
+3. 信頼を売るプロダクトが TOS 違反の MITM を出荷してはならない。明示的に
+   「subscription は非対応。API / Team / Enterprise のみ」とするのが望ましい。
 
-Capture is not enforcement (applies to the inference-proxy path) — this is the
-往路/復路 split made concrete:
+Capture is not enforcement（inference-proxy 経路に適用される） — これは 往路/復路 の
+分割を具体化したものだ:
 
-- The inference proxy **observes** the tool calls the model emits at **復路ingress**;
-  it does not by itself **block** them. Blocking requires acting on **復路egress**.
-- **(A) Response rewriting** (acts on **復路egress** of the inference channel) —
-  rewrite a denied `tool_use` in the model's response before it reaches the agent.
-  Can gate agent-internal tools (Claude Code `Bash`, file ops) that never leave
-  the agent — the only no-modification way to touch the B5 escape hatch. Fragile:
-  rewriting the response mid-flight can desync the agent's state.
-- **(B) Tool proxy** (acts on the **往路 of the tool-execution channel**, not the
-  inference round trip) — route MCP / external tool calls through the gateway and
-  deny there (`gateway/providers/mcp_suite.py`). Robust, but agent-internal tools never
-  route here.
-- Full L3 interception = (A) + (B) — because they cover **different legs on
-  different channels**, neither alone is complete.
+- inference proxy は model が **復路ingress** で発する tool call を **observe** する。
+  それ自体は tool call を **block** しない。block するには **復路egress** で動く
+  必要がある。
+- **(A) Response rewriting**（inference channel の **復路egress** で動く） — model の
+  レスポンス中の拒否された `tool_use` を、agent に届く前に rewrite する。agent から
+  外に出ない agent 内部の tool（Claude Code の `Bash`、ファイル操作）を gate できる
+  — B5 escape hatch に触れる唯一の無改変手段だ。壊れやすい。レスポンスを途中で
+  rewrite すると agent の状態を desync させうる。
+- **(B) Tool proxy**（inference の往復ではなく、**tool-execution channel の 往路** で
+  動く） — MCP / 外部 tool call を gateway 経由でルーティングし、そこで deny する
+  （`gateway/providers/mcp_suite.py`）。堅牢だが、agent 内部の tool はここを通らない。
+- 完全な L3 interception = (A) + (B) — これらは **異なる channel 上の異なる leg** を
+  カバーするので、どちらか一方だけでは完全にならない。
 
-Prior art proving the relay is feasible (not novel): LiteLLM, Cloudflare AI
-Gateway, Helicone, OpenRouter. The novel part is loading PAuth onto the relay.
+中継が実現可能（新規ではない）ことを示す先行例: LiteLLM, Cloudflare AI Gateway,
+Helicone, OpenRouter。新規なのは、その中継に PAuth を載せる部分だ。
 
 ---
 
-## Open questions (not yet decided)
+## 未解決の問い（未決定）
 
-1. **Mode 1 SDK shape.** What is the SDK surface? Minimal: `submit_user_prompt`
-   + `handle_tool_call` wrapping the existing `Gateway` class. Language bindings
-   (Python first; others later?). Sync vs async. Error/deny return contract.
-2. **Differentiation proof for Mode 1.** Concrete demo + honest benchmark showing
-   PAuth beats hand-rolled checks and probabilistic guardrails for task-scoping.
-   This is the GTM-critical artifact, not just code.
-3. **Bash / internal-tool scope (Mode 2).** Reachable only via (A) response
-   rewriting. Intersects the unresolved B5 / bottleneck #5 decision. Defer with
-   Mode 2.
-4. **Subscription support stance.** Likely "not supported; API / Team /
-   Enterprise only". Confirm before any Mode 2 work.
-5. **Custody.** Any interception path that sees plaintext prompts + keys must be
-   **self-host only** until trust is established (`BUSINESS_OPERATIONS.md`).
+1. **Mode 1 SDK の形。** SDK の表面（surface）はどうあるべきか。最小構成: 既存の
+   `Gateway` クラスをラップする `submit_user_prompt` + `handle_tool_call`。言語
+   バインディング（まず Python; 他は後で?）。sync vs async。エラー/deny の戻り
+   contract。
+2. **Mode 1 の差別化の証明。** task-scoping において PAuth が自作チェックや確率的
+   guardrail に勝ることを示す、具体的なデモ + 正直なベンチマーク。これは単なる
+   コードではなく GTM 上の最重要成果物だ。
+3. **Bash / 内部 tool の scope（Mode 2）。** (A) response rewriting 経由でしか到達
+   できない。未解決の B5 / bottleneck #5 の決定と交差する。Mode 2 と一緒に先送りする。
+4. **Subscription サポートの方針。** おそらく「非対応。API / Team / Enterprise のみ」。
+   Mode 2 の作業に着手する前に確定する。
+5. **Custody（保管責任）。** plaintext の prompt + キーを見る interception 経路は
+   すべて、信頼が確立されるまで **self-host のみ** とする（`BUSINESS_OPERATIONS.md`）。
 
-## Sequencing
+## Sequencing（順序付け）
 
-1. Build the shared core + keep the ingress boundary clean (mostly exists).
-2. Build the **Mode 1 SDK ingress** and the differentiation demo/benchmark.
-3. Land the first self-built-agent (ToB) customers on Mode 1.
-4. **Only after Mode 1 is validated:** implement Mode 2 interception, starting
-   with the inference-proxy + tool-proxy (API/ToB) path; treat subscription as
-   out of scope unless a clear, TOS-clean mechanism exists.
-5. Update `architecture.md` §1.1/§1.2 to reflect real ingress only after each
-   adapter exists in code.
-</content>
+1. 共有コアを構築し、ingress 境界をクリーンに保つ（大部分は既存）。
+2. **Mode 1 SDK ingress** と差別化のデモ/ベンチマークを構築する。
+3. 最初の自社構築 agent（ToB）顧客を Mode 1 に着地させる。
+4. **Mode 1 が検証された後にのみ:** Mode 2 interception を実装する。inference-proxy
+   + tool-proxy（API/ToB）経路から始める。明確で TOS クリーンな仕組みが存在しない
+   限り、subscription は対象外として扱う。
+5. 各 adapter がコードに存在してからのみ、`architecture.md` §1.1/§1.2 を実際の
+   ingress に合わせて更新する。

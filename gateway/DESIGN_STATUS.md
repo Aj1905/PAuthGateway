@@ -1,24 +1,22 @@
 # Design status
 
-This document separates the current gateway design from ideas still under
-discussion, points judged technically impossible under the stated constraints,
-and the main development bottlenecks.
+このドキュメントは、現行の gateway 設計を、まだ議論中のアイデア、規定の制約下では
+技術的に不可能と判断された点、そして主要な開発ボトルネックから切り分けて記述する。
 
-OSS packaging and commercial operating assumptions live in
-`gateway/BUSINESS_OPERATIONS.md`.
+OSS のパッケージングと商用運用の前提は `gateway/BUSINESS_OPERATIONS.md` に置く。
 
 ## Current Design
 
-The current architecture is an agent-facing authorization gateway. The agent
-runtime stays unmodified, but an agent-specific integration forwards task and
-tool events to the gateway before outward actions execute.
+現行アーキテクチャは、エージェント側に立つ認可 gateway である。エージェント
+ランタイム自体は改変しないが、エージェント固有の統合層が、外向きアクションが
+実行される前にタスクイベントとツールイベントを gateway へ転送する。
 
 ### Confirmed Architecture
 
-This is the confirmed logical architecture. Hosting choices are deliberately
-left out of this diagram: the gateway may later run on localhost, a user VM, a
-private network service, or a managed self-hosted package, but these logical
-boundaries should remain stable.
+これは確定した論理アーキテクチャである。ホスティングの選択は意図的にこの図から
+除外している。gateway は後に localhost、ユーザ VM、プライベートネットワーク
+サービス、あるいはマネージドな自己ホストパッケージ上で動きうるが、これらの論理的
+境界は安定して保たれるべきである。
 
 ```mermaid
 flowchart LR
@@ -68,122 +66,119 @@ flowchart LR
     style ToolBoundary stroke:#d00,stroke-width:2px,stroke-dasharray:4 4,fill:#fff
 ```
 
-Confirmed implications:
+確定した含意:
 
-- Each agent can require its own setup adapter. That is acceptable as long as
-  all adapters normalize into the same gateway event contract.
-- The gateway's product core is not the Claude Code hook. Claude Code is one
-  adapter.
-- Network routing is necessary for bypass prevention, but not sufficient for
-  PAuth enforcement unless prompt and tool events are also captured.
-- Hosting is an operational decision. It must not leak into planner logic,
-  enforcement logic, or `SuiteSpec`.
-- The gateway must report its effective protection level. If prompt capture or
-  route control is missing, the session must not be marketed as full PAuth
-  protection.
+- 各エージェントはそれぞれ専用の setup adapter を必要としうる。すべての adapter が
+  同一の gateway イベント契約へ正規化される限り、それは許容できる。
+- gateway の製品コアは Claude Code hook ではない。Claude Code は一つの adapter に
+  すぎない。
+- ネットワークルーティングは bypass 防止には必要だが、プロンプトイベントとツール
+  イベントも捕捉しない限り、PAuth 強制には十分ではない。
+- ホスティングは運用上の決定である。それが planner ロジック、enforcement ロジック、
+  あるいは `SuiteSpec` に漏れ出してはならない。
+- gateway は自身の実効保護レベルを報告しなければならない。prompt capture または
+  route 制御が欠けている場合、そのセッションを完全な PAuth 保護として訴求しては
+  ならない。
 
-Current stable boundaries:
+現行の安定境界:
 
 | Boundary | Current contract | Repo anchor |
 |---|---|---|
-| Agent ingress | `PromptMessage` and `ToolCallMessage` over the gateway message API. | `gateway/ingress/agent_channel.py`, `gateway/serving/http_server.py` |
-| Planning | User prompt plus tool schemas are converted into restricted imperative `run()` code. | `gateway/planning/planner.py`, `gateway/PLANNING_STRATEGIES.md` |
-| Validation | Generated code must pass grammar, slicing, and rule compilation before enforcement. | `pauth/grammar.py`, `pauth/pipeline.py`, `pauth/rules.py` |
-| Enforcement | Every tool call is checked against compiled rules and envelope-backed observations. | `pauth/enforcer.py`, `pauth/envelope.py` |
-| Tool source | Tool providers adapt into `SuiteSpec`. | `pauth/suites/base.py`, `gateway/providers/openapi_suite.py`, `gateway/providers/mcp_suite.py` |
+| Agent ingress | gateway message API 上の `PromptMessage` と `ToolCallMessage`。 | `gateway/ingress/agent_channel.py`, `gateway/serving/http_server.py` |
+| Planning | ユーザープロンプトとツールスキーマを、制限付き命令型の `run()` code へ変換する。 | `gateway/planning/planner.py`, `gateway/PLANNING_STRATEGIES.md` |
+| Validation | 生成された code は enforcement 前に文法・slicing・ルールコンパイルを通過しなければならない。 | `pauth/grammar.py`, `pauth/pipeline.py`, `pauth/rules.py` |
+| Enforcement | すべてのツール呼び出しは、コンパイル済みルールと envelope 裏付けの観測に対して検査される。 | `pauth/enforcer.py`, `pauth/envelope.py` |
+| Tool source | ツールプロバイダは `SuiteSpec` へと adapt される。 | `pauth/suites/base.py`, `gateway/providers/openapi_suite.py`, `gateway/providers/mcp_suite.py` |
 
-Implemented integrations and providers:
+実装済みの統合とプロバイダ:
 
-- Claude Code hooks are the first ingress adapter, not the product core.
-- The shopping suite is the local deterministic demo suite.
-- AgentDojo is used through `tests/experiment/agentdojo_adapter.py` for
-  benchmark/mock environments.
-- MCP and OpenAPI providers can be adapted into `SuiteSpec`.
-- OpenAPI specs can be reflected into tool schemas and monitored for changes.
+- Claude Code hooks は最初の ingress adapter であって、製品コアではない。
+- shopping suite はローカルの決定的なデモ suite である。
+- AgentDojo は `tests/experiment/agentdojo_adapter.py` を介して benchmark/mock
+  環境に用いられる。
+- MCP と OpenAPI のプロバイダは `SuiteSpec` へ adapt できる。
+- OpenAPI specs はツールスキーマへ reflect でき、変更も監視できる。
 
-Implemented planner strategies:
+実装済みの planner strategies:
 
-- `deterministic`: default recognizer for known prompt patterns.
-- `llm-freeform`: LLM code generation with grammar repair retries and optional
-  judge support.
+- `deterministic`: 既知のプロンプトパターンに対するデフォルトの recognizer。
+- `llm-freeform`: 文法修復リトライと任意の judge サポートを備えた LLM コード生成。
 
-Registered but unimplemented planner slots:
+登録済みだが未実装の planner スロット:
 
 - `interactive-structuring`
 - `specialized-codegen`
 - `formal-semantic`
 
-Current protection model:
+現行の保護モデル:
 
 | Level | Observed by gateway | Claim |
 |---|---|---|
-| L0 | Network destination only | Coarse firewall; no PAuth guarantee. |
-| L1 | Tool call only | Can deny unknown/off-policy tools, but cannot infer task intent. |
-| L2 | Clean prompt plus tool call | PAuth plan enforcement becomes meaningful. |
-| L3 | Clean prompt plus tool call plus gateway-executed tools | Strongest current target. |
+| L0 | ネットワーク宛先のみ | 粗い firewall。PAuth の保証はない。 |
+| L1 | ツール呼び出しのみ | 未知/ポリシー外のツールは拒否できるが、タスク意図は推論できない。 |
+| L2 | clean prompt とツール呼び出し | PAuth の plan 強制が意味を持ち始める。 |
+| L3 | clean prompt とツール呼び出しに加え、gateway が実行するツール | 現行で最も強い目標。 |
 
-The product should aim for L3, while being explicit when a deployment is only
-L0, L1, or L2.
+製品は L3 を目指すべきだが、あるデプロイが L0・L1・L2 にとどまる場合はそれを
+明示すべきである。
 
 ## Discussed Improvements
 
-These are plausible improvements, but they are not yet guaranteed or fully
-implemented.
+これらはもっともらしい改善ではあるが、まだ保証されておらず、完全には実装されて
+いない。
 
 ### Localhost Versus Isolated VM
 
-The deployment target is intentionally unresolved. The open question is not
-"small scale versus large scale"; it is how strongly the agent process must be
-contained.
+デプロイ先は意図的に未確定のままにしている。問うべきは「小規模か大規模か」では
+なく、エージェントプロセスをどれだけ強く containment する必要があるか、である。
 
-Two candidate modes are under discussion:
+議論中の候補モードは二つある:
 
 | Mode | Shape | Strength | Cost |
 |---|---|---|---|
-| Local adjacent mode | Agent and gateway run on the same user machine. Agent adapters send events to `localhost`. | Low-friction adoption; best first OSS experience. | Does not by itself prevent all direct network bypass from the agent process. |
-| Isolated agent mode | Agent runs inside a VM/container/sandbox. The agent can only reach the gateway; the gateway reaches SaaS/API. | Stronger containment of the agent's external communication. | Heavier setup; OS/runtime dependent; may reduce OSS adoption if required first. |
+| Local adjacent mode | エージェントと gateway を同一のユーザマシン上で動かす。エージェント adapter は `localhost` へイベントを送る。 | 低摩擦の導入。最良の初回 OSS 体験。 | これ単体ではエージェントプロセスからの全ての直接ネットワーク bypass を防げない。 |
+| Isolated agent mode | エージェントを VM/コンテナ/サンドボックス内で動かす。エージェントは gateway にしか到達できず、gateway が SaaS/API に到達する。 | エージェントの外部通信をより強く containment できる。 | セットアップが重い。OS/ランタイム依存。最初に必須化すると OSS 採用を減らしうる。 |
 
-The design question is:
+設計上の問いはこうだ:
 
 ```text
 Should the default OSS experience optimize for low-friction local adoption, or
 should the default security story require an isolated agent runtime?
 ```
 
-Current leaning:
+現時点の傾き:
 
-- Keep the logical architecture agent-adjacent.
-- Do not make VPC/cloud placement the main frame.
-- Treat `localhost` as the likely first user experience.
-- Treat VM/container/sandbox isolation as the stronger containment mode.
-- Do not claim that localhost alone guarantees all agent network traffic must
-  pass through the gateway.
+- 論理アーキテクチャはエージェント隣接（agent-adjacent）に保つ。
+- VPC/クラウド配置を主たるフレームにしない。
+- `localhost` を最初のユーザ体験として想定する。
+- VM/コンテナ/サンドボックスの隔離を、より強い containment モードとして扱う。
+- localhost 単体で全エージェントのネットワークトラフィックが必ず gateway を通る、
+  とは主張しない。
 
-Key dependency:
+主要な依存関係:
 
-- Localhost mode becomes more realistic as OS-level agent permission management
-  matures. If the operating system or agent runtime can reliably restrict a
-  specific agent process to approved network destinations, credentials, files,
-  and tools without affecting other desktop apps, then a localhost gateway can
-  provide stronger containment with much lower setup cost.
-- Until that exists, localhost mode should rely on credential isolation,
-  adapter routing, health checks, and explicit bypass-risk reporting rather
-  than claiming complete process-level containment.
+- localhost モードは、OS レベルのエージェント権限管理が成熟するほど現実的になる。
+  OS またはエージェントランタイムが、特定のエージェントプロセスを、他のデスクトップ
+  アプリに影響を与えずに、承認済みのネットワーク宛先・認証情報・ファイル・ツールへと
+  確実に制限できるなら、localhost gateway ははるかに低いセットアップコストでより
+  強い containment を提供できる。
+- それが存在するまでは、localhost モードは完全なプロセスレベル containment を
+  主張するのではなく、credential 隔離、adapter routing、health checks、そして
+  明示的な bypass リスク報告に依拠すべきである。
 
-This decision should be revisited when implementing daemon startup, health
-checks, and bypass detection. The minimum viable product may support localhost
-first while documenting the stronger VM/container mode as the path to stricter
-containment.
+この決定は、デーモンの起動、health checks、bypass 検出を実装する際に再検討すべき
+である。minimum viable product は、より強い VM/コンテナモードを厳格な containment
+への道として文書化しつつ、まず localhost をサポートするかたちでよい。
 
 ### Dual Deployment Development Model
 
-The localhost version and isolated VM/container version should not become
-separate repositories. They are two deployment modes of the same gateway idea.
-Splitting repositories would create avoidable design drift: planner behavior,
-event contracts, enforcement semantics, adapter schemas, and audit formats
-would need to be manually synchronized.
+localhost 版と isolated VM/コンテナ版を別々のリポジトリにすべきではない。これらは
+同一の gateway というアイデアの二つのデプロイモードである。リポジトリを分割すると、
+避けられたはずの設計ドリフトが生じる。planner の挙動、イベント契約、enforcement の
+セマンティクス、adapter スキーマ、audit フォーマットを手作業で同期し続けねば
+ならなくなる。
 
-Preferred structure:
+推奨する構造:
 
 ```text
 single repository
@@ -199,35 +194,35 @@ single repository
     isolated-agent mode
 ```
 
-Git worktrees are useful for implementation isolation, but they should be used
-as temporary development workspaces, not as permanent product splits.
+Git worktrees は実装の隔離に有用だが、恒久的な製品分割としてではなく、一時的な
+開発ワークスペースとして使うべきである。
 
-Suggested worktree policy:
+推奨する worktree ポリシー:
 
 | Worktree | Purpose | Merge rule |
 |---|---|---|
-| `codex/local-adjacent-mode` | Daemon startup, localhost adapter UX, local health checks. | Must keep event contract and enforcement core shared. |
-| `codex/isolated-agent-mode` | VM/container sandbox profile, gateway-only outbound route, stronger bypass controls. | Must reuse the same gateway protocol and policy engine. |
+| `codex/local-adjacent-mode` | デーモン起動、localhost adapter の UX、ローカルの health checks。 | イベント契約と enforcement core は共有のまま保つこと。 |
+| `codex/isolated-agent-mode` | VM/コンテナ サンドボックスプロファイル、gateway 経由のみの outbound route、より強い bypass 制御。 | 同一の gateway プロトコルとポリシーエンジンを再利用すること。 |
 
-Do not fork the conceptual model:
+概念モデルを fork しないこと:
 
-- `PromptEvent`, `ToolCallEvent`, and `SessionEvent` must stay shared.
-- Planner strategies must stay shared.
-- PAuth validation and enforcement must stay shared.
-- Tool adapters must stay shared where possible.
-- Deployment-specific code should live at the edge: startup scripts, sandbox
-  profiles, installer UX, route enforcement, and health checks.
+- `PromptEvent`、`ToolCallEvent`、`SessionEvent` は共有のまま保つこと。
+- Planner strategies は共有のまま保つこと。
+- PAuth の validation と enforcement は共有のまま保つこと。
+- ツール adapter は可能な限り共有のまま保つこと。
+- デプロイ固有のコードはエッジに置くこと。起動スクリプト、サンドボックス
+  プロファイル、インストーラ UX、route enforcement、health checks など。
 
-Practical rule: create worktrees only after the current design baseline is
-committed. Creating worktrees from a dirty working tree will branch from an
-older `HEAD` and make the two modes diverge before implementation even starts.
+実践的なルール: worktree は現行の設計ベースラインを commit した後にのみ作成する
+こと。dirty な作業ツリーから worktree を作ると、古い `HEAD` から分岐し、実装が
+始まる前から二つのモードを乖離させてしまう。
 
 ### Agent-Agnostic Ingress
 
-The gateway should not standardize on one capture mechanism. It should
-standardize on one event contract.
+gateway は一つの捕捉メカニズムに標準化すべきではない。一つのイベント契約に標準化
+すべきである。
 
-Expected adapter shape:
+想定される adapter の形:
 
 ```text
 Claude Code hook          ┐
@@ -237,88 +232,88 @@ browser/desktop adapter   │
 custom agent adapter      ┘
 ```
 
-This means each agent still needs setup, but the gateway can treat all of them
-the same after normalization.
+これは、各エージェントが依然として setup を必要とする一方、gateway は正規化後に
+すべてを同一に扱えることを意味する。
 
-Required next step: promote the current `PromptMessage` and `ToolCallMessage`
-wire shapes into an explicit Gateway Integration Contract, including fields
-such as `session_id`, `source`, `captured_before_model`, `protection_level`,
-and bypass/health status.
+必要な次の一歩: 現行の `PromptMessage` と `ToolCallMessage` のワイヤ形状を、
+`session_id`、`source`、`captured_before_model`、`protection_level`、そして
+bypass/health ステータスといったフィールドを含む明示的な Gateway Integration
+Contract へと昇格させること。
 
 ### More Convenient Setup
 
-The best realistic setup experience is:
+現実的に最良の setup 体験はこうだ:
 
-1. install/enable the agent-specific adapter;
-2. set the gateway URL;
-3. route registered tools/API calls through the gateway;
-4. verify health checks show prompt capture and tool routing are active.
+1. エージェント固有の adapter をインストール/有効化する。
+2. gateway URL を設定する。
+3. 登録済みのツール/API 呼び出しを gateway 経由でルーティングする。
+4. health checks で prompt capture とツールルーティングが有効になっていることを
+   確認する。
 
-More convenient variants may be possible:
+さらに便利なバリアントも可能かもしれない:
 
-- one-command local installer;
-- auto-generated Claude Code hook settings;
-- Codex plugin/connector packaging;
-- MCP proxy mode for agents that already use MCP tools;
-- browser/desktop adapter for agents without lifecycle hooks;
-- self-hosted UI for adapter status, planner mode, and connected SaaS specs.
+- ワンコマンドのローカルインストーラ。
+- 自動生成された Claude Code hook 設定。
+- Codex plugin/connector のパッケージング。
+- すでに MCP ツールを使っているエージェント向けの MCP proxy モード。
+- ライフサイクル hook を持たないエージェント向けの browser/desktop adapter。
+- adapter ステータス、planner モード、接続済み SaaS specs を見る自己ホスト UI。
 
-The convenience layer must not hide the protection level. A smooth setup that
-silently degrades to L0 is worse than an explicit setup that tells the user what
-is actually protected.
+利便性レイヤが保護レベルを隠してはならない。静かに L0 へ劣化する滑らかな setup は、
+実際に何が保護されているのかをユーザに伝える明示的な setup よりも悪い。
 
 ### Planner Strategy Evolution
 
-The A1 prompt-to-code layer is intentionally replaceable.
+A1 の prompt-to-code レイヤは意図的に差し替え可能にしてある。
 
-Candidate strategy tracks:
+候補となる strategy のトラック:
 
-- `interactive-structuring`: ask the user targeted questions, build a
-  structured prompt, then generate code.
-- `specialized-codegen`: use a model specialized for restricted imperative
-  code, with validator-driven retries.
-- `formal-semantic`: parse controlled natural language into semantic forms,
-  then emit restricted imperative code.
+- `interactive-structuring`: ユーザに的を絞った質問を投げ、構造化されたプロンプトを
+  組み立て、それからコードを生成する。
+- `specialized-codegen`: 制限付き命令型コードに特化したモデルを、validator 駆動の
+  リトライとともに使う。
+- `formal-semantic`: 制御された自然言語を意味形式へとパースし、それから制限付き
+  命令型コードを出力する。
 
-The invariant is that every strategy must still emit restricted `run()` code
-and pass through deterministic validation. No strategy should emit rules
-directly unless the PAuth core is deliberately redesigned.
+不変条件は、どの strategy も依然として制限付きの `run()` code を出力し、決定的な
+validation を通過しなければならない、という点である。PAuth core を意図的に再設計
+しない限り、いかなる strategy もルールを直接出力すべきではない。
 
 ### API Spec Reflection
 
-OpenAPI reflection is implemented as a foundation, but the full user-facing
-update loop is still open.
+OpenAPI reflection は基盤として実装済みだが、ユーザに見える完全な更新ループは
+まだ未着手である。
 
-Desired future behavior:
+望ましい将来の挙動:
 
-1. detect an upstream API spec change;
-2. show the user added/removed/changed tools and parameters;
-3. require acceptance or policy review for risky changes;
-4. reload or restart the gateway with the accepted tool surface;
-5. persist the accepted spec version for audit.
+1. 上流の API spec 変更を検出する。
+2. 追加/削除/変更されたツールとパラメータをユーザに提示する。
+3. リスクのある変更には受諾またはポリシーレビューを要求する。
+4. 受諾されたツール表面で gateway をリロードまたは再起動する。
+5. 受諾された spec バージョンを audit のために永続化する。
 
-Current limitation: the monitor emits a diff, but a running gateway does not
-yet hot-reload accepted changes.
+現状の制約: monitor は diff を出力するが、稼働中の gateway はまだ受諾された変更を
+ホットリロードしない。
 
 ## Technically Impossible Under Current Constraints
 
-These points should be treated as rejected claims, not future roadmap items,
-unless the constraints change.
+これらの点は、制約が変わらない限り、将来のロードマップ項目ではなく、却下された
+主張として扱うべきである。
 
 ### Zero-Setup Universal Agent Support
 
-There is no universal hook standard across all agents. If an agent does not
-expose prompts, tool calls, or a routeable tool boundary, the gateway cannot
-observe the data needed for PAuth enforcement.
+すべてのエージェントにまたがる普遍的な hook 標準は存在しない。あるエージェントが
+プロンプト、ツール呼び出し、あるいはルーティング可能なツール境界を露出しないなら、
+gateway は PAuth 強制に必要なデータを観測できない。
 
-Therefore this is not a valid claim:
+したがって、これは妥当な主張ではない:
 
 ```text
 Install the gateway once and it automatically protects every agent with no
 agent-specific setup.
 ```
 
-The defensible claim is:
+擁護できる主張はこうだ:
 
 ```text
 For agents with a compatible adapter or routeable tool boundary, the gateway
@@ -328,115 +323,117 @@ SaaS/API execution.
 
 ### Network Proxy Alone Recovers User Intent
 
-A network proxy can observe destinations and sometimes request bodies. It
-cannot reliably recover:
+ネットワークプロキシは宛先を観測でき、ときにリクエストボディも観測できる。だが
+次のものは確実には復元できない:
 
-- the clean user prompt before model reasoning;
-- semantic tool names;
-- structured tool arguments;
-- whether the call belongs to the original task or a later injected goal.
+- モデルの推論前の clean なユーザープロンプト。
+- 意味のあるツール名。
+- 構造化されたツール引数。
+- その呼び出しが元のタスクに属するのか、後から注入されたゴールに属するのか。
 
-Network-only deployment is L0 unless paired with prompt/tool event capture.
+ネットワークのみのデプロイは、prompt/tool イベント捕捉と組み合わせない限り L0 で
+ある。
 
 ### Complete Safety From Prompt-to-Code Generation
 
-PAuth can enforce a generated plan. It does not prove the generated plan
-perfectly captures the user's real intent.
+PAuth は生成された plan を強制できる。だが、その生成された plan がユーザの真の意図を
+完璧に捉えていることを証明するものではない。
 
-Validator retries can prove syntax and restricted-language validity. They
-cannot prove semantic faithfulness by themselves. Any messaging that implies
-"perfect safety" is technically false.
+validator のリトライは、構文と制限言語としての妥当性を証明できる。だがそれだけで
+意味的な忠実さ(semantic faithfulness)を証明することはできない。「完璧な安全性」を
+匂わせるいかなるメッセージも技術的に虚偽である。
 
 ### Full Bypass Prevention Without Controlling Execution Routes
 
-If the agent can call the SaaS directly, run arbitrary shell/network commands,
-or use an unobserved credential path, the gateway can be bypassed.
+エージェントが SaaS を直接呼べる、任意の shell/ネットワークコマンドを実行できる、
+あるいは観測されていない credential 経路を使えるなら、gateway は bypass されうる。
 
-The gateway can only enforce actions that pass through an observed and
-controlled route.
+gateway は、観測され制御された route を通過するアクションしか強制できない。
 
 ### Editing Agent Internals As The Default Product Strategy
 
-Forking or modifying a specific agent can be useful for experiments, but it
-does not support the product position of agent-agnostic protection. It should
-remain a last resort or benchmark technique, not the main integration strategy.
+特定のエージェントを fork または改変することは実験には有用でありうるが、
+agent-agnostic な保護という製品ポジションを支えない。それは最後の手段または
+ベンチマーク技法にとどめるべきであり、主たる統合戦略にはすべきではない。
 
 ## Development Bottlenecks
 
 ### 1. Integration Contract Is Not Formal Enough
 
-The code has `PromptMessage` and `ToolCallMessage`, but the product needs a
-stable external contract. Without that, every new adapter will invent details
-and the gateway will drift toward agent-specific behavior.
+コードには `PromptMessage` と `ToolCallMessage` があるが、製品には安定した外部
+契約が必要である。それがなければ、新しい adapter が現れるたびに詳細を勝手に
+でっち上げ、gateway はエージェント固有の挙動へとドリフトしていく。
 
-Priority:
+優先順位:
 
-1. define `PromptEvent`, `ToolCallEvent`, `SessionEvent`, and health/bypass
-   events;
-2. version the contract;
-3. add adapter conformance tests.
+1. `PromptEvent`、`ToolCallEvent`、`SessionEvent`、そして health/bypass イベントを
+   定義する。
+2. 契約をバージョン管理する。
+3. adapter の conformance テストを追加する。
 
 ### 2. Prompt Capture Is The Main Product Risk
 
-The hardest part is not writing another proxy. The hard part is capturing the
-clean prompt before model/tool-result contamination across different agents.
+最も難しいのは、もう一つプロキシを書くことではない。難しいのは、異なるエージェント
+にまたがって、モデル/ツール結果による汚染の前に clean なプロンプトを捕捉する
+ことである。
 
-If prompt capture is weak, the system drops from L2/L3 to L1/L0 and the core
-PAuth claim collapses.
+prompt capture が弱ければ、システムは L2/L3 から L1/L0 へ落ち、PAuth の核心的主張は
+崩壊する。
 
 ### 3. A1 Intent Faithfulness Is Unsolved
 
-The current deterministic planner is narrow. The current LLM planner can pass
-grammar validation while still losing intent.
+現行の deterministic planner は適用範囲が狭い。現行の LLM planner は、意図を失った
+ままでも文法 validation を通過しうる。
 
-This is the central research bottleneck. Validator success must be measured
-separately from intent-faithfulness success.
+これが中心的な研究ボトルネックである。validator の成功は、intent-faithfulness の
+成功とは別に計測されなければならない。
 
 ### 4. Real SaaS State And Credentials Are Not Yet Production-Grade
 
-The demo and benchmark suites are not enough. Real deployments need:
+デモと benchmark の suite では足りない。実デプロイには次が必要である:
 
-- credential storage;
-- per-user tool registration;
-- envelope persistence;
-- audit logs;
-- provider-specific error handling;
-- safe reload when API specs change.
+- credential ストレージ。
+- ユーザ単位のツール登録。
+- envelope の永続化。
+- audit ログ。
+- プロバイダ固有のエラーハンドリング。
+- API specs が変わったときの安全なリロード。
 
 ### 5. Bypass And Side-Channel Policy Is Incomplete
 
-Claude Code-like agents can have shell, filesystem, subprocess, and network
-side channels. Tool-call enforcement alone does not cover those channels.
+Claude Code のようなエージェントは、shell、ファイルシステム、サブプロセス、
+ネットワークの側チャネルを持ちうる。ツール呼び出しの強制だけではこれらのチャネルを
+カバーできない。
 
-The product needs explicit policy for:
+製品には次に対する明示的なポリシーが必要である:
 
-- shell command allow/deny;
-- outbound network restrictions;
-- credential isolation;
-- unknown tool fallback behavior;
-- health checks that detect disabled hooks or direct SaaS calls.
+- shell コマンドの allow/deny。
+- outbound ネットワーク制限。
+- credential 隔離。
+- 未知のツールに対するフォールバック挙動。
+- 無効化された hook や直接 SaaS 呼び出しを検出する health checks。
 
 ### 6. Evaluation Must Move Beyond Mock Suites
 
-AgentDojo is useful, but it is not enough to validate the product claim.
+AgentDojo は有用だが、製品の主張を検証するには足りない。
 
-The next evaluation layer needs:
+次の評価レイヤには以下が必要である:
 
-- real or realistic SaaS APIs;
-- multiple agent adapters;
-- setup failure cases;
-- prompt capture ordering tests;
-- bypass attempts;
-- false positive and false negative measurement per protection level.
+- 実 SaaS API または現実的な SaaS API。
+- 複数のエージェント adapter。
+- setup 失敗ケース。
+- prompt capture の順序テスト。
+- bypass の試行。
+- 保護レベルごとの false positive / false negative の計測。
 
 ## Immediate Documentation Rule
 
-When updating architecture docs, keep these categories separate:
+アーキテクチャドキュメントを更新する際は、これらのカテゴリを分けて保つこと:
 
-1. **Current design**: implemented or directly represented in code.
-2. **Discussed improvements**: plausible but not guaranteed.
-3. **Technically impossible**: rejected under current constraints.
-4. **Development bottlenecks**: work that blocks the product claim.
+1. **Current design**: 実装済み、またはコードに直接表現されているもの。
+2. **Discussed improvements**: もっともらしいが保証されていないもの。
+3. **Technically impossible**: 現行の制約下で却下されたもの。
+4. **Development bottlenecks**: 製品の主張をブロックする作業。
 
-Mixing these categories makes the design look more mature than it is and will
-lead to bad product claims.
+これらのカテゴリを混ぜると、設計を実際より成熟して見せ、誤った製品主張へと
+つながる。

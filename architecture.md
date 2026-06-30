@@ -1,11 +1,10 @@
 # architecture
 
-PAuth-based task-scoped authorization gateway for unmodified agents
-(Claude Code is the first target). This document captures the
-system-level design that the implementation in `pauth/`, `gateway/`,
-and `tests/` realises. Decision history lives in `grill.md`.
-Current design status, open implementation ideas, rejected claims, and
-development bottlenecks are separated in `gateway/DESIGN_STATUS.md`.
+PAuth ベースの、改変なしエージェント向け task-scoped authorization gateway
+（Claude Code が最初のターゲット）。本ドキュメントは、`pauth/`・`gateway/`・
+`tests/` の実装が体現するシステムレベルの設計を記述する。意思決定の経緯は
+`grill.md` にある。現状の設計ステータス、未着手の実装アイデア、棄却された主張、
+開発上のボトルネックは `gateway/DESIGN_STATUS.md` に分離してある。
 
 ## 1. System overview
 
@@ -69,13 +68,13 @@ development bottlenecks are separated in `gateway/DESIGN_STATUS.md`.
 
 ## 1.1 Loose-coupling map
 
-The gateway should stay stable while three volatile areas change:
+gateway は安定したまま、変化の激しい3つの領域が動くようにすべきである:
 
-1. how an agent's traffic enters the gateway;
-2. how a user prompt becomes restricted imperative code;
-3. which real app / mock suite / SaaS backend provides tools.
+1. エージェントのトラフィックがどう gateway に入ってくるか;
+2. user prompt がどう制限付き命令型コードになるか;
+3. どの実アプリ / mock suite / SaaS backend がツールを提供するか。
 
-Those areas are intentionally separated by small contracts.
+これらの領域は、小さな契約によって意図的に分離されている。
 
 ```mermaid
 flowchart LR
@@ -145,38 +144,37 @@ flowchart LR
 
 | Boundary | Contract | Replaceable parts | Stable owner |
 |---|---|---|---|
-| Agent ingress | `PromptMessage` and `ToolCallMessage` | Claude hooks, future MCP/HTTP proxy, custom clients | `gateway/ingress/agent_channel.py` |
-| Planner | restricted imperative `def run(...): ...` | deterministic recognizer, LLM free-form, interactive structuring, specialized model, formal parser | `gateway/planning/planner.py` |
-| Tool source | `SuiteSpec` (`tools`, `make_env`, `runner_factory`) | shopping demo, AgentDojo, MCP servers, OpenAPI specs, future SaaS adapters | `pauth/suites/base.py` |
-| Authorization core | compiled rules + envelope-backed operand checks | should not vary per provider | `pauth/` |
+| Agent ingress | `PromptMessage` と `ToolCallMessage` | Claude hooks、将来の MCP/HTTP proxy、custom client | `gateway/ingress/agent_channel.py` |
+| Planner | 制限付き命令型の `def run(...): ...` | deterministic recognizer、LLM free-form、interactive structuring、specialized model、formal parser | `gateway/planning/planner.py` |
+| Tool source | `SuiteSpec`（`tools`, `make_env`, `runner_factory`） | shopping demo、AgentDojo、MCP servers、OpenAPI specs、将来の SaaS adapters | `pauth/suites/base.py` |
+| Authorization core | コンパイル済みルール + envelope 裏付けの operand チェック | provider ごとに変わるべきではない | `pauth/` |
 
-**Terminology note — "ingress" here is the *adapter* level only.** In this map,
-"Agent ingress" names *which adapter* attaches an agent (hooks / proxy / custom
-client), all normalizing into `PromptMessage` / `ToolCallMessage`. It does **not**
-describe the wire-level direction of capture vs enforcement. The round-trip leg
-model (往路/復路 × ingress/egress — where the prompt is observed, where tool calls
-are observed, and the single leg where enforcement can act) is defined in
-`gateway/INGRESS_DESIGN.md` → "Directional model". Keep the two vocabularies
-distinct: this doc's "ingress" = adapter; that doc's 復路egress = the enforcement
-tap. They are not synonyms.
+**用語注 — ここでの "ingress" は *adapter* レベルのみを指す。** このマップでの
+"Agent ingress" は、*どの adapter* がエージェントを接続するか（hooks / proxy /
+custom client）を指し、それらはすべて `PromptMessage` / `ToolCallMessage` へと
+正規化される。これはワイヤレベルでの捕捉 vs 強制の方向を**記述するものではない**。
+往復区間モデル（往路/復路 × ingress/egress — どこで prompt が観測され、どこで
+tool call が観測され、強制が作用できる唯一の区間はどこか）は
+`gateway/INGRESS_DESIGN.md` の "Directional model" で定義されている。この2つの
+語彙は区別して保つこと: 本ドキュメントの "ingress" = adapter、あちらのドキュメントの
+復路egress = enforcement tap。これらは同義語ではない。
 
-AgentDojo belongs behind the **Tool source** boundary. It is a provider used
-for benchmarks and mock environments, not the architectural center. If real
-apps replace AgentDojo, they should implement or adapt into `SuiteSpec`; the
-PAuth core and planner contract should not know whether the backing tool came
-from AgentDojo, MCP, OpenAPI, or a hand-written suite.
+AgentDojo は **Tool source** 境界の背後に属する。それはベンチマークと mock 環境
+で使われる provider であって、アーキテクチャの中心ではない。実アプリが AgentDojo
+を置き換えるなら、それらは `SuiteSpec` を実装するか、それに adapt すべきである;
+PAuth core と planner 契約は、裏側のツールが AgentDojo・MCP・OpenAPI・手書きの
+suite のどれ由来かを知るべきではない。
 
-OpenAPI-backed providers add one more operational loop: `gateway/providers/openapi_suite.py`
-reflects the spec at load time, while `gateway/providers/api_spec_monitor.py` detects
-spec changes and emits a notification-ready diff. The gateway should not
-silently absorb upstream API changes without surfacing the changed tool surface
-to the user.
+OpenAPI 裏付けの provider は、もう1つの運用ループを加える: `gateway/providers/openapi_suite.py`
+はロード時に spec を reflect し、`gateway/providers/api_spec_monitor.py` は spec の
+変更を検知して notification-ready な diff を出す。gateway は、変化したツール表面を
+ユーザーに surface することなく、upstream の API 変更を黙って吸収すべきではない。
 
 ## 1.2 Reference mental model
 
-This is the working mental model from the user's white-background sketch
-(`cloud local.pdf`, shared 2026-06-09). Future design discussion should keep
-these three red-dotted zones separate.
+これはユーザーの白背景スケッチ（`cloud local.pdf`、2026-06-09 に共有）に由来する
+作業用メンタルモデルである。今後の設計議論では、これら3つの赤点線ゾーンを分離して
+保つこと。
 
 ```mermaid
 flowchart LR
@@ -232,44 +230,43 @@ flowchart LR
     style SaaSLayer stroke:#d00,stroke-width:2px,stroke-dasharray:4 4,fill:#fff
 ```
 
-Interpretation:
+解釈:
 
-| Red-dotted zone | Meaning | Current repo anchor |
+| Red-dotted zone | 意味 | 現リポジトリでのアンカー |
 |---|---|---|
-| Imperative code generation layer | The unresolved A1 problem: natural language to restricted `run()` code. | `gateway/planning/planner.py`, `gateway/PLANNING_STRATEGIES.md`, `pauth/codegen.py`, `gateway/planning/agentic_a1.py` |
-| Self-host / gateway configuration layer | How users run/configure the gateway, choose planner strategy, manage sessions, reload changed specs, and receive audit/notification output. | `gateway/serving/http_server.py`, `gateway/serving/config.py`, `gateway/SELF_HOSTING.md`, `gateway/providers/api_spec_monitor.py` |
-| SaaS configuration layer | How real apps/SaaS APIs are registered, reflected, monitored, and adapted into `SuiteSpec`. | `pauth/suites/base.py`, `gateway/providers/mcp_suite.py`, `gateway/providers/openapi_suite.py`, `gateway/providers/registry.py` |
+| Imperative code generation layer | 未解決の A1 問題: 自然言語から制限付き `run()` コードへ。 | `gateway/planning/planner.py`, `gateway/PLANNING_STRATEGIES.md`, `pauth/codegen.py`, `gateway/planning/agentic_a1.py` |
+| Self-host / gateway configuration layer | ユーザーが gateway をどう実行/設定し、planner strategy を選び、session を管理し、変更された spec をリロードし、audit/notification 出力を受け取るか。 | `gateway/serving/http_server.py`, `gateway/serving/config.py`, `gateway/SELF_HOSTING.md`, `gateway/providers/api_spec_monitor.py` |
+| SaaS configuration layer | 実アプリ/SaaS API がどう登録され、reflect され、monitor され、`SuiteSpec` へ adapt されるか。 | `pauth/suites/base.py`, `gateway/providers/mcp_suite.py`, `gateway/providers/openapi_suite.py`, `gateway/providers/registry.py` |
 
-The black dotted zone around the existing agent represents the gateway
-integration boundary: a lifecycle hook/plugin forwards the clean prompt and
-attempted tool calls, while network/tool routing prevents bypass. The existing
-agent itself is deliberately outside the red design zones. The product goal is
-to keep the agent runtime and day-to-day user workflow unmodified after setup,
-while moving variability into gateway ingress, planner strategy, and
-tool-source adapters. ("ingress" here = the adapter level; for the wire-level
-往路/復路 × ingress/egress leg model see `gateway/INGRESS_DESIGN.md` →
-"Directional model".)
+既存エージェントを囲む黒点線ゾーンは、gateway integration boundary を表す:
+ライフサイクル hook/plugin がクリーンな prompt と試みられた tool call を転送し、
+一方で network/tool routing が bypass を防ぐ。既存エージェントそのものは意図的に
+赤の設計ゾーンの外にある。製品上のゴールは、セットアップ後はエージェントの
+ランタイムと日常のユーザーワークフローを改変なしに保ちつつ、可変性を gateway
+ingress・planner strategy・tool-source adapters に移すことである。（ここでの
+"ingress" = adapter レベル; ワイヤレベルの 往路/復路 × ingress/egress 区間モデル
+については `gateway/INGRESS_DESIGN.md` の "Directional model" を参照。）
 
-Prompt capture is adapter-based. Different agents will expose different
-signals, but every capture path must normalize into `PromptMessage` before it
-reaches `AgentChannel`. The design target is not one universal prompt hook; it
-is one universal prompt event contract.
+Prompt capture は adapter ベースである。エージェントごとに公開する信号は異なるが、
+あらゆる capture 経路は `AgentChannel` に到達する前に `PromptMessage` へ正規化
+されなければならない。設計のターゲットは1つの普遍的な prompt hook ではなく、1つの
+普遍的な prompt event 契約である。
 
 ## 2. Component responsibilities
 
-| Component | Responsibility |
+| Component | 責務 |
 |---|---|
-| `pauth/` | Pure PAuth algorithm. `codegen` (A1 LLM prompt), `grammar` (Appendix A parser), `slicing` (A2), `rules` (A3, Algorithm 1), `enforcer` (B1–B4), `envelope` (signed observations), `evaluator` (deterministic symbolic eval), `suites/base` (SuiteSpec interface). No knowledge of agents, hooks or HTTP. |
-| `pauth/suites/shopping.py` | Self-contained demo suite: tools, environment, runner, and the worked-example reference codes / task definitions. Used by both paper reproduction (`tests/`) and gateway demos. |
-| `gateway/planning/core.py` | NL → run() recognizer (deterministic, regex-driven). Used only for the strict path; the agentic/freeform path skips it. |
-| `gateway/planning/planner.py` | Pluggable A1 boundary. Planner strategies emit restricted imperative code; `Gateway` compiles and enforces it through the stable PAuth pipeline. |
-| `gateway/PLANNING_STRATEGIES.md` | A1 strategy catalogue: interactive structuring, specialized imperative-code model, and formal NL analysis. |
-| `gateway/planning/agentic_a1.py` | LLM A1 with grammar-feedback loop (Q12). Wraps `pauth.codegen.SYSTEM_PROMPT`, catches `RestrictedGrammarError`, feeds the violated rule back to the LLM, retries up to N times. |
-| `gateway/runtime/gateway.py` | `Gateway` class. Holds one task lifecycle. Two entry points: `submit_user_prompt(prompt)` (plan once) and `handle_tool_call(tool, args)` (enforce per call). |
-| `gateway/ingress/agent_channel.py` | Agent-facing API. Two message kinds: `prompt` and `tool_call`. Enforces "prompt first, exactly once" structurally. JSON-serialisable wire shape. |
-| `gateway/serving/http_server.py` | Minimal stdlib HTTP wrapper. `POST /sessions/<id>/messages`. Sessions keyed by client-supplied id (Claude Code's session_id). |
-| `gateway/hooks/` | `submit_prompt.sh` (UserPromptSubmit) and `pretool.sh` (PreToolUse). Each is a thin curl-to-HTTP shim with strict / log modes. |
-| `tests/` | Paper reproduction (`tests/test_worked_examples.py`, `tests/test_unexpected_attacks.py`, `tests/experiment/`) and L1/L2/L3 fixtures (`tests/fixtures/`). |
+| `pauth/` | 純粋な PAuth アルゴリズム。`codegen`（A1 LLM prompt）、`grammar`（Appendix A parser）、`slicing`（A2）、`rules`（A3, Algorithm 1）、`enforcer`（B1–B4）、`envelope`（signed observations）、`evaluator`（決定的な記号評価）、`suites/base`（SuiteSpec インターフェイス）。エージェント・hook・HTTP の知識を持たない。 |
+| `pauth/suites/shopping.py` | 自己完結した demo suite: tools、environment、runner、および worked-example のリファレンスコード / task 定義。論文再現（`tests/`）と gateway demo の両方で使われる。 |
+| `gateway/planning/core.py` | NL → run() recognizer（決定的、regex 駆動）。strict path でのみ使われる; agentic/freeform path はこれをスキップする。 |
+| `gateway/planning/planner.py` | プラグ可能な A1 境界。planner strategy が制限付き命令型コードを emit し、`Gateway` がそれを安定した PAuth パイプライン経由でコンパイル・強制する。 |
+| `gateway/PLANNING_STRATEGIES.md` | A1 strategy カタログ: interactive structuring、specialized な命令型コードモデル、formal NL 解析。 |
+| `gateway/planning/agentic_a1.py` | grammar-feedback ループ付きの LLM A1（Q12）。`pauth.codegen.SYSTEM_PROMPT` をラップし、`RestrictedGrammarError` を catch し、違反したルールを LLM にフィードバックし、最大 N 回リトライする。 |
+| `gateway/runtime/gateway.py` | `Gateway` クラス。1つの task lifecycle を保持する。2つのエントリポイント: `submit_user_prompt(prompt)`（plan once）と `handle_tool_call(tool, args)`（call ごとに enforce）。 |
+| `gateway/ingress/agent_channel.py` | エージェント向け API。2種類のメッセージ: `prompt` と `tool_call`。"prompt first, exactly once" を構造的に強制する。JSON シリアライズ可能なワイヤ形状。 |
+| `gateway/serving/http_server.py` | 最小限の stdlib HTTP ラッパー。`POST /sessions/<id>/messages`。session はクライアント供給の id（Claude Code の session_id）でキー付けされる。 |
+| `gateway/hooks/` | `submit_prompt.sh`（UserPromptSubmit）と `pretool.sh`（PreToolUse）。それぞれ strict / log モードを持つ、薄い curl-to-HTTP shim。 |
+| `tests/` | 論文再現（`tests/test_worked_examples.py`, `tests/test_unexpected_attacks.py`, `tests/experiment/`）と L1/L2/L3 fixtures（`tests/fixtures/`）。 |
 
 ## 3. Data flow (one task lifecycle)
 
@@ -346,54 +343,53 @@ is one universal prompt event contract.
 
 ## 4. Hard invariants
 
-These are enforced by code, not by convention.
+これらは慣習ではなく、コードによって強制される。
 
-1. **Plan once**. `Gateway.submit_user_prompt` is callable only once per
-   session. `AgentChannel` rejects a second `PromptMessage`. The
-   gateway never re-plans based on agent input.
+1. **Plan once**。`Gateway.submit_user_prompt` は session ごとに一度だけ呼べる。
+   `AgentChannel` は2つ目の `PromptMessage` を拒否する。gateway は
+   エージェントの入力にもとづいて re-plan することは決してない。
 
-2. **Tool calls require a prior prompt**. `AgentChannel._handle_tool_call`
-   returns `ErrorResponse` if no prompt has been submitted.
+2. **Tool call には先行する prompt が必要**。`AgentChannel._handle_tool_call`
+   は prompt が submit されていなければ `ErrorResponse` を返す。
 
-3. **Gateway is the observation authority**. Every permitted tool call's
-   result is executed by `suite.runner` (the gateway, not the agent)
-   and recorded as an HMAC-signed envelope in the gateway-owned
-   `EnvelopeStore`. Operand verification reads from this store, so an
-   agent reporting fabricated intermediate values cannot influence
-   subsequent operand checks.
+3. **Gateway は観測の権威である**。許可されたすべての tool call の結果は
+   `suite.runner`（エージェントではなく gateway）によって実行され、
+   gateway 所有の `EnvelopeStore` に HMAC 署名された envelope として記録される。
+   Operand 検証はこの store から読むため、捏造した中間値を報告するエージェント
+   が後続の operand チェックに影響を与えることはできない。
 
-4. **Default-deny**. `Enforcer.check` denies any call without an
-   exact-matching rule (paper sec. 5.2). The rejected reason is
-   surfaced verbatim to the caller for auditability.
+4. **Default-deny**。`Enforcer.check` は、完全一致するルールのない呼び出しを
+   すべて拒否する（paper sec. 5.2）。拒否理由は、監査可能性のために逐語で
+   呼び出し元に surface される。
 
-5. **Single signing root**. The gateway owns the keyring. Envelopes are
-   signed by the gateway, not by individual SaaS servers. The transcript
-   labels this "personal client-side task-scoped firewall" -- it
-   trades the paper's per-server autonomy for a single deployable.
+5. **Single signing root**。gateway が keyring を所有する。Envelope は個々の
+   SaaS server ではなく gateway によって署名される。トランスクリプトはこれを
+   "personal client-side task-scoped firewall" と呼ぶ -- これは論文の
+   server ごとの自律性を、単一のデプロイ可能物と引き換えにしたものである。
 
 ## 5. Threat model
 
-What the gateway defends against:
+gateway が防御するもの:
 
 | Threat | Defended by |
 |---|---|
-| Agent issues a tool call not in the user-derived plan | Default-deny on missing rule (B1) |
-| Agent inflates / substitutes a constant operand (recipient IBAN, amount, subject, date) | Operand match against compiled rules (B2/B3) |
-| Agent fabricates a derived value (e.g. `cart.total` it never observed) | Symbolic evaluation against the envelope store; agent-reported values are ignored (B3) |
-| Agent skips an observation tool and tries to use its symbolic result | Envelope missing → operand unresolved → denial |
-| Agent calls a sensitive tool out of order | Guard evaluation requires upstream envelopes; missing → deny |
-| Agent re-plans mid-session (e.g. on injection) | `AgentChannel` rejects second `PromptMessage` |
-| Tool-result injection (paper sec. 3, AgentDojo's threat model) | Plan was generated from the clean user prompt before any tool output existed; injected actions are off-plan |
+| エージェントが、user-derived plan にない tool call を発行する | Default-deny on missing rule (B1) |
+| エージェントが定数 operand（recipient IBAN、金額、subject、date）を膨らませる / すり替える | Operand match against compiled rules (B2/B3) |
+| エージェントが derived value（例: 観測したことのない `cart.total`）を捏造する | Symbolic evaluation against the envelope store; agent-reported values are ignored (B3) |
+| エージェントが observation tool を省き、その記号結果を使おうとする | Envelope missing → operand unresolved → denial |
+| エージェントが sensitive tool を順序外で呼ぶ | Guard evaluation requires upstream envelopes; missing → deny |
+| エージェントが session 途中で re-plan する（例: injection 時） | `AgentChannel` rejects second `PromptMessage` |
+| Tool-result injection（paper sec. 3, AgentDojo の threat model） | Plan was generated from the clean user prompt before any tool output existed; injected actions are off-plan |
 
-What the gateway does **not** defend against (explicitly out of scope):
+gateway が防御**しない**もの（明示的に対象外）:
 
-| Threat | Why |
+| Threat | 理由 |
 |---|---|
-| Injection embedded in the user's prompt itself | UI / input window is trusted (user's responsibility). See Q11. |
-| Agent silently modifies the prompt during the forwarding step | New trust assumption introduced by hook routing (Q13). Mitigation: `UserPromptSubmit` runs before the LLM sees the prompt, so the LLM cannot modify it. |
-| Agent bypasses the hook (e.g. user disables it) | User is trusted (Q0). |
-| Side channels (file system, child processes, env vars) | The gateway sees only tool calls. A real Claude Code firewall additionally needs Bash command policy and / or sandbox; see Q7 / Q10. |
-| Prompt-correctness (does the plan actually capture intent?) | PAuth is an authorization layer, not a correctness oracle. The user may approve a plan that does the wrong thing -- enforcement only guarantees the agent stays within that plan. |
+| ユーザーの prompt 自体に埋め込まれた injection | UI / input window は信頼される（ユーザーの責任）。Q11 参照。 |
+| エージェントが転送ステップ中に prompt を黙って改変する | hook routing が導入する新しい信頼前提（Q13）。緩和策: `UserPromptSubmit` は LLM が prompt を見る前に走るため、LLM はそれを改変できない。 |
+| エージェントが hook を bypass する（例: ユーザーが無効化する） | ユーザーは信頼される（Q0）。 |
+| 側チャネル（ファイルシステム、子プロセス、環境変数） | gateway は tool call しか見ない。実 Claude Code firewall は加えて Bash command policy および / または sandbox が必要; Q7 / Q10 参照。 |
+| Prompt-correctness（plan は本当に意図を捉えているか?） | PAuth は authorization layer であって correctness oracle ではない。ユーザーは間違ったことをする plan を承認しうる -- enforcement はエージェントがその plan の内側に留まることだけを保証する。 |
 
 ## 6. Key design decisions and where to find them
 
@@ -409,54 +405,52 @@ What the gateway does **not** defend against (explicitly out of scope):
 
 ## 7. Operational notes
 
-* Start the gateway daemon (`gateway/serving/http_server.py`) before opening
-  Claude Code. The daemon holds session state in memory; restarting
-  drops every active session.
-* The hook scripts log to stderr; Claude Code surfaces stderr in its
-  transcript.
-* `GATEWAY_MODE_PROMPT=strict` blocks Claude Code on a rejected prompt.
-  `GATEWAY_MODE_TOOL=log` is the current default for tool calls -- flip
-  to `strict` once the enforced tool set is finalised.
-* For the freeform LLM A1 path the user prompt must include enough
-  literal constants (IBAN, subject, date, etc.) for the recognizer or
-  the LLM to produce a usable run(). Underspecified prompts are
-  rejected by design.
+* Claude Code を開く前に gateway daemon（`gateway/serving/http_server.py`）を
+  起動する。daemon は session state をメモリ内に保持する; 再起動すると
+  アクティブな session がすべて失われる。
+* hook スクリプトは stderr にログする; Claude Code は stderr を自身の
+  トランスクリプトに surface する。
+* `GATEWAY_MODE_PROMPT=strict` は、拒否された prompt で Claude Code を block する。
+  `GATEWAY_MODE_TOOL=log` が tool call の現在のデフォルト -- 強制対象のツール
+  セットが確定したら `strict` に切り替える。
+* freeform LLM A1 path では、recognizer または LLM が使える run() を生成できる
+  だけの十分なリテラル定数（IBAN、subject、date 等）を user prompt が含んで
+  いなければならない。仕様が不十分な prompt は設計上拒否される。
 
 ## 8. Multi-suite / pluggable tool sources
 
-The gateway operates over a single ``SuiteSpec``, but
-``gateway/providers/registry.py`` composes a *virtual* merged ``SuiteSpec`` from
-any number of source suites. Tool names must be globally unique; the
-registry validates this at registration time.
+gateway は単一の ``SuiteSpec`` 上で動作するが、
+``gateway/providers/registry.py`` は任意の数のソース suite から *virtual* に
+マージされた ``SuiteSpec`` を合成する。ツール名はグローバルに一意でなければ
+ならない; registry は登録時にこれを検証する。
 
-Pluggable backends today:
+現在のプラグ可能な backend:
 
 | Backend | File | Use |
 |---|---|---|
-| Self-contained shopping suite | `pauth/suites/shopping.py` | Demos, offline tests |
+| 自己完結した shopping suite | `pauth/suites/shopping.py` | Demos, offline tests |
 | AgentDojo suites | `tests/experiment/agentdojo_adapter.py` | Paper reproduction, banking/slack/travel/workspace |
 | MCP server (HTTP) | `gateway/providers/mcp_suite.py` ``build_mcp_suite`` | Localhost MCP shims, real MCP servers that expose HTTP |
 | MCP server (stdio) | `gateway/providers/mcp_suite.py` ``build_mcp_suite_stdio`` | Reference MCP servers (``@modelcontextprotocol/*``) and similar subprocess shapes |
 
-Additional shaping layers:
+追加の整形レイヤ:
 
-* `gateway/runtime/policy.py` -- ``PolicyAwareEnforcer`` lets a deployer mark
-  ``(tool, parameter)`` pairs as *free* operands so the enforcer skips
-  the operand check there. Use for search queries, free-form message
-  bodies, and similar operands that have no transactional meaning.
-* `gateway/providers/suite_filter.py` -- bag-of-words ``SuiteFilter`` that narrows
-  the merged universe to a subset that scores against the prompt. Keeps
-  the A1 prompt small when many MCPs are registered. Pluggable scorer.
-* `gateway/serving/config.py` -- JSON config consumed by the HTTP server's
-  ``--config`` flag. Declares source suites, operand policy, suite
-  filter parameters. Adapter table makes adding new backends a single
-  function.
+* `gateway/runtime/policy.py` -- ``PolicyAwareEnforcer`` は、デプロイ者が
+  ``(tool, parameter)`` ペアを *free* operand としてマークすることを許し、
+  enforcer はそこでの operand チェックをスキップする。検索クエリ、自由形式の
+  メッセージ本文、およびトランザクション上の意味を持たない類似の operand に使う。
+* `gateway/providers/suite_filter.py` -- bag-of-words の ``SuiteFilter`` で、
+  マージされた universe を prompt に対してスコアする部分集合へと絞る。多数の
+  MCP が登録されているとき A1 prompt を小さく保つ。スコアラはプラグ可能。
+* `gateway/serving/config.py` -- HTTP server の ``--config`` フラグが消費する
+  JSON config。ソース suite、operand policy、suite filter パラメータを宣言する。
+  Adapter テーブルにより、新しい backend の追加は1関数で済む。
 
 ## 9. Deployment topology
 
-Two deployment shapes are documented here. The self-hosted shape is the
-near-term target; the managed-cloud shape is the aspirational version
-we keep in mind so the abstractions don't paint us into a corner.
+ここでは2つのデプロイ形状を記述する。self-hosted 形状が近期のターゲット;
+managed-cloud 形状は、抽象化が我々を袋小路に追い込まないよう念頭に置いておく
+aspirational なバージョンである。
 
 ### 9.1 Self-hosted on Sakura, managed by Monocle (near-term)
 
@@ -498,41 +492,41 @@ we keep in mind so the abstractions don't paint us into a corner.
                                 └────────────────────────┘
 ```
 
-Operational choices:
+運用上の選択:
 
-* **One VM, one gateway, one user.** Multi-tenancy is out of scope at
-  this stage. Session isolation is by Claude Code's ``session_id``.
-* **State.** Sessions live in process memory. A ``systemctl restart``
-  drops them. Acceptable while the user can simply re-send the prompt;
-  revisit when long-running tasks become real.
-* **Secrets.** SaaS credentials are held by the MCP processes
-  themselves (their environment / config files), not by the gateway.
-  The gateway never sees an API key -- it only authorises tool calls
-  whose underlying transport already carries the credential.
-* **Network.** ``gateway-http`` binds ``127.0.0.1`` so the HTTP API is
-  not reachable off-box. The hooks reach it because they are local.
-  No TLS on the local hop. Outbound to public SaaS uses Sakura's
-  standard egress with whatever private routes Monocle exposes.
-* **Logging / observability.** Gateway and hook scripts write to stderr;
-  systemd's journal captures them; Monocle aggregates the journal.
-* **Backup / restore.** Sessions are ephemeral. Config and suite
-  registrations are flat files; Monocle's VM image handling covers them.
-* **Update.** Application is Python source on the VM. Rolling an update
-  is ``git pull`` + ``systemctl restart gateway-http`` and (if hook
-  scripts changed) reloading Claude Code's settings.
+* **1 VM、1 gateway、1 user。** マルチテナンシーはこの段階では対象外。
+  Session isolation は Claude Code の ``session_id`` による。
+* **State。** Session はプロセスメモリに存在する。``systemctl restart`` で
+  失われる。ユーザーが単に prompt を再送信できるうちは許容範囲;
+  長時間実行タスクが現実になったら見直す。
+* **Secrets。** SaaS credential は gateway ではなく MCP プロセス自身
+  （その環境 / config ファイル）が保持する。gateway は API key を決して
+  見ない -- それは、裏のトランスポートがすでに credential を運んでいる
+  tool call を authorize するだけである。
+* **Network。** ``gateway-http`` は ``127.0.0.1`` に bind するため、HTTP API は
+  box 外から到達できない。hook はローカルなので到達できる。ローカルホップに
+  TLS はない。public SaaS への outbound は、Monocle が公開する private route と
+  ともに Sakura の標準 egress を使う。
+* **Logging / observability。** gateway と hook スクリプトは stderr に書く;
+  systemd の journal がそれを capture し、Monocle が journal を集約する。
+* **Backup / restore。** Session は ephemeral。Config と suite 登録は
+  フラットファイル; Monocle の VM イメージ処理がカバーする。
+* **Update。** アプリケーションは VM 上の Python ソース。アップデートの適用は
+  ``git pull`` + ``systemctl restart gateway-http`` と（hook スクリプトが
+  変わった場合）Claude Code の settings のリロードである。
 
-Trade-offs vs the managed-cloud shape:
+managed-cloud 形状に対するトレードオフ:
 
-* (+) Cheap, fully under our control, low-latency hook calls.
-* (+) No vendor lock-in; entire stack is files on a Linux VM.
-* (-) Single point of failure; one VM down = no Claude Code.
-* (-) Manual scaling. Fine for one user, untenable for many.
-* (-) Restart loses sessions.
+* (+) 安価、完全に我々の制御下、低レイテンシな hook 呼び出し。
+* (+) ベンダーロックインなし; スタック全体が Linux VM 上のファイル。
+* (-) 単一障害点; 1 VM ダウン = Claude Code 不能。
+* (-) 手動スケーリング。1 user には十分、多数には耐えない。
+* (-) 再起動で session が失われる。
 
 ### 9.2 Managed cloud (AWS or Azure, aspirational)
 
-The same code base; a different set of operational properties. We sketch
-both AWS and Azure so the abstractions in `gateway/` stay portable.
+同じコードベース; 異なる運用特性のセット。`gateway/` 内の抽象化が portable に
+保たれるよう、AWS と Azure の両方をスケッチする。
 
 ```
                                   ┌──────────────────────┐
@@ -582,86 +576,83 @@ both AWS and Azure so the abstractions in `gateway/` stay portable.
                        └────────────────────────┘
 ```
 
-Operational choices:
+運用上の選択:
 
-* **Containers, not Lambda/Functions for the gateway hot path.** Hooks
-  block Claude Code; cold-start latency on serverless makes this
-  user-visible. Keep the gateway as a long-running container service.
-  MCP shims that wrap a single SaaS *can* be serverless because they
-  are warmed by the gateway.
-* **Stateless gateway, managed session store.** Move
-  ``AgentChannel`` session state out of process memory and into
-  DynamoDB or Cosmos DB. Keys are Claude Code's ``session_id``;
-  envelopes / rules / plan blob serialise as JSON. Lose the "in-memory
-  speed" property; gain horizontal scale and crash resilience.
-* **Identity and isolation.** Per-user IAM role (AWS) or Managed
-  Identity (Azure) on the Claude Code container. The gateway can
-  authorise SaaS calls only for resources that role/identity is
-  permitted to touch. Cuts the radius if a user's tokens leak.
-* **Secrets.** Per-user OAuth tokens live in Secrets Manager (AWS) /
-  Key Vault (Azure), scoped by the user's identity. The MCP shims pull
-  the token at call time; the gateway never sees it.
-* **Network.** Private VPC / VNet. Public access only through the edge
-  WAF. Outbound to SaaS uses VPC NAT or a Private Endpoint when the
-  SaaS supports it. Logging includes the egress headers so traffic
-  out-of-VPC is auditable.
-* **Observability.** CloudWatch / Application Insights. Each tool call
-  generates a structured event; permit/deny + reason are first-class
-  fields so a SIEM can spot anomalies.
-* **Cost levers.** The gateway autoscales on RPS; MCP shims autoscale
-  on per-suite QPS; session KV is on-demand pricing. Idle cost is
-  bounded by the always-on gateway baseline.
+* **gateway hot path には Lambda/Functions ではなくコンテナを。** hook は
+  Claude Code を block する; serverless のコールドスタートレイテンシは
+  ユーザーから見える形になる。gateway は long-running なコンテナサービスと
+  して保つ。単一 SaaS をラップする MCP shim は、gateway が温めてくれるので
+  serverless で *よい*。
+* **Stateless gateway、managed session store。** ``AgentChannel`` の
+  session state をプロセスメモリから DynamoDB または Cosmos DB へ移す。
+  キーは Claude Code の ``session_id``; envelope / rules / plan blob は
+  JSON にシリアライズする。"in-memory speed" の性質を失う; 水平スケールと
+  クラッシュ耐性を得る。
+* **Identity and isolation。** Claude Code コンテナに per-user IAM role
+  （AWS）または Managed Identity（Azure）。gateway は、その role/identity が
+  触れることを許された resource に対してのみ SaaS call を authorize できる。
+  ユーザーの token が漏れた場合の半径を削る。
+* **Secrets。** Per-user OAuth token は、ユーザーの identity でスコープされた
+  Secrets Manager（AWS）/ Key Vault（Azure）に存在する。MCP shim が call 時に
+  token を pull する; gateway はそれを決して見ない。
+* **Network。** Private VPC / VNet。public アクセスは edge WAF 経由のみ。
+  SaaS への outbound は VPC NAT、または SaaS が対応していれば Private Endpoint
+  を使う。Logging には egress header を含めるので、VPC 外へのトラフィックは
+  監査可能である。
+* **Observability。** CloudWatch / Application Insights。各 tool call は
+  構造化イベントを生成する; permit/deny + 理由は first-class フィールドなので、
+  SIEM が異常を見つけられる。
+* **Cost levers。** gateway は RPS で autoscale する; MCP shim は per-suite QPS で
+  autoscale する; session KV は on-demand 課金。idle コストは常時稼働の gateway
+  ベースラインで bound される。
 
-Why not Vercel for the production hot path:
+production hot path に Vercel を使わない理由:
 
-* Vercel's strength is serverless / edge functions for web
-  frontends. The gateway's hooks are synchronous network calls from a
-  long-running agent; serverless cold starts make the Claude Code
-  experience flaky. Session state is global to a conversation; Vercel
-  expects per-request statelessness.
-* Vercel *is* a fine home for an admin UI or a status dashboard layered
-  on top of the gateway. Hot path stays on container-based compute.
+* Vercel の強みは web フロントエンド向けの serverless / edge function である。
+  gateway の hook は long-running なエージェントからの同期ネットワーク呼び出し
+  である; serverless のコールドスタートは Claude Code 体験を不安定にする。
+  Session state は会話に対してグローバル; Vercel は per-request の statelessness
+  を前提とする。
+* Vercel は、gateway の上に重ねる admin UI や status dashboard の置き場として
+  *は* 適している。Hot path はコンテナベースのコンピュートに留める。
 
 ### 9.3 Mapping the codebase to the topology
 
 | Abstraction | Self-hosted role | Cloud role |
 |---|---|---|
-| `gateway/serving/http_server.py` | systemd unit on the VM | container behind a private ALB / Application Gateway |
-| `gateway/ingress/agent_channel.py` | unchanged | unchanged; session state externalised at the `_Session` boundary |
-| `gateway/providers/registry.py` + `gateway/serving/config.py` | `gateway.json` on disk | config blob in Secrets Manager / Key Vault |
-| `gateway/providers/mcp_suite.py` HTTP | localhost MCPs | private-DNS-addressed MCP services |
-| `gateway/providers/mcp_suite.py` stdio | subprocess MCPs on the VM | sidecar containers or function-backed shims |
-| `gateway/runtime/policy.py` | per-deployment JSON | per-tenant JSON in the config store |
-| `gateway/providers/suite_filter.py` | unchanged | unchanged; consider an embedding-based scorer once the suite count grows |
+| `gateway/serving/http_server.py` | VM 上の systemd unit | private ALB / Application Gateway 背後のコンテナ |
+| `gateway/ingress/agent_channel.py` | 変更なし | 変更なし; session state は `_Session` 境界で外部化される |
+| `gateway/providers/registry.py` + `gateway/serving/config.py` | ディスク上の `gateway.json` | Secrets Manager / Key Vault 内の config blob |
+| `gateway/providers/mcp_suite.py` HTTP | localhost MCPs | private-DNS でアドレスされる MCP services |
+| `gateway/providers/mcp_suite.py` stdio | VM 上の subprocess MCPs | sidecar containers または function-backed shims |
+| `gateway/runtime/policy.py` | per-deployment JSON | config store 内の per-tenant JSON |
+| `gateway/providers/suite_filter.py` | 変更なし | 変更なし; suite 数が増えたら embedding ベースのスコアラを検討 |
 
-The key invariant: **all abstractions live above the deployment
-boundary**. The gateway's algorithmic core (`pauth/`) and the policy
-layer (`gateway/runtime/policy.py`, `gateway/providers/registry.py`,
-`gateway/providers/suite_filter.py`) are identical between topologies. Only the
-operational substrate (state store, secret store, network) changes.
+鍵となる不変条件: **すべての抽象化はデプロイ境界の上に存在する**。gateway の
+アルゴリズムコア（`pauth/`）と policy layer（`gateway/runtime/policy.py`,
+`gateway/providers/registry.py`, `gateway/providers/suite_filter.py`）は topology
+間で同一である。変わるのは運用基盤（state store、secret store、network）だけ。
 
 ## 10. What is not built yet
 
-* Real per-user SaaS registration UX (CLI / web UI). The config
-  schema and the MCP backend (HTTP + stdio) are in place; what's
-  missing is the operator-facing flow for registering a user's MCPs
-  and OAuth tokens, especially in the cloud topology.
-* MCP server *wrapper* around `AgentChannel`. The current direction is
-  Claude Code hooks → HTTP. A native MCP-server expression of the
-  gateway is the right next step when Claude Code's native tool
-  routing (rather than hooks) becomes the integration point.
-* L3 reference fixtures for AgentDojo suites. Type and one shopping
-  family are in place (`tests/fixtures/l3_references.py` and
-  `tests/fixtures/ai_generated/l3_references.py`); banking / slack /
-  travel / workspace are still consumed via the existing AgentDojo
-  adapter (`tests/experiment/agentdojo_adapter.py`).
-* Embedding-based suite filter. The keyword filter in
-  `gateway/providers/suite_filter.py` is the cheap default and good enough for a
-  handful of MCPs; once registrations cross ~20 suites a small
-  embedding model (or a cached LLM filter) will earn its keep.
-* Externalised session store for the cloud topology. The
-  in-memory `AgentChannel` sessions are the right default for the
-  self-hosted VM; the cloud topology in §9.2 expects a managed KV
-  (DynamoDB / Cosmos) that we have not implemented yet.
-* Cross-file atomic checkpoint / agent-side rollback (Q2 γ'). Not
-  needed yet because no agent state is mutated by the gateway itself.
+* 実 per-user SaaS 登録 UX（CLI / web UI）。config schema と MCP backend
+  （HTTP + stdio）は整っている; 欠けているのは、特に cloud topology における、
+  ユーザーの MCP と OAuth token を登録するための operator 向けフロー。
+* `AgentChannel` を囲む MCP server *ラッパー*。現在の方向は Claude Code hooks
+  → HTTP。gateway のネイティブな MCP-server 表現は、Claude Code のネイティブな
+  tool routing（hook ではなく）が統合点になったときの、正しい次の一手である。
+* AgentDojo suites 向けの L3 リファレンス fixtures。type と1つの shopping
+  family は整っている（`tests/fixtures/l3_references.py` と
+  `tests/fixtures/ai_generated/l3_references.py`）; banking / slack /
+  travel / workspace はまだ既存の AgentDojo adapter
+  （`tests/experiment/agentdojo_adapter.py`）経由で消費されている。
+* Embedding ベースの suite filter。`gateway/providers/suite_filter.py` の
+  keyword filter は安価なデフォルトで、少数の MCP には十分; 登録が ~20 suite を
+  超えたら、小さな embedding model（またはキャッシュした LLM filter）が
+  元を取るようになる。
+* cloud topology 向けの外部化された session store。in-memory な
+  `AgentChannel` session は self-hosted VM には正しいデフォルト; §9.2 の
+  cloud topology は、まだ実装していない managed KV（DynamoDB / Cosmos）を
+  前提とする。
+* ファイル横断のアトミック checkpoint / エージェント側 rollback（Q2 γ'）。
+  gateway 自身がエージェントの state を mutate しないため、まだ不要。
