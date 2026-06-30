@@ -6,7 +6,7 @@
 # Exit code: 0 = allow Claude Code to proceed, non-zero = block.
 #
 # Env vars (optional):
-#   GATEWAY_URL              base URL of gateway/http_server.py (default: http://127.0.0.1:8081)
+#   GATEWAY_URL              base URL of gateway/serving/http_server.py (default: http://127.0.0.1:8081)
 #   GATEWAY_MODE             "strict" (block on gateway reject) or "log" (log only).
 #   PAUTH_PLANNER_STRATEGY   deterministic / llm-freeform / interactive-structuring /
 #                            specialized-codegen / formal-semantic

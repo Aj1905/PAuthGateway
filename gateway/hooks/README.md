@@ -14,7 +14,7 @@ run.
 | `UserPromptSubmit` | `submit_prompt.sh` | Forward the user's prompt to the gateway for plan generation, **before** the LLM sees it. |
 | `PreToolUse` | `pretool.sh` | Offer every tool call to the gateway, which checks it against the active plan and permits or rejects. |
 
-Both hooks talk to a long-running HTTP daemon (`gateway/http_server.py`)
+Both hooks talk to a long-running HTTP daemon (`gateway/serving/http_server.py`)
 over `localhost`. Session state is keyed by Claude Code's own
 `session_id`, so the two hooks operate on the same gateway session for
 the duration of a conversation.
@@ -22,7 +22,7 @@ the duration of a conversation.
 ## 1. Start the gateway
 
 ```bash
-.venv/bin/python gateway/http_server.py --host 127.0.0.1 --port 8081
+.venv/bin/python gateway/serving/http_server.py --host 127.0.0.1 --port 8081
 ```
 
 Leave this running. Restarting drops every active session.
@@ -72,7 +72,7 @@ Example free-form planner:
 ```bash
 PAUTH_PLANNER_STRATEGY=llm-freeform \
 PAUTH_PLANNER_SUITE=shopping \
-.venv/bin/python gateway/http_server.py --host 127.0.0.1 --port 8081
+.venv/bin/python gateway/serving/http_server.py --host 127.0.0.1 --port 8081
 ```
 
 ## 4. Verify the round-trip

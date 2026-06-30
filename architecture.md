@@ -32,7 +32,7 @@ development bottlenecks are separated in `gateway/DESIGN_STATUS.md`.
    └────────────────────────────────────────────────────┼────────────┘
                                                         ▼
    ┌─────────────────────────────────────────────────────────────────┐
-   │              gateway/http_server.py  (long-running daemon)      │
+   │              gateway/serving/http_server.py  (long-running daemon)      │
    │                                                                 │
    │   POST /sessions/<id>/messages   -- prompt OR tool_call         │
    │                                                                 │
@@ -145,8 +145,8 @@ flowchart LR
 
 | Boundary | Contract | Replaceable parts | Stable owner |
 |---|---|---|---|
-| Agent ingress | `PromptMessage` and `ToolCallMessage` | Claude hooks, future MCP/HTTP proxy, custom clients | `gateway/agent_channel.py` |
-| Planner | restricted imperative `def run(...): ...` | deterministic recognizer, LLM free-form, interactive structuring, specialized model, formal parser | `gateway/planner.py` |
+| Agent ingress | `PromptMessage` and `ToolCallMessage` | Claude hooks, future MCP/HTTP proxy, custom clients | `gateway/ingress/agent_channel.py` |
+| Planner | restricted imperative `def run(...): ...` | deterministic recognizer, LLM free-form, interactive structuring, specialized model, formal parser | `gateway/planning/planner.py` |
 | Tool source | `SuiteSpec` (`tools`, `make_env`, `runner_factory`) | shopping demo, AgentDojo, MCP servers, OpenAPI specs, future SaaS adapters | `pauth/suites/base.py` |
 | Authorization core | compiled rules + envelope-backed operand checks | should not vary per provider | `pauth/` |
 
@@ -166,8 +166,8 @@ apps replace AgentDojo, they should implement or adapt into `SuiteSpec`; the
 PAuth core and planner contract should not know whether the backing tool came
 from AgentDojo, MCP, OpenAPI, or a hand-written suite.
 
-OpenAPI-backed providers add one more operational loop: `gateway/openapi_suite.py`
-reflects the spec at load time, while `gateway/api_spec_monitor.py` detects
+OpenAPI-backed providers add one more operational loop: `gateway/providers/openapi_suite.py`
+reflects the spec at load time, while `gateway/providers/api_spec_monitor.py` detects
 spec changes and emits a notification-ready diff. The gateway should not
 silently absorb upstream API changes without surfacing the changed tool surface
 to the user.
@@ -236,9 +236,9 @@ Interpretation:
 
 | Red-dotted zone | Meaning | Current repo anchor |
 |---|---|---|
-| Imperative code generation layer | The unresolved A1 problem: natural language to restricted `run()` code. | `gateway/planner.py`, `gateway/PLANNING_STRATEGIES.md`, `pauth/codegen.py`, `gateway/agentic_a1.py` |
-| Self-host / gateway configuration layer | How users run/configure the gateway, choose planner strategy, manage sessions, reload changed specs, and receive audit/notification output. | `gateway/http_server.py`, `gateway/config.py`, `gateway/SELF_HOSTING.md`, `gateway/api_spec_monitor.py` |
-| SaaS configuration layer | How real apps/SaaS APIs are registered, reflected, monitored, and adapted into `SuiteSpec`. | `pauth/suites/base.py`, `gateway/mcp_suite.py`, `gateway/openapi_suite.py`, `gateway/registry.py` |
+| Imperative code generation layer | The unresolved A1 problem: natural language to restricted `run()` code. | `gateway/planning/planner.py`, `gateway/PLANNING_STRATEGIES.md`, `pauth/codegen.py`, `gateway/planning/agentic_a1.py` |
+| Self-host / gateway configuration layer | How users run/configure the gateway, choose planner strategy, manage sessions, reload changed specs, and receive audit/notification output. | `gateway/serving/http_server.py`, `gateway/serving/config.py`, `gateway/SELF_HOSTING.md`, `gateway/providers/api_spec_monitor.py` |
+| SaaS configuration layer | How real apps/SaaS APIs are registered, reflected, monitored, and adapted into `SuiteSpec`. | `pauth/suites/base.py`, `gateway/providers/mcp_suite.py`, `gateway/providers/openapi_suite.py`, `gateway/providers/registry.py` |
 
 The black dotted zone around the existing agent represents the gateway
 integration boundary: a lifecycle hook/plugin forwards the clean prompt and
@@ -261,13 +261,13 @@ is one universal prompt event contract.
 |---|---|
 | `pauth/` | Pure PAuth algorithm. `codegen` (A1 LLM prompt), `grammar` (Appendix A parser), `slicing` (A2), `rules` (A3, Algorithm 1), `enforcer` (B1–B4), `envelope` (signed observations), `evaluator` (deterministic symbolic eval), `suites/base` (SuiteSpec interface). No knowledge of agents, hooks or HTTP. |
 | `pauth/suites/shopping.py` | Self-contained demo suite: tools, environment, runner, and the worked-example reference codes / task definitions. Used by both paper reproduction (`tests/`) and gateway demos. |
-| `gateway/core.py` | NL → run() recognizer (deterministic, regex-driven). Used only for the strict path; the agentic/freeform path skips it. |
-| `gateway/planner.py` | Pluggable A1 boundary. Planner strategies emit restricted imperative code; `Gateway` compiles and enforces it through the stable PAuth pipeline. |
+| `gateway/planning/core.py` | NL → run() recognizer (deterministic, regex-driven). Used only for the strict path; the agentic/freeform path skips it. |
+| `gateway/planning/planner.py` | Pluggable A1 boundary. Planner strategies emit restricted imperative code; `Gateway` compiles and enforces it through the stable PAuth pipeline. |
 | `gateway/PLANNING_STRATEGIES.md` | A1 strategy catalogue: interactive structuring, specialized imperative-code model, and formal NL analysis. |
-| `gateway/agentic_a1.py` | LLM A1 with grammar-feedback loop (Q12). Wraps `pauth.codegen.SYSTEM_PROMPT`, catches `RestrictedGrammarError`, feeds the violated rule back to the LLM, retries up to N times. |
-| `gateway/gateway.py` | `Gateway` class. Holds one task lifecycle. Two entry points: `submit_user_prompt(prompt)` (plan once) and `handle_tool_call(tool, args)` (enforce per call). |
-| `gateway/agent_channel.py` | Agent-facing API. Two message kinds: `prompt` and `tool_call`. Enforces "prompt first, exactly once" structurally. JSON-serialisable wire shape. |
-| `gateway/http_server.py` | Minimal stdlib HTTP wrapper. `POST /sessions/<id>/messages`. Sessions keyed by client-supplied id (Claude Code's session_id). |
+| `gateway/planning/agentic_a1.py` | LLM A1 with grammar-feedback loop (Q12). Wraps `pauth.codegen.SYSTEM_PROMPT`, catches `RestrictedGrammarError`, feeds the violated rule back to the LLM, retries up to N times. |
+| `gateway/runtime/gateway.py` | `Gateway` class. Holds one task lifecycle. Two entry points: `submit_user_prompt(prompt)` (plan once) and `handle_tool_call(tool, args)` (enforce per call). |
+| `gateway/ingress/agent_channel.py` | Agent-facing API. Two message kinds: `prompt` and `tool_call`. Enforces "prompt first, exactly once" structurally. JSON-serialisable wire shape. |
+| `gateway/serving/http_server.py` | Minimal stdlib HTTP wrapper. `POST /sessions/<id>/messages`. Sessions keyed by client-supplied id (Claude Code's session_id). |
 | `gateway/hooks/` | `submit_prompt.sh` (UserPromptSubmit) and `pretool.sh` (PreToolUse). Each is a thin curl-to-HTTP shim with strict / log modes. |
 | `tests/` | Paper reproduction (`tests/test_worked_examples.py`, `tests/test_unexpected_attacks.py`, `tests/experiment/`) and L1/L2/L3 fixtures (`tests/fixtures/`). |
 
@@ -399,17 +399,17 @@ What the gateway does **not** defend against (explicitly out of scope):
 
 | Decision | Location |
 |---|---|
-| Plan once, enforce per call | gateway/gateway.py docstring; Q12 derivation |
-| Recognizer-canonical path vs LLM A1 | gateway/planner.py, gateway/core.py, gateway/agentic_a1.py; Q9, Q12 |
-| Grammar feedback loop with explicit "you MUST obey rule X" | gateway/agentic_a1.py; Q12 answer |
-| Agent-facing channel and trust shift | gateway/agent_channel.py; Q13 |
+| Plan once, enforce per call | gateway/runtime/gateway.py docstring; Q12 derivation |
+| Recognizer-canonical path vs LLM A1 | gateway/planning/planner.py, gateway/planning/core.py, gateway/planning/agentic_a1.py; Q9, Q12 |
+| Grammar feedback loop with explicit "you MUST obey rule X" | gateway/planning/agentic_a1.py; Q12 answer |
+| Agent-facing channel and trust shift | gateway/ingress/agent_channel.py; Q13 |
 | Self-hosted, user-registered SaaS | gateway/SELF_HOSTING.md; not yet implemented |
 | Test data layered into L1 / L2 / L3 | tests/fixtures/; user discussion 2026-06-04 |
 | AI-generated fixtures separated for review | tests/fixtures/ai_generated/ |
 
 ## 7. Operational notes
 
-* Start the gateway daemon (`gateway/http_server.py`) before opening
+* Start the gateway daemon (`gateway/serving/http_server.py`) before opening
   Claude Code. The daemon holds session state in memory; restarting
   drops every active session.
 * The hook scripts log to stderr; Claude Code surfaces stderr in its
@@ -425,7 +425,7 @@ What the gateway does **not** defend against (explicitly out of scope):
 ## 8. Multi-suite / pluggable tool sources
 
 The gateway operates over a single ``SuiteSpec``, but
-``gateway/registry.py`` composes a *virtual* merged ``SuiteSpec`` from
+``gateway/providers/registry.py`` composes a *virtual* merged ``SuiteSpec`` from
 any number of source suites. Tool names must be globally unique; the
 registry validates this at registration time.
 
@@ -435,19 +435,19 @@ Pluggable backends today:
 |---|---|---|
 | Self-contained shopping suite | `pauth/suites/shopping.py` | Demos, offline tests |
 | AgentDojo suites | `tests/experiment/agentdojo_adapter.py` | Paper reproduction, banking/slack/travel/workspace |
-| MCP server (HTTP) | `gateway/mcp_suite.py` ``build_mcp_suite`` | Localhost MCP shims, real MCP servers that expose HTTP |
-| MCP server (stdio) | `gateway/mcp_suite.py` ``build_mcp_suite_stdio`` | Reference MCP servers (``@modelcontextprotocol/*``) and similar subprocess shapes |
+| MCP server (HTTP) | `gateway/providers/mcp_suite.py` ``build_mcp_suite`` | Localhost MCP shims, real MCP servers that expose HTTP |
+| MCP server (stdio) | `gateway/providers/mcp_suite.py` ``build_mcp_suite_stdio`` | Reference MCP servers (``@modelcontextprotocol/*``) and similar subprocess shapes |
 
 Additional shaping layers:
 
-* `gateway/policy.py` -- ``PolicyAwareEnforcer`` lets a deployer mark
+* `gateway/runtime/policy.py` -- ``PolicyAwareEnforcer`` lets a deployer mark
   ``(tool, parameter)`` pairs as *free* operands so the enforcer skips
   the operand check there. Use for search queries, free-form message
   bodies, and similar operands that have no transactional meaning.
-* `gateway/suite_filter.py` -- bag-of-words ``SuiteFilter`` that narrows
+* `gateway/providers/suite_filter.py` -- bag-of-words ``SuiteFilter`` that narrows
   the merged universe to a subset that scores against the prompt. Keeps
   the A1 prompt small when many MCPs are registered. Pluggable scorer.
-* `gateway/config.py` -- JSON config consumed by the HTTP server's
+* `gateway/serving/config.py` -- JSON config consumed by the HTTP server's
   ``--config`` flag. Declares source suites, operand policy, suite
   filter parameters. Adapter table makes adding new backends a single
   function.
@@ -477,7 +477,7 @@ we keep in mind so the abstractions don't paint us into a corner.
    │               ▼                                                 │
    │  ┌─────────────────────────────────────────────────────────┐    │
    │  │  systemd unit: gateway-http                             │    │
-   │  │   - gateway/http_server.py --config /etc/gateway.json   │    │
+   │  │   - gateway/serving/http_server.py --config /etc/gateway.json   │    │
    │  │   - in-memory sessions, restart loses state             │    │
    │  └────────────┬────────────────────────────────────────────┘    │
    │               │                                                 │
@@ -626,18 +626,18 @@ Why not Vercel for the production hot path:
 
 | Abstraction | Self-hosted role | Cloud role |
 |---|---|---|
-| `gateway/http_server.py` | systemd unit on the VM | container behind a private ALB / Application Gateway |
-| `gateway/agent_channel.py` | unchanged | unchanged; session state externalised at the `_Session` boundary |
-| `gateway/registry.py` + `gateway/config.py` | `gateway.json` on disk | config blob in Secrets Manager / Key Vault |
-| `gateway/mcp_suite.py` HTTP | localhost MCPs | private-DNS-addressed MCP services |
-| `gateway/mcp_suite.py` stdio | subprocess MCPs on the VM | sidecar containers or function-backed shims |
-| `gateway/policy.py` | per-deployment JSON | per-tenant JSON in the config store |
-| `gateway/suite_filter.py` | unchanged | unchanged; consider an embedding-based scorer once the suite count grows |
+| `gateway/serving/http_server.py` | systemd unit on the VM | container behind a private ALB / Application Gateway |
+| `gateway/ingress/agent_channel.py` | unchanged | unchanged; session state externalised at the `_Session` boundary |
+| `gateway/providers/registry.py` + `gateway/serving/config.py` | `gateway.json` on disk | config blob in Secrets Manager / Key Vault |
+| `gateway/providers/mcp_suite.py` HTTP | localhost MCPs | private-DNS-addressed MCP services |
+| `gateway/providers/mcp_suite.py` stdio | subprocess MCPs on the VM | sidecar containers or function-backed shims |
+| `gateway/runtime/policy.py` | per-deployment JSON | per-tenant JSON in the config store |
+| `gateway/providers/suite_filter.py` | unchanged | unchanged; consider an embedding-based scorer once the suite count grows |
 
 The key invariant: **all abstractions live above the deployment
 boundary**. The gateway's algorithmic core (`pauth/`) and the policy
-layer (`gateway/policy.py`, `gateway/registry.py`,
-`gateway/suite_filter.py`) are identical between topologies. Only the
+layer (`gateway/runtime/policy.py`, `gateway/providers/registry.py`,
+`gateway/providers/suite_filter.py`) are identical between topologies. Only the
 operational substrate (state store, secret store, network) changes.
 
 ## 10. What is not built yet
@@ -656,7 +656,7 @@ operational substrate (state store, secret store, network) changes.
   travel / workspace are still consumed via the existing AgentDojo
   adapter (`tests/experiment/agentdojo_adapter.py`).
 * Embedding-based suite filter. The keyword filter in
-  `gateway/suite_filter.py` is the cheap default and good enough for a
+  `gateway/providers/suite_filter.py` is the cheap default and good enough for a
   handful of MCPs; once registrations cross ~20 suites a small
   embedding model (or a cached LLM filter) will earn its keep.
 * Externalised session store for the cloud topology. The

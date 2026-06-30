@@ -86,11 +86,11 @@ Current stable boundaries:
 
 | Boundary | Current contract | Repo anchor |
 |---|---|---|
-| Agent ingress | `PromptMessage` and `ToolCallMessage` over the gateway message API. | `gateway/agent_channel.py`, `gateway/http_server.py` |
-| Planning | User prompt plus tool schemas are converted into restricted imperative `run()` code. | `gateway/planner.py`, `gateway/PLANNING_STRATEGIES.md` |
+| Agent ingress | `PromptMessage` and `ToolCallMessage` over the gateway message API. | `gateway/ingress/agent_channel.py`, `gateway/serving/http_server.py` |
+| Planning | User prompt plus tool schemas are converted into restricted imperative `run()` code. | `gateway/planning/planner.py`, `gateway/PLANNING_STRATEGIES.md` |
 | Validation | Generated code must pass grammar, slicing, and rule compilation before enforcement. | `pauth/grammar.py`, `pauth/pipeline.py`, `pauth/rules.py` |
 | Enforcement | Every tool call is checked against compiled rules and envelope-backed observations. | `pauth/enforcer.py`, `pauth/envelope.py` |
-| Tool source | Tool providers adapt into `SuiteSpec`. | `pauth/suites/base.py`, `gateway/openapi_suite.py`, `gateway/mcp_suite.py` |
+| Tool source | Tool providers adapt into `SuiteSpec`. | `pauth/suites/base.py`, `gateway/providers/openapi_suite.py`, `gateway/providers/mcp_suite.py` |
 
 Implemented integrations and providers:
 

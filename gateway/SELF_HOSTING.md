@@ -71,7 +71,7 @@ Every integration should translate its native prompt signal into:
 }
 ```
 
-Current code uses `PromptMessage` inside `gateway/agent_channel.py` as the
+Current code uses `PromptMessage` inside `gateway/ingress/agent_channel.py` as the
 normalized prompt event. Future prompt-capture adapters should feed that same
 boundary.
 
@@ -216,7 +216,7 @@ OpenAPI-backed suites can be registered in gateway config:
 }
 ```
 
-At gateway startup, `gateway/openapi_suite.py` reflects the current OpenAPI
+At gateway startup, `gateway/providers/openapi_suite.py` reflects the current OpenAPI
 document into a `SuiteSpec`: operations become tools, parameters and JSON body
 fields become tool operands, and response schemas become A1 tool docs.
 
@@ -233,7 +233,7 @@ The monitor emits JSON describing changed specs, added/removed tools, and
 changed parameter lists. A self-hosted deployment can wire that JSON to email,
 Slack, app UI notifications, or a restart/reload workflow.
 
-Current limitation: a running `gateway/http_server.py` does not hot-reload a
+Current limitation: a running `gateway/serving/http_server.py` does not hot-reload a
 changed OpenAPI spec. The next layer should add an authenticated reload endpoint
 or a supervisor-managed restart after the user accepts the changed tool
 surface.

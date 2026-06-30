@@ -23,7 +23,7 @@ interception is implemented), `plan.md` issue B5 (Bash escape hatch),
 | A third party (unmodified Claude Code, Codex, ...) | **Interception** (inference proxy / hooks) | The code cannot be changed, so prompt and tool events must be captured from outside. |
 
 Both ingress modes normalize into the **same** `PromptMessage` /
-`ToolCallMessage` contract (`gateway/agent_channel.py`) and feed the **same**
+`ToolCallMessage` contract (`gateway/ingress/agent_channel.py`) and feed the **same**
 deterministic core (`pauth/`). Only the ingress adapter differs. This is exactly
 what the loose-coupling boundary in `architecture.md` was built for.
 
@@ -181,7 +181,7 @@ Capture is not enforcement (applies to the inference-proxy path) — this is the
   rewriting the response mid-flight can desync the agent's state.
 - **(B) Tool proxy** (acts on the **往路 of the tool-execution channel**, not the
   inference round trip) — route MCP / external tool calls through the gateway and
-  deny there (`gateway/mcp_suite.py`). Robust, but agent-internal tools never
+  deny there (`gateway/providers/mcp_suite.py`). Robust, but agent-internal tools never
   route here.
 - Full L3 interception = (A) + (B) — because they cover **different legs on
   different channels**, neither alone is complete.

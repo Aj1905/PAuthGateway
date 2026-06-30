@@ -77,11 +77,11 @@ Defense components (target files):
 
 | Component | What it does | Target |
 |---|---|---|
-| Source trust label | Each source suite declares `trust: trusted \| untrusted`, **default untrusted** | `gateway/registry.py`, `gateway/config.py` |
+| Source trust label | Each source suite declares `trust: trusted \| untrusted`, **default untrusted** | `gateway/providers/registry.py`, `gateway/serving/config.py` |
 | Taint propagation | Derived operands inherit the **meet** (most-untrusted) of their inputs | `pauth/evaluator.py` |
-| Sink classification | Each `(tool[, param])` tagged `internal-read` vs `egress/irreversible` | `gateway/policy.py` |
+| Sink classification | Each `(tool[, param])` tagged `internal-read` vs `egress/irreversible` | `gateway/runtime/policy.py` |
 | Gate B5 | `untrusted × egress` → **escalate to human confirm** (new PERMIT / DENY / **CONFIRM** outcome) | `pauth/enforcer.py` |
-| Confirmation round-trip | New wire messages `confirm_request` / `confirm_response`, showing resolved value + provenance chain | `gateway/agent_channel.py`, `gateway/http_server.py` |
+| Confirmation round-trip | New wire messages `confirm_request` / `confirm_response`, showing resolved value + provenance chain | `gateway/ingress/agent_channel.py`, `gateway/serving/http_server.py` |
 | Quarantine LLM (Q-LLM) | Reads untrusted content with **no tool access**; output tagged untrusted; never decides permit/deny | new |
 
 Note: the envelope already records **which tool produced each value**
@@ -182,6 +182,6 @@ cryptographically verifiable provenance.
 
 - `architecture.md` §4–§5 — the built enforcement core and its invariants.
 - `gateway/DESIGN_STATUS.md` — implementation status / bottlenecks.
-- `gateway/policy.py` — today marks free operands; §3 extends it with sink
+- `gateway/runtime/policy.py` — today marks free operands; §3 extends it with sink
   classification and trust labels.
 - `grill.md` — decision history (Q-numbered).
