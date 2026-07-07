@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, Union
 
 from pauth.suites.base import SuiteSpec
 
@@ -124,8 +124,11 @@ class ErrorResponse:
         return dataclasses.asdict(self)
 
 
-AgentMessage = PromptMessage | ToolCallMessage
-AgentResponse = PromptResponse | ToolCallResponse | ErrorResponse
+# Runtime type aliases: use typing.Union so these evaluate on Python 3.9+
+# (PEP 604 ``X | Y`` at runtime needs 3.10+; ``from __future__`` only defers
+# annotations, not this module-level assignment).
+AgentMessage = Union[PromptMessage, ToolCallMessage]
+AgentResponse = Union[PromptResponse, ToolCallResponse, ErrorResponse]
 
 
 def message_from_dict(payload: dict[str, Any]) -> AgentMessage | None:
@@ -269,7 +272,11 @@ class AgentChannel:
         # ``CallResult.return_value`` may be a non-JSON-serialisable pydantic
         # / dataclass object; serialise defensively for the wire payload.
         rv = _to_wire(result.return_value)
-        return ToolCallResponse(permit=result.permit, reason=result.reason, return_value=rv)
+        # Surface the VALUE-FREE ``agent_reason`` on denials, never the internal
+        # ``reason`` (which may quote an operand value). This is the channel
+        # that re-enters the agent's model context (solution.md S16).
+        wire_reason = result.agent_reason if result.agent_reason is not None else result.reason
+        return ToolCallResponse(permit=result.permit, reason=wire_reason, return_value=rv)
 
 
 def _to_wire(value: Any) -> Any:
