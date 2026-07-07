@@ -97,7 +97,9 @@
 - [ ] **💬議論** tool名 global 一意 → `<suite>:<tool>` namespacing（A1が見るuniverseを変える, D2）
 - [ ] suite_filter で A1 prompt 膨張抑制（D1）
 - [ ] **🔬研究** embedding/LLM ベース suite_filter（キーワードの限界を超える, D1）
-- [ ] **filter が必要ツールを落とした率**を新指標として計測（盲点対策）
+- [x] **filter が必要ツールを落とした率**を新指標として計測（盲点対策）— `FILTER_DROP_COUNT` /
+  `FILTER_RECALL` を top_k でスイープ（`eval/filter_recall.py`）。ラベル付きコーパス
+  （`tests/fixtures/filter_cases.py`）で top_k=1 が workspace を落とす盲点を surface（top_k≥2 で recall 100%）
 - [ ] **💬議論** free-operand 3段ポリシー設計: enforced / free / flow-constrained free（E1）
 - [x] **💬議論** 危険フロー(#1)の閉じ方を再整理（solution.md S15/S17）→ **別建ての「決定的
   危険フロー検出エンジン」は中核要件ではない**と結論。#1 の closure は **grill 機構**
