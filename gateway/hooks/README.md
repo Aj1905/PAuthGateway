@@ -89,6 +89,21 @@ Aurora プロンプトを打ち込む。
 `prompt accepted ::` をログ出力し、gateway daemon の端末には POST が表示され、
 続くツール呼び出しが `pretool.sh` 経由で現れるはずだ。
 
+## 4b. Lock down the agent's egress (bypass prevention)
+
+hook はエージェントが**協力的にツール呼び出しを提示する**経路しか捕捉できない。
+生 `curl` や subprocess でゲートウェイを迂回されるのを防ぐには、エージェントを
+**専用の非管理ユーザ**で動かし、その egress をゲートウェイのホスト:ポートだけに
+制限する。管理者権限で一度だけ実行する。
+
+```bash
+sudo AGENT_USER=pauth-agent GATEWAY_HOST=127.0.0.1 GATEWAY_PORT=8081 gateway/deploy/egress_lockdown.sh apply
+```
+
+これにより、エージェントが何を実行しても通信は必ずゲートウェイを通り、通らないものは
+カーネルで drop される。**エージェントに管理者権限を与えるとこの制御は無効になり
+迂回されうる**(詳細と根拠は `gateway/SELF_HOSTING.md` の「Egress Lockdown」節)。
+
 ## Failure modes to expect
 
 * **Gateway daemon down** → hook が HTTP エラーを表示する。`strict` モードでは
@@ -105,4 +120,4 @@ Aurora プロンプトを打ち込む。
   残る。強制にコミットする前に、実際の Claude Code の挙動を測定するのに有用だ。
 
 システム全体の設計については `architecture.md` を、決定の履歴（Q10 capture
-mechanism、Q13 trust shift など）については `grill.md` を参照。
+mechanism、Q13 trust shift など）については `solution.md`（旧 `grill.md` を統合）を参照。

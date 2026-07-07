@@ -13,7 +13,7 @@ custom LLM agents, etc.) to the gateway. Two message kinds:
 Trust shift recorded with this interface
 ----------------------------------------
 The earlier converged design required the user prompt to bypass the agent
-(see grill.md). Routing it through the agent here re-introduces the
+(see solution.md, Q-series). Routing it through the agent here re-introduces the
 forwarding-integrity assumption: the agent MUST pass the user's prompt
 unchanged. PAuth still defends against off-plan tool calls in the same
 way; what we are *adding* to the trust set is "the agent does not silently

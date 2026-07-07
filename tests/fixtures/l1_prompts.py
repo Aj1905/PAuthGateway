@@ -162,7 +162,7 @@ FREEFORM_CASES: list[PromptCase] = [
         must_call=["get_product_details", "send_money"],
         note=(
             "missing IBAN -- the LLM fabricates a recipient the prompt never "
-            "named. Per the Q15 one-sided doctrine (grill.md) a fabricated "
+            "named. Per the Q15 one-sided doctrine (solution.md) a fabricated "
             "recipient is over-authorization; the Q15-e precheck must reject "
             "(solution.md S1). Recovery is a clarification retry, not accept."
         ),

@@ -11,8 +11,8 @@
 
 設計詳細は専用文書へ: `architecture.md`（論理設計）, `THREAT_MODEL.md`（防御境界）,
 `gateway/INGRESS_DESIGN.md`（ingress）, `gateway/DESIGN_STATUS.md`（現状/未決）,
-`grill.md`（決定履歴・Q番号の出典）。**課題カタログ（旧 `issues.md`, ID A1〜F1
-保持）は本書末尾**。
+`solution.md`（実装中の決定 S番号 ＋ 設計対話 Q番号の出典。旧 `grill.md` を統合）。
+**課題カタログ（旧 `issues.md`, ID A1〜F1 保持）は本書末尾**。
 
 ## ターゲット
 
@@ -225,7 +225,7 @@
 
 ## 課題カタログ（旧 issues.md, ID 保持）
 
-他文書（`architecture.md` / `grill.md` / `DESIGN_STATUS.md`）は ID（A1, B5 等）で
+他文書（`architecture.md` / `solution.md` / `DESIGN_STATUS.md`）は ID（A1, B5 等）で
 参照しているため ID を保持。状態: 🔴未解決 / 🟡暫定対処 / 🟢主要対策済 / ⚪着手しない /
 ♾️永続。各項目は対応 Stage を示す。
 

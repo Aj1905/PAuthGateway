@@ -3,7 +3,8 @@
 `plan.md` の 💬議論 項目を実装中に解決した記録。決定ごとに「決定・根拠・影響範囲・残課題」を書く。
 🔬研究 項目は原則ここでは解決しない(解決を試みた場合はその範囲を明記する)。
 
-書式: S番号は本書内の通し番号。plan.md / grill.md の ID (Q15-e, B2 等) と相互参照する。
+書式: S番号は本書内の通し番号。plan.md の ID (B2 等) と相互参照する。設計対話の記録
+(Q系列, 旧 grill.md)は本書末尾に統合済み(Q15-e 等の Q番号はそこを参照)。
 
 ---
 
@@ -631,3 +632,135 @@ that本命、MITM＋CA thaピンニング無ければ可)、(b) この核に par
 
 - `.env` に OPENAI_API_KEY / PAUTH_MODEL あり。`../me.env`(ANTHROPIC_API_KEY)は不在
   → S3 の多プロバイダ judge で代替。Anthropic judge での本計測はキー投入後に再実行する。
+
+---
+
+# 設計審議ログ(Q系列 — 旧 grill.md を統合, 2026-07-08)
+
+実装の前後で行った設計対話の記録(質問・推奨・ユーザ回答・収束)。上の S 系列(実装中に
+確定した決定)と同じ「決定の結果＋根拠」構成なので本書に一本化した。Q番号は plan.md /
+architecture.md / THREAT_MODEL.md から ID 参照される出典。実装の詳細は該当する S番号を
+参照(例: Q15 → S1/S3/S7/S9/S14、Q10 → S21/S22＋egress lockdown)。
+
+## Q2. snapshot か git か
+
+**質問:** 「git に commit」を「独立 snapshot ストアに記録」に置き換えれば commit churn /
+ブランチ汚染 / pre-commit hook コスト / WIP 固定化 のコストがほぼ消える。それでも git を
+使う理由は?(選択肢 α=snapshot で十分 / β=外部監査可能性 / γ=cross-file semantic
+checkpoint / δ=共有・協調)
+
+**推奨:** α。**理由:** 要件は「失敗時に直前の良好状態へ戻れること」。per-file snapshot で
+十分で、recoverability のために git のコストを払う理由がない。
+
+**ユーザ回答→収束:** snapshot 復元は git と等価に決定的(両方 OS 級 file write)・LLM 非介在。
+「git の方が決定的」は誤りで、正しくは「git は atomic(cross-file 整合性)」が利点。
+**収束: γ'** — cross-file atomic checkpoint は要るが git そのものでなく agent 専用ブランチ。
+
+**状態:** 方向決定済・実装未了(主に Mode 2 のロールバック harness の話で PAuth 本体外)。
+
+## Q5. Phase tracking の配置場所
+
+**質問:** read→plan→write ループの phase tracking をどこに置くか?(P1=harness /
+P2=agent 自己申告 / P3=専用 sub-agent)
+
+**推奨:** P1(ただし大幅な harness 改造が要る)。
+
+**ユーザ回答:** 直接回答なし。「Claude Code の中身は変えたくない、アタッチメントが欲しい」
+への方向転換。**状態:** アタッチメント方針で moot(放棄)。
+
+## Q6. Agent 出力 → run() ブリッジ方式
+
+**質問:** Claude Code は run() を持たない。PAuth は run() を入口にする。どう繋ぐか?
+(M1=upfront plan / M2=自由実行＋capability gate / M3=declare→execute→再 declare /
+M4=後付け解釈)
+
+**推奨:** M1 を基本に、replan 時のみ M3 を限定許可。
+
+**ユーザ回答:** 直接回答なし。**状態:** 実装済み(ゲートウェイ＋AgentChannel。
+`submit_user_prompt` で一度計画、`handle_tool_call` で毎回強制)。
+
+## Q8. 実装スコープ(3問同時 — AskUserQuestion)
+
+**質問1(実ツール層):** AgentDojo suite(推奨)/ 自前ミニ suite / 両方。
+**質問2(エージェント):** scenario runner(推奨)/ 実 LLM / 両方。
+**質問3(user→gateway 直結):** Python API 分離(推奨)/ HTTP・gRPC / 構造保証のみ。
+
+**ユーザ回答:** すべて推奨(AgentDojo / scenario runner / Python API 分離)。
+**状態:** 実装完了(8 シナリオ・24 attempts 期待通り)。
+
+## Q9. A1(prompt → run())の戦略
+
+**質問:** ゲートウェイ内で run() を誰が生成するか?(L1=決定的 recognizer のみ /
+L2=LLM 翻訳＋決定的 verifier / L3=LLM 翻訳＋緩い verifier)
+
+**推奨:** L1 で確定。**理由:** L2 は LLM を挟んでも受理範囲が L1 と同じで純粋な overhead。
+L3 は受理範囲を広げる代わりに zero FP/FN 保証を犠牲にする。
+
+**ユーザ回答:** 直接回答なし(直 NL slice でなく run() コードを挟む理由を質問→説明。
+以後ゲートウェイ実装のリオーガナイズ＋Claude Code 統合へ展開)。
+**状態:** 実装済み(L1 recognizer ＋ LLM freeform の両経路。S2 の `auto` 戦略で統合)。
+
+## Q10. Claude Code の tool 呼び出しを *どこで* 捕まえるか
+
+**質問:** Claude Code を無改造で動かしたまま外部 tool 呼び出しを gateway で捕捉する
+メカニズムは?(I1=MCP サーバ / I2=HTTP forward proxy / I3=netns＋DNS hijack /
+I4=Claude Code 改造)
+
+**推奨:** I1(MCP)を基本、I2(HTTP proxy)を補助層。**理由:** I1 単独は Bash `curl` で
+容易に bypass。I3 は macOS で苦しい。I4 は要件違反。I1+I2 で正規経路と抜け道の二段防御。
+ただし「Claude Code 自身が積極的に bypass しない」前提を許容する必要がある。
+
+**2026-07-08 決着(場合B / サイドチャネル迂回):** I1+I2 の意味的捕捉(実装は S22 の
+`InterceptingProxy`、側チャネル既定拒否は S21)に加え、**OS の egress ロックダウン**で
+「生 Bash・直接ネットワーク I/O を持たない」Stage 1 前提を*強制*する方針に確定。エージェントを
+専用の非管理ユーザで動かし外向き通信をゲートウェイのホスト:ポートだけに制限する
+(`gateway/deploy/egress_lockdown.sh`)。迂回は「外部宛て→カーネルで drop」か
+「ゲートウェイ宛て→default-deny で拒否」の二択になり、中身を解読せず fail-closed になる。
+
+**成立条件(必須):** エージェントが**非管理ユーザ**であること。管理者権限を与えると
+ルールを外せ本制御は無効(SELF_HOSTING.md「Egress Lockdown」に明記)。
+**範囲外:** 非ネットワーク副作用(ローカルファイル等)・DoH 独自リゾルバ固定 → 別レイヤ。
+
+## Q15. Validator 強化: Semantic judge(LLM as a judge)
+
+**背景:** validator は「LLM 出力に対するテスト関数」として作用するが、現状のテストが文法
+のみで**意味論(prompt の intent 捕捉)を見ていない**。結果、LLM が grammar 適合のため
+intent を勝手に削る現象(B1 / two_products / post_action)が素通りしていた。Q14(PreAuth
+grill=対話確認)とは別レイヤで、Q15 は agentic A1 内で LLM が LLM 出力を自動判定する。
+
+**2026-06-09 方針(片側安全性):** 目的は intent 完全同値の証明ではない(自然言語の曖昧さ
+ゆえ不可能に近い)。**prompt から正当化できない過剰認可(over-authorization)だけを弾く**。
+狭すぎる plan の over-rejection は retry/clarification で回復可能な UX 問題として許容し、
+過剰認可 accept を最優先で避ける。判定軸: side-effect / operand / data-flow / 条件緩和の
+entailment。
+
+**質問:** semantic judge を retry loop にどう組み込むか?(J1=grammar 直後 / J2=外側 独立
+ループ / J3=retry の最初 / J4=入れず Q14 に振る)
+
+**推奨→採用: J1**(grammar OK → judge → 両方 OK で成功、NG は反例を retry に載せる)。
+既存の grammar feedback loop と同じ messages stream に統合でき実装単純。文法未達コードを
+判定する意味はない(intent 違反は grammar 違反より上位)。
+
+**ユーザ回答:** one-sided semantic validator ＋ retry loop を採用。具体実装(prompt / IR /
+決定的 validator との分担 / fixture)は最も研究が要る部分として残す。
+
+**状態: 実装済み(v1)＋継続最適化(plan.md Stage 2)。** 実装と決定は S 系列に展開:
+- Q15-e(機械的検査の前段化)→ **S1**(`prechecks.py`: 禁止 tool・宛先・金額/数量・
+  read→write の決定的 precheck。誤検出は over-rejection 側に倒れ安全)。カバレッジ穴埋めは **S14**。
+- Q15-a(judge の確率性・別モデル化)→ **S3**(provider 自動判別。別モデル化済、アンサンブル未)。
+- Q15-c(judge への注入)→ 判定 system prompt に「コメント/変数名の主張を信用するな」を明記(解決)。
+- Q15-d(over-authorization accept の別名計測)→ **S7**。実測は **S9**(4 suite 97 タスクで
+  over-authorization accept = 0)。
+- 残(Q15-b over-rejection 計測・Q15-f prompt/IR/評価指標)→ plan.md Stage 2 の🔬研究として継続。
+
+## まとめ(Q系列の状態)
+
+| Q | トピック | 状態 |
+|---|---|---|
+| Q2 | snapshot vs git | γ'(cross-file atomic, agent 専用ブランチ)・実装未了 |
+| Q5 | Phase tracking | 放棄(アタッチメント方針で moot) |
+| Q6 | Agent → run() ブリッジ | 実装済み(ゲートウェイ + AgentChannel) |
+| Q8 | 実装スコープ | 全推奨採用・実装済み |
+| Q9 | A1 戦略 | 実装済み(L1 recognizer + LLM freeform, S2) |
+| Q10 | 捕捉メカニズム | 決着(2026-07-08): I1+I2(S21/S22) + egress ロックダウン。非管理ユーザ前提 |
+| Q15 | Validator semantic judge | 実装済み(v1, S1/S3/S7/S9/S14) + Stage 2 継続 |

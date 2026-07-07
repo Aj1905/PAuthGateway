@@ -110,7 +110,8 @@ flowchart LR
 - `specialized-codegen`
 - `formal-semantic`
 
-現行の保護モデル:
+現行の保護モデル(正典定義はコード `gateway/runtime/protection.py` の
+`ProtectionLevel`。以下はその人間向けミラー):
 
 | Level | Observed by gateway | Claim |
 |---|---|---|
@@ -152,19 +153,21 @@ should the default security story require an isolated agent runtime?
 - VPC/クラウド配置を主たるフレームにしない。
 - `localhost` を最初のユーザ体験として想定する。
 - VM/コンテナ/サンドボックスの隔離を、より強い containment モードとして扱う。
-- localhost 単体で全エージェントのネットワークトラフィックが必ず gateway を通る、
-  とは主張しない。
+- **決着(2026-07-08, Q10 / solution.md):** localhost でも、エージェントを**専用の非管理
+  ユーザ**で動かし OS の egress ロックダウン(`gateway/deploy/egress_lockdown.sh`)を掛ければ、
+  **その外向き通信は必ず gateway を通る**(通らないものはカーネルで drop)。よって「localhost
+  では route を強制できない」はもはや正しくない — *非管理ユーザという前提の下で*強制できる。
+  管理者権限のエージェントでは無効(ルールを外せる)、かつ非ネットワーク副作用(ローカル
+  FS 等)は covered されない点が、隔離モード(VM/コンテナ)の残る優位。
 
 主要な依存関係:
 
-- localhost モードは、OS レベルのエージェント権限管理が成熟するほど現実的になる。
-  OS またはエージェントランタイムが、特定のエージェントプロセスを、他のデスクトップ
-  アプリに影響を与えずに、承認済みのネットワーク宛先・認証情報・ファイル・ツールへと
-  確実に制限できるなら、localhost gateway ははるかに低いセットアップコストでより
-  強い containment を提供できる。
-- それが存在するまでは、localhost モードは完全なプロセスレベル containment を
-  主張するのではなく、credential 隔離、adapter routing、health checks、そして
-  明示的な bypass リスク報告に依拠すべきである。
+- 「OS レベルのエージェント権限管理」は、**専用の非管理ユーザ ＋ per-user egress firewall**
+  という形で egress ロックダウンが具体化した(Q10)。承認済みネットワーク宛先(=gateway)への
+  制限はこれで達成。残るのはファイル/認証情報/ツールの FS 側隔離と、無効化検出の health checks。
+- したがって localhost モードは、egress ロックダウン(非管理ユーザ前提)＋ credential 隔離 ＋
+  adapter routing ＋ health checks ＋ 明示的な bypass リスク報告に依拠する。プロセスレベルの
+  完全 containment(非ネットワーク副作用まで)は依然として隔離モードの領分。
 
 この決定は、デーモンの起動、health checks、bypass 検出を実装する際に再検討すべき
 である。minimum viable product は、より強い VM/コンテナモードを厳格な containment
@@ -403,15 +406,19 @@ prompt capture が弱ければ、システムは L2/L3 から L1/L0 へ落ち、
 
 Claude Code のようなエージェントは、shell、ファイルシステム、サブプロセス、
 ネットワークの側チャネルを持ちうる。ツール呼び出しの強制だけではこれらのチャネルを
-カバーできない。
+カバーできない。**一部は 2026-07-08 に対処済み(下記)。**
 
-製品には次に対する明示的なポリシーが必要である:
+製品に必要な明示ポリシーと現状:
 
-- shell コマンドの allow/deny。
-- outbound ネットワーク制限。
-- credential 隔離。
-- 未知のツールに対するフォールバック挙動。
-- 無効化された hook や直接 SaaS 呼び出しを検出する health checks。
+- shell コマンドの allow/deny → **🟢 実装済み**(`SideChannelPolicy` 既定拒否, solution.md S21。
+  ただし「gateway を通った呼び出し」限定。名前空間付きも捕捉)。
+- outbound ネットワーク制限 → **🟢 実装済み**(OS egress ロックダウン
+  `gateway/deploy/egress_lockdown.sh`, Q10。非管理ユーザ前提で外向きを gateway 経由に強制)。
+- credential 隔離 → 🟡 方針決定(S4: broker 採用)・実装は初の実 SaaS 統合時。
+- 未知のツールに対するフォールバック挙動 → 🟢 default-deny(PAuth コア)。
+- 無効化された hook や直接 SaaS 呼び出しを検出する health checks → 🔴 未実装。
+- **非ネットワーク副作用(ローカル FS 改ざん・秘密の仕込み)の FS 側隔離** → 🔴 未実装
+  (egress ロックダウンの範囲外。隔離モード or FS サンドボックスが要る)。
 
 ### 6. Evaluation Must Move Beyond Mock Suites
 
