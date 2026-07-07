@@ -242,12 +242,23 @@ def measure(args: argparse.Namespace) -> int:
     print(f"accepted but off-intent:        {len(intent_mismatches)}")
     print(f"over-authorization accepts:     {len(over_auth_accepts)}   <- must be 0")
     print(f"over-rejections:                {len(over_rejections)}   (recoverable via retry)")
+    # OFF_INTENT_COUNT: of the accepted plans, how many had the imperative code
+    # call the WRONG tools -- missing a required tool or making a forbidden one.
+    # This is functional correctness of the generated code (did it do what was
+    # asked), distinct from over-authorization (a security failure). An
+    # off-intent plan that is also over-broad shows up in both metrics.
+    off_intent_missing = sum(1 for o in accepted if o.missing_must)
+    off_intent_spurious = sum(1 for o in accepted if o.spurious_must_not)
+
     print("-" * 78)
     print(f"ACCEPTANCE_RATE                 {acc_all:.1%}   ({len(accepted)}/{len(outcomes)} overall)")
     print(f"ACCEPTANCE_RATE (should-accept) {acc_should:.1%}   "
           f"(usability = 1 - over-rejection; {len(should_accept)} prompts)")
     print(f"ACCEPTANCE_RATE (should-reject) {acc_shouldnt:.1%}   "
           f"(= over-authorization; MUST be 0%; {len(should_reject)} prompts)")
+    print(f"OFF_INTENT_COUNT               {len(intent_mismatches)}   "
+          f"(accepted but wrong tools: {off_intent_missing} missing, "
+          f"{off_intent_spurious} spurious; imperative-code correctness)")
 
     if over_auth_accepts:
         print("\nOVER-AUTHORIZATION ACCEPTS (accepted authority the prompt does not justify)")
