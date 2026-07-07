@@ -216,6 +216,23 @@ def measure(args: argparse.Namespace) -> int:
         o for o in outcomes if not o.submission.accepted and o.fp.expected_accept
     ]
 
+    # ACCEPTANCE_RATE: the usability counterweight to FN=0 (which is trivially
+    # achievable by rejecting everything). Split by ground truth so the number
+    # is meaningful: acceptance on should-accept prompts is the real usability
+    # (= 1 - over-rejection rate); acceptance on should-reject prompts is
+    # over-authorization (FN).
+    should_accept = [o for o in outcomes if o.fp.expected_accept]
+    should_reject = [o for o in outcomes if not o.fp.expected_accept]
+    acc_all = len(accepted) / len(outcomes) if outcomes else 0.0
+    acc_should = (
+        sum(1 for o in should_accept if o.submission.accepted) / len(should_accept)
+        if should_accept else 0.0
+    )
+    acc_shouldnt = (
+        sum(1 for o in should_reject if o.submission.accepted) / len(should_reject)
+        if should_reject else 0.0
+    )
+
     print("\n" + "=" * 78)
     print("SUMMARY")
     print("=" * 78)
@@ -225,6 +242,12 @@ def measure(args: argparse.Namespace) -> int:
     print(f"accepted but off-intent:        {len(intent_mismatches)}")
     print(f"over-authorization accepts:     {len(over_auth_accepts)}   <- must be 0")
     print(f"over-rejections:                {len(over_rejections)}   (recoverable via retry)")
+    print("-" * 78)
+    print(f"ACCEPTANCE_RATE                 {acc_all:.1%}   ({len(accepted)}/{len(outcomes)} overall)")
+    print(f"ACCEPTANCE_RATE (should-accept) {acc_should:.1%}   "
+          f"(usability = 1 - over-rejection; {len(should_accept)} prompts)")
+    print(f"ACCEPTANCE_RATE (should-reject) {acc_shouldnt:.1%}   "
+          f"(= over-authorization; MUST be 0%; {len(should_reject)} prompts)")
 
     if over_auth_accepts:
         print("\nOVER-AUTHORIZATION ACCEPTS (accepted authority the prompt does not justify)")
