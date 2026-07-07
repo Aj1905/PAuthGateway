@@ -53,6 +53,17 @@
 ネットワークのファイアウォールだけがセキュリティ境界なのではなく、ライフサイクル
 hook が PAuth に必要な意味的イベントを供給する。
 
+## Protection Precondition: No Raw Side Channels (Stage 1)
+
+Stage 1 の保護主張は次の前提でのみ成立する(決定記録: solution.md S6、B5)。
+
+- エージェントは生 Bash・直接ネットワーク I/O・観測されない credential 経路を
+  **持たない**。外向きアクションはすべて gateway 経由の tool call である。
+- この前提を満たさないデプロイ(例: Bash が有効な Claude Code)は L3 保護として
+  訴求してはならない。実効保護レベルを正直に L1/L2 として報告すること。
+- 側チャネルの gate 機構(allowlist / sandbox / FS 仮想化 / 応答書き換え)は
+  Stage 6(Mode 2)の議題であり、Stage 1 には含まれない。
+
 ## Prompt Capture Boundary
 
 ゲートウェイが、あらゆるエージェントから単一のメカニズムでプロンプトを取得する

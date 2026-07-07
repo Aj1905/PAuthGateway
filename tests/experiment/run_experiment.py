@@ -41,14 +41,17 @@ from pauth.codegen import generate_code, has_api_key
 from pauth.suites.base import SuiteSpec
 from pauth.suites.shopping import build_suite as build_shopping_suite
 
+from gateway.planning.agentic_a1 import generate_code_with_self_repair
+from gateway.planning.prechecks import precheck_code
+
 ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = ROOT / "experiment" / "cache"
 RESULTS_DIR = ROOT / "experiment" / "results"
 
 
 def load_env_file() -> None:
-    """Load KEY=VALUE pairs from a local .env file into the environment."""
-    env_path = ROOT / ".env"
+    """Load KEY=VALUE pairs from the repo-root .env into the environment."""
+    env_path = ROOT.parent / ".env"  # ROOT is tests/; .env lives at the repo root
     if not env_path.exists():
         return
     for line in env_path.read_text().splitlines():
@@ -76,11 +79,15 @@ class TaskResult:
     tool_errors: list[str]
     n_injections: int
     fn_calls: list[str]
+    # Agentic-planner path only: the plan was grammar-valid but rejected at
+    # the plan layer (Q15-e precheck violation or empty/sentinel plan). For a
+    # benign task this is an over-rejection, never an over-authorization.
+    plan_denied: str | None = None
 
     @property
     def usable(self) -> bool:
         """True if A1+A2+A3 produced a checkable task."""
-        return self.a1_ok
+        return self.a1_ok and self.plan_denied is None
 
     @property
     def is_fp(self) -> bool:
@@ -97,8 +104,17 @@ def run_task(
     model: str,
     client: Any | None,
     use_cache: bool,
+    planner: str = "oneshot",
+    max_retries: int = 3,
+    enable_judge: bool = True,
+    judge_model: str = "claude-opus-4-8",
 ) -> TaskResult:
-    """Run the full A1 -> A3 -> B pipeline for a single task."""
+    """Run the full A1 -> A3 -> B pipeline for a single task.
+
+    ``planner`` selects the A1 path: ``oneshot`` is the paper-faithful single
+    call; ``agentic`` uses the grammar/precheck/judge self-repair loop plus
+    the Q15-e plan-layer gate (the free-form product pipeline).
+    """
     cost = 0.0
     prompt_tokens = completion_tokens = 0
     cached = False
@@ -109,9 +125,22 @@ def run_task(
         a1_detail = "reference code (ships with the suite)"
     else:
         short_id = task.task_id if hasattr(task, "task_id") else task.id.split(".")[-1]
-        cache_path = CACHE_DIR / suite.name / f"{short_id}.py" if use_cache else None
         try:
-            result = generate_code(task.prompt, suite.tool_docs(), model, cache_path, client)
+            if planner == "agentic":
+                judge_tag = f"j{'1' if enable_judge else '0'}-{judge_model}"
+                cache_path = (
+                    CACHE_DIR / suite.name / "agentic"
+                    / f"{short_id}-{model}-r{max_retries}-{judge_tag}.py"
+                    if use_cache else None
+                )
+                result = generate_code_with_self_repair(
+                    task.prompt, suite.tool_docs(), model=model,
+                    max_retries=max_retries, cache_path=cache_path, client=client,
+                    enable_judge=enable_judge, judge_model=judge_model,
+                )
+            else:
+                cache_path = CACHE_DIR / suite.name / f"{short_id}.py" if use_cache else None
+                result = generate_code(task.prompt, suite.tool_docs(), model, cache_path, client)
         except RuntimeError as exc:  # missing API key
             return _failed(suite, task, f"A1 skipped: {exc}")
         except Exception as exc:  # noqa: BLE001 -- API/network error
@@ -132,6 +161,23 @@ def run_task(
             cost, prompt_tokens, completion_tokens, cached,
         )
         return res
+
+    # ---- Plan-layer gate (agentic pipeline only) -----------------------
+    if planner == "agentic" and task.reference_code is None:
+        violations = precheck_code(task.prompt, code, suite.tool_docs())
+        denied_reason: str | None = None
+        if violations:
+            denied_reason = "precheck: " + "; ".join(violations)
+        elif not prepared.rules:
+            denied_reason = "empty plan (validators never passed); default-deny"
+        if denied_reason:
+            res = _failed(suite, task, a1_detail)
+            res.a1_ok = True
+            res.plan_denied = denied_reason
+            res.cost_usd, res.prompt_tokens, res.completion_tokens, res.a1_cached = (
+                cost, prompt_tokens, completion_tokens, cached,
+            )
+            return res
 
     # ---- Benign run (B1-B4) -------------------------------------------
     env = suite.make_env()
@@ -198,13 +244,23 @@ def run_suite(
     client: Any | None,
     limit: int | None,
     use_cache: bool,
+    planner: str = "oneshot",
+    max_retries: int = 3,
+    enable_judge: bool = True,
+    judge_model: str = "claude-opus-4-8",
 ) -> list[TaskResult]:
     results: list[TaskResult] = []
     tasks = suite.tasks[:limit] if limit else suite.tasks
     for i, task in enumerate(tasks, 1):
         print(f"  [{i}/{len(tasks)}] {task.id} ...", end=" ", flush=True)
-        result = run_task(suite, task, model, client, use_cache)
-        if not result.usable:
+        result = run_task(
+            suite, task, model, client, use_cache,
+            planner=planner, max_retries=max_retries,
+            enable_judge=enable_judge, judge_model=judge_model,
+        )
+        if result.plan_denied:
+            print(f"PLAN-DENY ({result.plan_denied})")
+        elif not result.usable:
             print(f"SKIP ({result.a1_detail})")
         else:
             flags = []
@@ -238,9 +294,12 @@ def print_report(results: list[TaskResult]) -> dict[str, Any]:
     total_fn = total_inj = total_fp = total_benign = total_skip = 0
     summary: dict[str, Any] = {"suites": {}}
 
+    total_plan_denied = 0
     for suite_name, suite_results in by_suite.items():
         usable = [r for r in suite_results if r.usable]
-        skipped = len(suite_results) - len(usable)
+        plan_denied = [r for r in suite_results if r.plan_denied]
+        total_plan_denied += len(plan_denied)
+        skipped = len(suite_results) - len(usable) - len(plan_denied)
         fn = sum(r.fn_count for r in usable)
         inj = sum(r.n_injections for r in usable)
         fp = sum(1 for r in usable if r.is_fp)
@@ -253,7 +312,7 @@ def print_report(results: list[TaskResult]) -> dict[str, Any]:
         total_skip += skipped
         summary["suites"][suite_name] = {
             "fn": fn, "injection_runs": inj, "fp": fp, "benign_runs": benign,
-            "a1_skipped": skipped,
+            "a1_skipped": skipped, "plan_denied": len(plan_denied),
         }
 
     print("-" * 72)
@@ -261,7 +320,29 @@ def print_report(results: list[TaskResult]) -> dict[str, Any]:
     summary["overall"] = {
         "fn": total_fn, "injection_runs": total_inj,
         "fp": total_fp, "benign_runs": total_benign, "a1_skipped": total_skip,
+        # Q15-d canonical names (solution.md S7). Denominators cover exactly
+        # the tasks A1 passed (plan.md Stage 0 exit bookkeeping): skipped
+        # tasks are excluded above via ``usable``.
+        "over_authorization_accepts": total_fn,
+        "over_rejections": total_fp,
+        "plan_denied": total_plan_denied,
     }
+
+    print(
+        f"\nOn the {total_benign} tasks A1 passed: "
+        f"over-authorization accept (=FN) = {total_fn} / {total_inj} injection runs "
+        f"<- must be 0; over-rejection (=FP) = {total_fp} / {total_benign} benign runs "
+        "(recoverable via retry)."
+    )
+    if total_plan_denied:
+        print(
+            f"Plan-layer denials (Q15-e precheck / empty plan): {total_plan_denied} "
+            "benign tasks -- over-rejections, recoverable via retry/clarification."
+        )
+        print("-" * 72)
+        for r in results:
+            if r.plan_denied:
+                print(f"  [plan-deny] {r.task_id}: {r.plan_denied}")
 
     # Token-cost report (cf. paper Figure 10).
     priced = [r for r in results if r.usable and not r.a1_cached and r.cost_usd > 0]
@@ -312,6 +393,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=None, help="max tasks per suite")
     parser.add_argument("--no-cache", action="store_true", help="ignore cached A1 code")
     parser.add_argument("--out", default=None, help="results JSON path")
+    parser.add_argument(
+        "--planner", choices=["oneshot", "agentic"], default="oneshot",
+        help="A1 path: paper-faithful one-shot, or the agentic "
+             "grammar/precheck/judge pipeline (the free-form product path)",
+    )
+    parser.add_argument("--max-retries", type=int, default=3, help="agentic repair rounds")
+    parser.add_argument("--no-judge", action="store_true", help="disable the Q15 semantic judge")
+    parser.add_argument(
+        "--judge-model", default="claude-opus-4-8",
+        help="judge model id; claude-* uses Anthropic, otherwise OpenAI (solution.md S3)",
+    )
     args = parser.parse_args(argv)
 
     load_env_file()
@@ -347,11 +439,19 @@ def main(argv: list[str] | None = None) -> int:
     all_results: list[TaskResult] = []
     for suite in suites:
         print(f"\n### suite: {suite.name} ({len(suite.tasks)} tasks)")
-        all_results.extend(run_suite(suite, args.model, client, args.limit, not args.no_cache))
+        all_results.extend(run_suite(
+            suite, args.model, client, args.limit, not args.no_cache,
+            planner=args.planner, max_retries=args.max_retries,
+            enable_judge=not args.no_judge, judge_model=args.judge_model,
+        ))
 
     summary = print_report(all_results)
     summary["elapsed_seconds"] = round(time.time() - started, 1)
     summary["model"] = args.model
+    summary["planner"] = args.planner
+    if args.planner == "agentic":
+        summary["judge"] = None if args.no_judge else args.judge_model
+        summary["max_retries"] = args.max_retries
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out_path = Path(args.out) if args.out else RESULTS_DIR / "results.json"

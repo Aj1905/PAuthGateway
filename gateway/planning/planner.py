@@ -27,6 +27,7 @@ class PlanGenerationError(Exception):
 
 STRATEGY_DETERMINISTIC = "deterministic"
 STRATEGY_LLM_FREEFORM = "llm-freeform"
+STRATEGY_AUTO = "auto"
 STRATEGY_INTERACTIVE_STRUCTURING = "interactive-structuring"
 STRATEGY_SPECIALIZED_CODEGEN = "specialized-codegen"
 STRATEGY_FORMAL_SEMANTIC = "formal-semantic"
@@ -38,6 +39,7 @@ STRATEGY_ALIASES = {
     "freeform": STRATEGY_LLM_FREEFORM,
     "llm_freeform": STRATEGY_LLM_FREEFORM,
     "llm": STRATEGY_LLM_FREEFORM,
+    "hybrid": STRATEGY_AUTO,
     "interactive": STRATEGY_INTERACTIVE_STRUCTURING,
     "grill-me": STRATEGY_INTERACTIVE_STRUCTURING,
     "grill_me": STRATEGY_INTERACTIVE_STRUCTURING,
@@ -51,6 +53,7 @@ STRATEGY_ALIASES = {
 KNOWN_STRATEGIES = {
     STRATEGY_DETERMINISTIC,
     STRATEGY_LLM_FREEFORM,
+    STRATEGY_AUTO,
     STRATEGY_INTERACTIVE_STRUCTURING,
     STRATEGY_SPECIALIZED_CODEGEN,
     STRATEGY_FORMAL_SEMANTIC,
@@ -158,6 +161,43 @@ class LLMFreeformPlanner:
 
 
 @dataclasses.dataclass(frozen=True)
+class AutoPlanner:
+    """Main ingress strategy (solution.md S2): recognizer fast path, then LLM.
+
+    The deterministic recognizer, when it matches, is zero-cost and carries
+    the strongest guarantee, so it always runs first. Prompts outside its
+    subset fall back to the free-form LLM planner when a suite is configured;
+    otherwise the rejection names the missing configuration explicitly.
+    """
+
+    freeform: LLMFreeformPlanner | None
+
+    def generate(
+        self,
+        prompt: str,
+        suite_loader: Callable[[str], SuiteSpec],
+    ) -> PlanDraft:
+        try:
+            draft = DeterministicRecognizerPlanner().generate(prompt, suite_loader)
+        except PlanGenerationError:
+            draft = None
+        if draft is not None:
+            try:
+                suite_loader(draft.suite_name)
+            except Exception:  # noqa: BLE001 -- recognized suite not deployed here
+                draft = None
+        if draft is not None:
+            return draft
+        if self.freeform is None:
+            raise PlanGenerationError(
+                "prompt is outside the deterministic recognised subset and no "
+                "free-form suite is configured (set PAUTH_PLANNER_SUITE or pass "
+                "suite_name)"
+            )
+        return self.freeform.generate(prompt, suite_loader)
+
+
+@dataclasses.dataclass(frozen=True)
 class NotYetImplementedPlanner:
     """Registered strategy slot that intentionally fails until implemented."""
 
@@ -210,21 +250,26 @@ def build_planner(
     canonical = normalize_strategy_name(strategy)
     if canonical == STRATEGY_DETERMINISTIC:
         return DeterministicRecognizerPlanner()
-    if canonical == STRATEGY_LLM_FREEFORM:
-        if not suite_name:
-            raise PlanGenerationError("planner strategy 'llm-freeform' requires suite_name")
-        return LLMFreeformPlanner(
-            suite_name=suite_name,
-            model=model,
-            cache_path=build_cache_path(
-                cache_dir,
-                strategy=canonical,
-                prompt=prompt,
+    if canonical in (STRATEGY_LLM_FREEFORM, STRATEGY_AUTO):
+        freeform: LLMFreeformPlanner | None = None
+        if suite_name:
+            freeform = LLMFreeformPlanner(
+                suite_name=suite_name,
                 model=model,
+                cache_path=build_cache_path(
+                    cache_dir,
+                    strategy=STRATEGY_LLM_FREEFORM,
+                    prompt=prompt,
+                    model=model,
+                    max_retries=max_retries,
+                ),
                 max_retries=max_retries,
-            ),
-            max_retries=max_retries,
-            enable_judge=enable_judge,
-            judge_model=judge_model,
-        )
+                enable_judge=enable_judge,
+                judge_model=judge_model,
+            )
+        if canonical == STRATEGY_AUTO:
+            return AutoPlanner(freeform=freeform)
+        if freeform is None:
+            raise PlanGenerationError("planner strategy 'llm-freeform' requires suite_name")
+        return freeform
     return NotYetImplementedPlanner(canonical)

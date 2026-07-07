@@ -51,6 +51,8 @@ from pauth.grammar import (
     validate_semantics,
 )
 
+from .prechecks import PrecheckPolicy, precheck_code
+
 
 # Default judge configuration. Both fields are exposed as parameters so the
 # user can swap models for performance comparison (per design note Q15).
@@ -85,6 +87,10 @@ def load_me_env(path: Path = ME_ENV_PATH) -> None:
 
 def _has_anthropic_key() -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY"))
+
+
+def _is_anthropic_model(model: str) -> bool:
+    return model.lower().startswith("claude")
 
 
 @dataclasses.dataclass
@@ -221,6 +227,29 @@ Each issue is a single sentence describing one excess or deficiency
 """
 
 
+_PRECHECK_REPAIR_INSTRUCTION = """\
+Your previous attempt was grammar-valid but FAILED deterministic safety
+checks. These checks are mechanical and non-negotiable.
+
+VIOLATIONS:
+{issues}
+
+Rules you MUST follow in the next attempt:
+- Never invent a recipient, IBAN, email address, amount, or quantity that the
+  user did not write in the task. If the user referred to a value indirectly
+  (e.g. "the cart total"), obtain it from a tool result and pass the variable.
+- Never call a tool the user's task does not require.
+
+If the task cannot be completed without inventing such a value, output exactly:
+
+    def run():
+        pass
+
+Output ONLY the corrected `run` function, with no explanation and no markdown
+fences.
+"""
+
+
 _INTENT_REPAIR_INSTRUCTION = """\
 Your previous attempt was grammar-valid but DID NOT fully capture the user's
 intent.
@@ -268,23 +297,38 @@ def _judge_intent(
     judge produced something other than the expected JSON, we treat it as a
     failure with the parse problem as the only issue.
     """
-    # ``temperature`` is deprecated on newer Claude models (opus 4.8+); omit it
-    # entirely. Determinism matters less for the judge than for A1, and
-    # Anthropic's default sampling is already low-variance for short JSON
-    # outputs like this.
-    response = judge_client.messages.create(
-        model=judge_model,
-        max_tokens=1024,
-        system=_SEMANTIC_JUDGE_SYSTEM,
-        messages=[{"role": "user", "content": _judge_user_prompt(task, code)}],
-    )
-    # Anthropic's SDK returns a list of content blocks. We want the first
-    # text block.
-    text = ""
-    for block in response.content:
-        if getattr(block, "type", None) == "text":
-            text = getattr(block, "text", "") or ""
-            break
+    if _is_anthropic_model(judge_model):
+        # ``temperature`` is deprecated on newer Claude models (opus 4.8+); omit
+        # it entirely. Determinism matters less for the judge than for A1, and
+        # Anthropic's default sampling is already low-variance for short JSON
+        # outputs like this.
+        response = judge_client.messages.create(
+            model=judge_model,
+            max_tokens=1024,
+            system=_SEMANTIC_JUDGE_SYSTEM,
+            messages=[{"role": "user", "content": _judge_user_prompt(task, code)}],
+        )
+        # Anthropic's SDK returns a list of content blocks. We want the first
+        # text block.
+        text = ""
+        for block in response.content:
+            if getattr(block, "type", None) == "text":
+                text = getattr(block, "text", "") or ""
+                break
+    else:
+        # OpenAI-family judge (solution.md S3): same rubric, chat.completions
+        # shape. Weaker decorrelation than a cross-provider judge; used when
+        # only an OpenAI key is available. ``temperature`` is omitted for the
+        # same reason as the Anthropic branch -- gpt-5-family models reject
+        # non-default values, and judge determinism matters less than A1's.
+        response = judge_client.chat.completions.create(
+            model=judge_model,
+            messages=[
+                {"role": "system", "content": _SEMANTIC_JUDGE_SYSTEM},
+                {"role": "user", "content": _judge_user_prompt(task, code)},
+            ],
+        )
+        text = response.choices[0].message.content or ""
     text = text.strip()
     text = _strip_fences(text)
     # If the model added a preamble, try to recover the JSON object.
@@ -316,6 +360,18 @@ def _get_anthropic_client() -> Any:
     import anthropic  # lazy import
 
     return anthropic.Anthropic()
+
+
+def _get_judge_client(judge_model: str, generator_client: Any) -> Any:
+    """Resolve the judge client for ``judge_model`` (solution.md S3).
+
+    Anthropic models get a dedicated Anthropic client. OpenAI-family models
+    reuse the generator's client credentials -- model-level decorrelation
+    only, which is weaker than cross-provider but better than no judge.
+    """
+    if _is_anthropic_model(judge_model):
+        return _get_anthropic_client()
+    return generator_client
 
 
 def _read_cached(cache_path: Path, model: str) -> AgenticCodegenResult | None:
@@ -379,6 +435,7 @@ def generate_code_with_self_repair(
     enable_judge: bool = True,
     judge_model: str = DEFAULT_JUDGE_MODEL,
     judge_client: Any | None = None,
+    precheck_policy: PrecheckPolicy | None = None,
 ) -> AgenticCodegenResult:
     """Generate restricted-grammar code with grammar + semantic self-repair.
 
@@ -409,7 +466,7 @@ def generate_code_with_self_repair(
         client = OpenAI()
 
     if enable_judge and judge_client is None:
-        judge_client = _get_anthropic_client()
+        judge_client = _get_judge_client(judge_model, client)
 
     messages: list[dict[str, str]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -453,6 +510,25 @@ def generate_code_with_self_repair(
                     "role": "user",
                     "content": _REPAIR_INSTRUCTION.format(
                         error=str(exc), rule_reminder=_rule_reminder(str(exc))
+                    ),
+                }
+            )
+            continue
+
+        # Stage 1.5: deterministic one-sided prechecks (Q15-e). Cheaper and
+        # stricter than the judge; runs first so mechanical over-authorization
+        # never reaches a probabilistic verdict.
+        precheck_issues = precheck_code(task, code, tools, policy=precheck_policy)
+        if precheck_issues:
+            failure_history.append(f"precheck: {'; '.join(precheck_issues)}")
+            if attempt > max_retries:
+                break
+            messages.append({"role": "assistant", "content": code})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": _PRECHECK_REPAIR_INSTRUCTION.format(
+                        issues="\n".join(f"- {i}" for i in precheck_issues)
                     ),
                 }
             )
@@ -517,14 +593,15 @@ def generate_code_with_self_repair(
             judge_verdicts=judge_verdicts,
         )
 
-    # Retry budget exhausted -- last attempt failed grammar OR intent.
-    # Downstream ``pauth.prepare`` rejects on grammar; an intent-only failure
-    # at the final round yields grammar-valid but intent-deficient code, so
-    # we deliberately replace it with the explicit "do nothing" sentinel that
-    # the gateway will reject by default-deny. This stops the FP where the
-    # gateway accepted intent-deficient plans.
+    # Retry budget exhausted -- last attempt failed grammar, precheck, or
+    # intent. Downstream ``pauth.prepare`` rejects on grammar; a precheck- or
+    # intent-only failure at the final round yields grammar-valid but unsafe
+    # code, so we deliberately replace it with the explicit "do nothing"
+    # sentinel that the gateway will reject by default-deny. This stops the
+    # over-authorization accept where the gateway took a plan the validators
+    # never passed.
     final_code = last_code
-    if enable_judge and failure_history and failure_history[-1].startswith("intent:"):
+    if failure_history and failure_history[-1].startswith(("intent:", "precheck:")):
         final_code = "def run():\n    pass\n"
     cost = _cost(model, total_prompt_tokens, total_completion_tokens)
     if cache_path is not None:

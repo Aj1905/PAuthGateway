@@ -1,0 +1,240 @@
+# 開発計画 (plan)
+
+最小MVPから製品へ、段階的に積み上げるチェックリスト。
+
+**使い方:** 完了したら `- [ ]` を `- [x]` にする。各ステージは独立して出荷可能・依存順に並んでいる。
+
+**目印:**
+- **🔬研究** — 正解が未確定で、研究・実験・評価が必要な箇所。
+- **💬議論** — 設計判断・方針決定が未了で、着手前に議論が必要な箇所。
+- 目印なし — 主にエンジニアリング（やり方は概ね決まっている）。
+
+設計詳細は専用文書へ: `architecture.md`（論理設計）, `THREAT_MODEL.md`（防御境界）,
+`gateway/INGRESS_DESIGN.md`（ingress）, `gateway/DESIGN_STATUS.md`（現状/未決）,
+`grill.md`（決定履歴・Q番号の出典）。**課題カタログ（旧 `issues.md`, ID A1〜F1
+保持）は本書末尾**。
+
+## ターゲット
+
+- **ToB。** ToC は課金しない想定 → 決済対応は作らない。
+- **橋頭堡 = 自社エージェント層（B）。** ingress は **SDK直接統合（Mode 1）**。
+- 拡大軸: 任意プロンプト対応 → スイート数 → 対応エージェント（Mode 2）→ 対象層。
+
+---
+
+## Stage 0 — 論文再現
+
+> 主張: 「A1 が文法適合コードを生成できた範囲で benign zero-FP / injection zero-FN」
+
+- [x] 決定的コア: A2 slicing / A3 rules / B1–B4 enforcer / envelope（`pauth/`）
+- [x] A1 決定的 recognizer（L1）（`gateway/planning/core.py`）
+- [x] A1 LLM freeform ＋ grammar feedback loop（`gateway/planning/agentic_a1.py`）
+- [x] shopping suite（自己完結・reference code 同梱）（`pauth/suites/shopping.py`）
+- [x] AgentDojo 4 suite アダプタ（banking/slack/travel/workspace）（`tests/experiment/agentdojo_adapter.py`）
+- [x] FP/FN 実験ランナー（Table 2 形式）（`tests/experiment/run_experiment.py`）
+- [x] worked example オフライン検証（API不要）（`tests/test_worked_examples.py`）
+- [x] **Exit:** A1 が通った全タスクで over-authorization accept = 0 を計測
+  （`full_run.json`: FN=0 / 475 injection runs、over-rejection(FP)=7 / 62。
+  正式名の集計は run_experiment に追加済み — solution.md S7）
+
+---
+
+## Stage 1 — 製品核 MVP（SDK ＋ credential broker ＋ enforcement）
+
+> 主張: 「乗っ取られた自社エージェントは、承認計画の*構造*を超えるSaaS実行・
+> 宛先/金額の改ざんができない」。grill 不要・推論プロキシ不要。
+
+- [x] SDK ingress（Mode 1）: `submit_user_prompt` / `handle_tool_call` の公開API
+  （`gateway/runtime/gateway.py`, `gateway/ingress/agent_channel.py`。pip package 化は未了）
+- [x] **💬議論** credential broker を採用するか → **採用**（solution.md S4）
+- [ ] credential broker 実装: 鍵保持・rotation・隔離（B2）— 最初の実 SaaS と同時に着手
+- [ ] `architecture.md` §9 を broker モデルに更新（「鍵を見ない」→「鍵を持つ」）
+- [x] B1–B4 default-deny ＋ envelope 記録の SDK 経路結線（`Gateway._accept_draft` / `handle_tool_call`）
+- [x] **💬議論** 側チャネル（生Bash等）の scope 宣言 → **Stage 1 は禁止前提**（solution.md S6。
+  SELF_HOSTING / hooks README への明記は未了）
+- [x] self-host 起動手順（`gateway/SELF_HOSTING.md`, `gateway/hooks/README.md`。broker 手順は未了）
+- [x] AgentChannel の forwarding 信頼前提を明文化（A4）（`agent_channel.py` docstring）
+- [ ] **Exit:** 1つの実SaaS（or 1 MCP）で end-to-end、生Bashなし前提で動作
+  — 実ツールは **GitHub** に決定（solution.md S5）、統合は未了
+
+---
+
+## Stage 2 — 任意プロンプト対応（freeform A1 ＋ semantic judge）
+
+> 主張: 「任意プロンプトでも過剰認可は片側安全validatorで弾く。狭すぎる計画は
+> retry/clarification で回復」
+
+- [x] LLM A1 freeform を主軸 ingress に昇格 → `auto` 戦略（recognizer fast path ＋
+  freeform フォールバック）を既定化（solution.md S2）
+- [x] **🔬研究** semantic judge（Q15, 片側安全性, J1）を retry loop に組込み — v1 実装済み
+  （`agentic_a1.py`）。prompt・IR・fixture・評価指標の最適化は F1 として研究継続
+- [ ] **🔬研究** judge 判定軸（action / operand / data-flow / 条件緩和の entailment）の確立
+  — 現 rubric は action/operand/条件まで。data-flow 軸と構造化 IR は未着手
+- [x] **💬議論** 機械的検査の前段化範囲（Q15-e）→ 決定・実装済み: 禁止tool・宛先・金額/数量・
+  write根拠キーワードの 4 種を `gateway/planning/prechecks.py` で決定的に検査し、
+  retry loop 内と `Gateway._accept_draft`（ハードゲート）の 2 点で強制（solution.md S1）
+- [ ] **🔬研究** judge を生成と別モデル化／アンサンブルで相関を切る（Q15-a）
+  — 別モデル化は済（既定 Anthropic judge ＋ OpenAI fallback, solution.md S3）。アンサンブルは未着手
+- [x] over-authorization accept / over-rejection を別名で計測（Q15-d）（solution.md S7）
+- [x] **Exit:** AgentDojo freeform で over-authorization accept = 0、over-rejection は計測のみ
+  — 達成（2026-07-05, `results/agentic_full.json`）。AgentDojo 4 suite 97 タスク、
+  agentic pipeline（gpt-4.1 生成 ＋ Q15-e precheck ＋ gpt-5-mini judge）:
+  **over-auth accept = 0 / 156 injection runs**、runtime over-rejection = 0 / 18。
+  受理 18 / plan-deny 55 / grammar skip 24（受理率 18.6% — 受理率向上は Stage 4）。
+  shopping freeform も over-auth accept = 0（canonical 6 ＋ AI 8）。solution.md S9
+
+---
+
+## Stage 3 — スイート拡張（実ツール源を増やす）
+
+> 主張: 「複数実SaaSで計画外実行を default-deny。危険データフローは検出して deny」
+
+- [ ] 多 SuiteSpec 合成（registry）: MCP(HTTP) アダプタ
+- [ ] MCP(stdio) アダプタ ＋ ヘルスチェック/再起動 supervisor（B4）
+- [ ] OpenAPI 反映アダプタ
+- [ ] **💬議論** tool名 global 一意 → `<suite>:<tool>` namespacing（A1が見るuniverseを変える, D2）
+- [ ] suite_filter で A1 prompt 膨張抑制（D1）
+- [ ] **🔬研究** embedding/LLM ベース suite_filter（キーワードの限界を超える, D1）
+- [ ] **filter が必要ツールを落とした率**を新指標として計測（盲点対策）
+- [ ] **💬議論** free-operand 3段ポリシー設計: enforced / free / flow-constrained free（E1）
+- [ ] **🔬研究** 危険フロー検出: untrusted-source → free sensitive-sink を決定的に判定する意味論
+- [ ] 検出した危険フローを当面 default-deny
+- [ ] 大きい tool 戻り値の envelope store 圧迫対策（flatten/参照渡し, D3）
+- [ ] **Exit:** 2–3個の実MCP/SaaSで動作、危険フロー検出＋filter取りこぼし計測
+
+---
+
+## Stage 4 — 文法表現力の拡張（A1.1・研究）
+
+> 主張: 「より広い意図クラスを、決定的コアの保証を保ったまま扱える」
+
+- [x] **💬議論🔬研究** 方式決定 → **プロンプト事前分解 ＋ 有界 fan-out**（Appendix A 無改造、
+  guard は `<Condition>` 固定、N は観測から決定・N_max で被害半径を制限。solution.md S10/S11）
+- [x] **🔬研究** 拡張が A2/A3 の決定性を壊さないことの検証 — 各 stage は無改造の
+  `prepare()` を通過。合成層の 4 性質（不活性・非累積・テンプレート健全・有界権限）を
+  敵対的テストで機械検証（`tests/test_composite.py`）。形式的証明ではなくテストによる
+  検証である点に注意
+- [x] 「成功したら次へ」クラスのタスクが通ることを検証 — B1_cheapest（Stage 2 で reject）が
+  参照分解でオフライン end-to-end 通過。fan-out（各要素にアクション）も shopping で通過
+- [ ] LLM 分解器（プロンプト → CompositePlan の planner 戦略）＋ 分解忠実性の検証
+- [ ] AgentDojo 拒否タスク 79 件の意図クラス分類（逐次依存 / fan-out / 集約 / その他）と救済率計測
+- [ ] 集約型ループ（反復横断の状態）の扱い — gather stage 案の設計（🔬研究）
+- [ ] **Exit:** Stage 2 で judge が reject していた意図クラスが安全に通る
+  — 参照分解では達成。LLM 分解器経由での達成が残り
+
+---
+
+## Stage 5 — grill / HITL（Q14）
+
+> 主張: 「危険フローは粗い注入を人間が止める。精巧な注入は scope外（緩和）」
+
+- [ ] **💬議論** grill 実装方式の選択: G1(非対話 reject) / G2(Claude Code の additionalContext で半対話, 推奨) / G3(独立UI)（Q14）
+- [ ] 危険フローを実行時 interleave で人間確認（TOCTOU: 値確定の瞬間）
+- [ ] provenance 表示（「この値は信頼できない外部データ由来」）
+- [ ] **💬議論** 品質grill をバンドル（機構共有・サリエンス分離・起動判定独立）
+- [ ] grill 入力ソースをユーザのみに構造的に拘束（不変条件#1 保持）
+- [ ] **🔬研究** 疲労対策の信頼スコア（「同一パターン」の判定基準, Q14-a）
+- [ ] **🔬研究** grill 層への注入対策（grill 自身の threat model, Q14-c）
+- [ ] **🔬研究** 確認済み prompt 再構成の改ざん対策（feedback loop, Q14-d）
+- [ ] **Exit:** 危険フローが deny でなく人間確認で通せる（無人時は deny に退避）
+
+---
+
+## Stage 6 — Mode 2 傍受（無改造エージェント = A経路）
+
+> 前提: B（Mode 1）が実証されてから。コア共有なので ingress を1枚足すだけ。
+
+- [ ] 推論プロキシ（base URL 差し替え, API/ToB向け）
+- [ ] ツールプロキシ（MCP/外部呼び出しの強制点）
+- [ ] **💬議論** 応答書き換えで内蔵ツール（Bash等）を gate するか（B5・脆さ）
+- [ ] **💬議論** Bash 取り扱い方針: B1(全面禁止＋専用ツール化) / B2(残す＋destructive のみ snapshot/denylist) / B3(全体 allowlist)（grill Q4/Q7）
+- [ ] **💬議論** ファイル系認可方針: R1(git 管理下のみ rollback＋他は別機構) / R2(穴を受容) / R3(read allowlist＋write rollback＋Bash制限)（grill Q3）
+- [ ] 同一 `AgentChannel` 契約への正規化
+- [ ] 保護レベル表示（L0–L3）で実効保護を明示
+- [ ] **💬議論** サブスク認証の扱い（当面非対応と明記するか, TOS/技術の壁）
+- [ ] **Exit:** 無改造 Claude Code を Mode 2 で保護、保護レベルを正直表示
+
+---
+
+## 横断的要素（各ステージで並行）
+
+- [ ] 正直な計測の維持（FP/FN・over-rejection・filter取りこぼし・over-auth accept）
+- [ ] observability / audit（permit/deny ＋ 理由を構造化イベントに）
+- [ ] session 永続化（Stage 1 は in-memory 可、cloud化で外出し ＋ 署名根の分散化, B1）
+- [ ] **♾️🔬研究** Judge 機構の継続最適化（モデル/プロンプト/構造/workload, F1 — 永続テーマ）
+- [ ] テストデータ整備: AI fixture の人間review（C1）, L3重複解消（C2）, review tooling（C3）
+- [ ] AgentDojo を本番依存から外す（import遅延化維持, D4）
+- [ ] strict/log モード切替の運用基準を明文化（E3）
+- [ ] ファイル系 reversibility / agent-side rollback（cross-file atomic checkpoint,
+  grill Q2 → γ' 方向決定済・実装未了）: snapshot か agent 専用ブランチ。主に Mode 2 の
+  コーディングエージェント文脈。Bash/ファイル認可の**未決方針は Stage 6** 参照
+
+## 先に決めるべきこと（ブロッカー）
+
+- [x] **💬議論** credential broker を採用するか → **採用**（solution.md S4）
+- [x] **💬議論** Stage 1 の最初の実ツール → **GitHub**（solution.md S5）
+
+---
+
+## 課題カタログ（旧 issues.md, ID 保持）
+
+他文書（`architecture.md` / `grill.md` / `DESIGN_STATUS.md`）は ID（A1, B5 等）で
+参照しているため ID を保持。状態: 🔴未解決 / 🟡暫定対処 / 🟢主要対策済 / ⚪着手しない /
+♾️永続。各項目は対応 Stage を示す。
+
+### A. PAuth の構造的限界
+
+- [ ] 🔴 **A1** grammar 表現力不足: 「比較してどちらか」「成功したら次へ」が Appendix A
+  文法に乗らない。選択肢: 緩和/事前分解/別形式。関連 Q9,Q12,Q14。→ **Stage 4（🔬研究）**
+- [ ] 🟡 **A2** intent 検証層: 片側安全性 validator v1 実装済み（semantic judge ＋ Q15-e
+  決定的 precheck の 2 層, solution.md S1/S3）。judge の prompt/IR/評価指標の最適化は
+  F1 として継続。関連 Q14,Q15。→ **Stage 2（🔬研究）**
+- [ ] ⚪ **A3** UI プロンプト内 injection は scope 外: ユーザ自身が貼った injection は
+  弾けない（論文§3）。関連 Q11,Q14。→ **scope外（`THREAT_MODEL.md` に明記）**
+- [ ] 🟡 **A4** agent forwarding 整合性が新信頼前提: AgentChannel で「agent が prompt を
+  改変せず転送」前提が新規。構造強制済。関連 Q13。→ **Stage 1**
+
+### B. Gateway 実装の隙間
+
+- [ ] 🟡 **B1** session が in-memory のみ: restart で消失。選択肢: Redis/DynamoDB/Cosmos
+  外出し。→ **横断（session 永続化）**
+- [ ] 🔴 **B2** OAuth/APIキー管理機構が無い: 複数ユーザで credential 隔離/rotation/audit。
+  broker **採用は決定済み**（solution.md S4）、実装未着手。→ **Stage 1（credential broker）**
+- [ ] 🔴 **B3** Grill UI 未実装: Q14 PreAuth Grill は設計のみ。推奨 G2。→ **Stage 5**
+- [ ] 🟡 **B4** stdio MCP subprocess のヘルスチェック/再起動なし。選択肢: supervisor 抽象。
+  → **Stage 3**
+- [ ] 🔴 **B5** Bash escape hatch: Bash が全外部I/Oにアクセス、MCP経由しか enforce しない。
+  選択肢: allowlist/sandbox/FS仮想化。関連 Q4,Q7。→ **Stage 1（scope宣言・💬議論）/ Stage 6（応答書換）**
+
+### C. テストデータ / fixture
+
+- [ ] 🟡 **C1** AI 生成 fixture の expected_accept が信頼できない。残: 人間 review。
+- [ ] 🟡 **C2** L3 reference data 重複（shopping `_TASKS` vs `l3_references`）。選択肢:
+  パッケージ化で tools/tasks 分離。
+- [ ] 🔴 **C3** fixture review tooling 無し。選択肢: Web/TUI で review サイクル高速化。
+  → C1〜C3 まとめて **横断（テストデータ整備）**
+
+### D. 規模拡張で顕在化
+
+- [ ] 🟡 **D1** A1 token 膨張: 登録 MCP 増で prompt 線形膨張。現状 suite_filter。選択肢:
+  embedding/LLM filter。→ **Stage 3（🔬研究）**
+- [ ] 🟡 **D2** multi-suite tool 名衝突: merge 時 ValueError。選択肢: `<suite>:<tool>` prefix。
+  → **Stage 3（💬議論）**
+- [ ] 🟡 **D3** 大きい tool 戻り値が envelope store を圧迫。選択肢: flatten+symbolic化/参照渡し。
+  → **Stage 3**
+- [ ] 🟡 **D4** AgentDojo は重い optional 依存。現状 import 遅延化、本番未使用。→ **横断**
+
+### E. 仕様の曖昧さ / 規約
+
+- [ ] 🟡 **E1** MCP tool の operand 検証深度が tool 任せ（nested/Union で best-effort）。現状
+  `PolicyAwareEnforcer` で free 宣言。残: free 宣言の推奨/自動判定。→ **Stage 3（free-operand）**
+- [ ] 🟡 **E2** recognizer の決定的サブセットが狭い（4 正規表現のみ）。`auto` 戦略の
+  freeform フォールバックで緩和済み（solution.md S2）。→ **Stage 2**
+- [ ] 🟡 **E3** strict/log モード切替の運用ガイド: log 常用で enforcement 縮退。残: strict 切替
+  criteria 明文化。→ **横断**
+
+### F. 永続研究テーマ
+
+- [ ] ♾️ **F1** Judge 機構の最適化: モデル/プロンプト/構造/workload に依存する永続的最適化
+  テーマ。関連 Q15,Q14,Q12。→ **Stage 2 ＋ 横断（🔬研究・♾️永続）**
+</content>

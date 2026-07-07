@@ -46,6 +46,15 @@ from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.evaluator import wrap
 from pauth.suites.base import SuiteSpec
 
+from gateway.planning.composite import (
+    CompositePlan,
+    CompositePlanError,
+    GuardNotEvaluable,
+    assignment_map,
+    eval_guard,
+    instantiate_fanout,
+    validate_plan,
+)
 from gateway.planning.planner import (
     DeterministicRecognizerPlanner,
     LLMFreeformPlanner,
@@ -53,6 +62,7 @@ from gateway.planning.planner import (
     PlanGenerationError,
     Planner,
 )
+from gateway.planning.prechecks import PrecheckPolicy, precheck_code
 
 
 @dataclasses.dataclass
@@ -84,17 +94,49 @@ class _Session:
     generated_code: str | None = None
 
 
+@dataclasses.dataclass
+class _CompositeState:
+    """Runtime state of a composite (staged) plan. See planning/composite.py."""
+
+    prompt: str
+    plan: CompositePlan
+    runner: Callable[[str, dict[str, Any]], Any]
+    tool_params: dict[str, list[str]]
+    tool_names: set[str]
+    tool_signer: dict[str, str]
+    store: EnvelopeStore
+    bindings: dict[str, Any]
+    stage_idx: int = -1
+    enforcer: Enforcer | None = None
+    stage_code: str | None = None
+    stage_rule_total: int = 0
+    consumed: set[str] = dataclasses.field(default_factory=set)
+    stage_assignments: dict[str, str] = dataclasses.field(default_factory=dict)
+    complete: bool = False
+    failure: str | None = None
+    any_rules: bool = False
+    truncated_total: int = 0
+
+
 class Gateway:
     """Single-task gateway. Plan once, enforce every subsequent call."""
 
-    def __init__(self, suite_loader: Callable[[str], SuiteSpec]) -> None:
+    def __init__(
+        self,
+        suite_loader: Callable[[str], SuiteSpec],
+        precheck_policy: PrecheckPolicy | None = None,
+    ) -> None:
         """``suite_loader(name)`` returns the real-tool ``SuiteSpec`` for ``name``.
 
         The gateway calls it once per submitted user prompt to wire up the
         environment, the tool runtime and the per-task envelope store.
+        ``precheck_policy`` tunes the deterministic Q15-e gate applied to every
+        accepted plan (solution.md S1).
         """
         self._suite_loader = suite_loader
+        self._precheck_policy = precheck_policy
         self._session: _Session | None = None
+        self._composite: _CompositeState | None = None
 
     # ------------------------------------------------------------------
     # Plan-generation entrypoint -- driven by the user, never the agent.
@@ -158,6 +200,167 @@ class Gateway:
         )
         return self._submit_with_planner(prompt, planner, generated_code_on_success=True)
 
+    # ------------------------------------------------------------------
+    # Composite (staged) plan submission -- solution.md S10/S11.
+    # ------------------------------------------------------------------
+    def submit_user_prompt_composite(
+        self,
+        prompt: str,
+        plan: CompositePlan,
+    ) -> SubmissionResult:
+        """Accept a staged plan: per-stage Appendix-A code + gateway-evaluated guards.
+
+        Stage code passes the unmodified ``pauth.prepare``; the composition
+        layer only decides *when* each stage's rules are active. Guards and
+        fan-out bounds are resolved exclusively from this gateway's own
+        signed observations -- never from the agent.
+        """
+        self._session = None
+        self._composite = None
+        try:
+            suite = self._suite_loader(plan.suite_name)
+        except Exception as exc:  # noqa: BLE001
+            reason = f"unknown suite {plan.suite_name!r}: {type(exc).__name__}: {exc}"
+            self._session = self._rejected_session(prompt, reason)
+            return SubmissionResult(accepted=False, reason=reason)
+
+        violations = validate_plan(prompt, plan, suite.tool_docs(), self._precheck_policy)
+        if violations:
+            reason = "composite plan rejected: " + "; ".join(violations)
+            self._session = self._rejected_session(prompt, reason)
+            return SubmissionResult(accepted=False, reason=reason)
+
+        env = suite.make_env()
+        state = _CompositeState(
+            prompt=prompt,
+            plan=plan,
+            runner=suite.runner_factory(env),
+            tool_params=suite.tool_params(),
+            tool_names=suite.tool_names(),
+            tool_signer=suite.tool_signer(),
+            store=EnvelopeStore(KeyRing()),
+            bindings={},
+        )
+        error = self._composite_advance(state, initial=True)
+        if error:
+            self._session = self._rejected_session(prompt, error)
+            return SubmissionResult(accepted=False, reason=error)
+        if state.complete and not state.any_rules:
+            reason = "plan authorizes no tool calls; rejected (default-deny)"
+            self._session = self._rejected_session(prompt, reason)
+            return SubmissionResult(accepted=False, reason=reason)
+
+        self._composite = state
+        return SubmissionResult(
+            accepted=True,
+            reason=f"{plan.reason} ({len(plan.stages)} stages)",
+            rule_count=state.stage_rule_total,
+        )
+
+    def _composite_activate(self, state: _CompositeState, idx: int) -> str | None:
+        """Instantiate and compile stage ``idx``. Returns an error string on failure."""
+        stage = state.plan.stages[idx]
+        if stage.fanout is not None:
+            list_value = state.bindings[stage.fanout.list_var]
+            try:
+                inst = instantiate_fanout(stage, list_value)
+            except CompositePlanError as exc:
+                return f"stage {idx} fan-out instantiation failed: {exc}"
+            code = inst.code
+            state.truncated_total += inst.truncated
+        else:
+            code = stage.code
+        try:
+            prepared = prepare(code, state.tool_names, state.tool_signer)
+        except Exception as exc:  # noqa: BLE001
+            return f"stage {idx} compilation failed: {type(exc).__name__}: {exc}"
+        state.stage_idx = idx
+        state.stage_code = code
+        state.stage_rule_total = len(prepared.rules)
+        state.consumed = set()
+        state.stage_assignments = assignment_map(code, state.tool_names)
+        # Non-accumulation: the previous stage's enforcer is discarded; its
+        # rules can never authorize again. The envelope store is shared so
+        # later guards/operands still reference earlier signed observations.
+        state.enforcer = Enforcer(prepared.rules, state.store, state.tool_signer)
+        state.any_rules = state.any_rules or bool(prepared.rules)
+        return None
+
+    def _composite_advance(self, state: _CompositeState, initial: bool = False) -> str | None:
+        """Advance stages while their entry conditions hold. Fail-closed."""
+        while not state.complete:
+            nxt = state.stage_idx + 1
+            if nxt >= len(state.plan.stages):
+                if len(state.consumed) >= state.stage_rule_total:
+                    state.complete = True
+                break
+            stage = state.plan.stages[nxt]
+            if state.stage_idx >= 0 or not initial:
+                # Entry condition for every stage after the first activation.
+                if stage.guard is not None:
+                    try:
+                        if not eval_guard(stage.guard, state.bindings):
+                            break
+                    except GuardNotEvaluable:
+                        break
+                elif len(state.consumed) < state.stage_rule_total:
+                    break  # unconditional transition requires full consumption
+            if stage.fanout is not None and stage.fanout.list_var not in state.bindings:
+                break
+            error = self._composite_activate(state, nxt)
+            if error:
+                state.complete = True
+                state.failure = error
+                state.enforcer = None
+                return error
+            initial = False
+            if state.stage_rule_total > 0:
+                break  # agent must act before anything else can change
+            # Zero-rule stage (e.g. fan-out over an empty list): fall through
+            # and keep advancing.
+        return None
+
+    def _handle_tool_call_composite(self, tool: str, args: list[Any]) -> CallResult:
+        state = self._composite
+        assert state is not None
+        if state.failure:
+            return CallResult(False, f"default-deny: {state.failure}", None)
+        if state.complete or state.enforcer is None:
+            return CallResult(False, "composite plan complete (default-deny)", None)
+
+        decision = state.enforcer.check(tool, args)
+        if not decision.permit:
+            return CallResult(False, decision.reason, None)
+        assert decision.rule is not None
+        if decision.rule.key in state.consumed:
+            return CallResult(
+                False,
+                f"rule {decision.rule.key} already consumed (composite one-shot)",
+                None,
+            )
+
+        params = state.tool_params.get(tool, [])
+        if len(params) != len(args):
+            return CallResult(
+                False,
+                f"arity mismatch for {tool}: expected {len(params)}, got {len(args)}",
+                None,
+            )
+        try:
+            raw = state.runner(tool, dict(zip(params, args)))
+        except Exception as exc:  # noqa: BLE001 -- tool-level failure is not a denial
+            return CallResult(False, f"tool execution error: {type(exc).__name__}: {exc}", None)
+
+        state.enforcer.record(decision.rule, wrap(raw))
+        state.consumed.add(decision.rule.key)
+        # Bind stage variables from the gateway's own observation so later
+        # guards evaluate against what *we* saw, not what the agent claims.
+        for var, var_tool in state.stage_assignments.items():
+            if var_tool == tool and var not in state.bindings:
+                state.bindings[var] = raw
+        self._composite_advance(state)
+        return CallResult(True, decision.reason, raw)
+
     def _submit_with_planner(
         self,
         prompt: str,
@@ -165,6 +368,7 @@ class Gateway:
         *,
         generated_code_on_success: bool = False,
     ) -> SubmissionResult:
+        self._composite = None
         try:
             draft = planner.generate(prompt, self._suite_loader)
         except PlanGenerationError as exc:
@@ -201,6 +405,23 @@ class Gateway:
             )
             return SubmissionResult(accepted=False, reason=reason)
 
+        # Q15-e hard gate: deterministic one-sided prechecks run at the accept
+        # boundary regardless of which planner (or cache) produced the code, so
+        # a stale cache entry or a buggy planner cannot smuggle a fabricated
+        # recipient/amount past the gateway (solution.md S1).
+        violations = precheck_code(
+            prompt, draft.code, suite.tool_docs(), policy=self._precheck_policy
+        )
+        if violations:
+            reason = "precheck denied: " + "; ".join(violations)
+            self._session = self._rejected_session(
+                prompt,
+                reason,
+                run_doc=draft.run_doc,
+                generated_code=draft.code if generated_code_on_success else None,
+            )
+            return SubmissionResult(accepted=False, reason=reason)
+
         try:
             prepared = prepare(draft.code, suite.tool_names(), suite.tool_signer())
         except Exception as exc:  # noqa: BLE001
@@ -212,6 +433,21 @@ class Gateway:
             self._session = self._rejected_session(
                 prompt=prompt,
                 reason=reason,
+                run_doc=draft.run_doc,
+                generated_code=draft.code if generated_code_on_success else None,
+            )
+            return SubmissionResult(accepted=False, reason=reason)
+
+        # An empty plan authorizes nothing. Accepting it would report success
+        # for a task the gateway will then deny call-by-call -- and the
+        # planners' "def run(): pass" sentinel (emitted when validators never
+        # passed) relies on the gateway rejecting here, not on rule_count
+        # happening to be zero downstream.
+        if not prepared.rules:
+            reason = "plan authorizes no tool calls; rejected (default-deny)"
+            self._session = self._rejected_session(
+                prompt,
+                reason,
                 run_doc=draft.run_doc,
                 generated_code=draft.code if generated_code_on_success else None,
             )
@@ -268,6 +504,8 @@ class Gateway:
         so subsequent operand checks reference the gateway's view, not the
         agent's report.
         """
+        if self._composite is not None:
+            return self._handle_tool_call_composite(tool, args)
         session = self._session
         if session is None:
             return CallResult(
@@ -321,4 +559,21 @@ class Gateway:
 
     def current_code(self) -> str | None:
         """Return the active generated code (free-form path), or ``None``."""
+        if self._composite is not None:
+            return self._composite.stage_code
         return self._session.generated_code if self._session else None
+
+    def composite_status(self) -> dict[str, Any] | None:
+        """Introspection for tests/experiments: staged-plan progress."""
+        state = self._composite
+        if state is None:
+            return None
+        return {
+            "stage_idx": state.stage_idx,
+            "stages": len(state.plan.stages),
+            "consumed": len(state.consumed),
+            "stage_rule_total": state.stage_rule_total,
+            "complete": state.complete,
+            "failure": state.failure,
+            "truncated_total": state.truncated_total,
+        }

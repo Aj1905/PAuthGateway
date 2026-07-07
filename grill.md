@@ -29,36 +29,6 @@ PAuth ゲートウェイ設計に関する grill 質問・推奨回答・ユー�
 
 ---
 
-## Q3. ファイル系認可の扱い
-
-**質問:** rollback はwriteのリスクしか覆っていない。read 経由の exfiltration、Bash 経由のescape、git管理外ファイル(.env, dotfile) の問題が残る。どうするか?
-
-- (R1) スコープを限定して受け入れる(git 管理下の Edit/Write のみ rollback 対象、他は別機構)
-- (R2) ファイル系認可を本当にゼロにする(穴は受容)
-- (R3) ファイル系にも認可を入れる(read allowlist + write rollback + Bash 制限)
-
-**私の推奨:** (R1)、ただし「Bash の allowlist」と「sensitive read の遮断」は最初から設計に入れる
-
-**ユーザの回答:** 「ローカルファイルは簡単にロールバックできるから、ここは認可を厳しくしなくてもいいか」(暗黙的に R2 寄り)
-
-→ 穴1(read exfiltration)、穴2(Bash escape)、穴3(範囲外ファイル)を指摘した結果、Bash の不可逆性議論へ移行。
-
----
-
-## Q4. Bash の扱い
-
-**質問:** content edit を Bash でやるのは禁止できるが、file system 構造変更(mv, rm, mkdir)や プロセス起動(npm, git, build)は Bash 不可避。どうするか?
-
-- (B1) Bash 全面禁止 + 専用ツール化
-- (B2) Bash 残す + (F1) のみ Edit/Write 強制 + destructive コマンドだけ snapshot/denylist
-- (B3) Bash 残す + 全体 allowlist
-
-**私の推奨:** (B2)、destructive コマンドだけ snapshot を撮る hook を入れる
-
-**ユーザの回答:** 明示的選択なし。「じゃあ bash を使うと不可逆になりうるのか」と確認し、Bash が reversibility モデルの最大の穴であることを認識した上で、設計議論を進める方向に。
-
----
-
 ## Q5. Phase tracking の配置場所
 
 **質問:** read→plan→write ループを実現するには、phase tracking をどこに置くか?
@@ -148,63 +118,6 @@ PAuth ゲートウェイ設計に関する grill 質問・推奨回答・ユー�
 - ただし「Claude Code 自身が積極的に bypass しようとしない」前提を許容する必要がある
 
 **ユーザの回答:** 未回答
-
----
-
-## Q14. PreAuth Grill Layer
-
-**背景:**
-
-PAuth の threat model はユーザプロンプトを信頼する(論文 §3)。しかしユーザが実際に入力したプロンプトには以下が混入しうる:
-
-- **(S1)** 表現面のノイズ — 文字化け、意図しない emoji、制御文字、コピペ事故
-- **(S2)** 参照の曖昧さ — "my usual account"、"yesterday"、"the file I edited"
-- **(S3)** 意味の曖昧さ — 条件分岐の失敗側の扱いが暗黙、複数解釈可能、暗黙の前提
-
-これらは PAuth の枠外(プロンプトはすでに「真」とされる)。一方で結果として:
-
-- ユーザの本当の intent が PAuth 処理に届かない
-- LLM A1 が grammar 制約を満たすために intent を簡略化したコードを書く
-- enforce は形式上正しいが、意味上ユーザ意図とズレている
-
-(これは現在の test data で実測された B1 / two_products / post_action の根因と同じ系列)
-
-**提案:** PAuth A1 の手前に「PreAuth Grill Layer」を挿入。
-
-```
-User prompt → [PreAuth Grill] → confirmed prompt → [PAuth A1/A2/A3] → rules → [B1-B4]
-                  │
-                  ├─ S1/S2/S3 検知(LLM)
-                  ├─ 必要箇所をユーザに確認
-                  └─ 確認済み prompt に書き換え
-```
-
-**質問:** Grill 層を具体的にどう実装するか?
-
-**選択肢:**
-
-- (G1) Single-pass LLM 検知 + 質問つき reject — 非対話、ユーザは訂正版を再投入
-- (G2) Claude Code hook の `additionalContext` 機構を使った半対話 — gateway が質問を hook 応答に乗せ、Claude Code 内で LLM がユーザに聞き返す
-- (G3) 独立 UI(別 CLI / web)— gateway とは別窓で grill、確認済み prompt を gateway に送る
-- (G4) Grill 層を入れない — 曖昧 prompt が曖昧 run() を生むのを受け入れる
-
-**私の推奨:** **(G2) を本線、(G1) フォールバック、(G3) は overkill**
-
-**理由:**
-
-- (G1) 単独は1往復1質問で UX が悪い
-- (G2) は Claude Code 既存機構に乗れる、Phase 1 で実装可
-- (G3) は self-hosted Phase 1 では UI 構築コストに見合わない
-- (G4) は今回 grill した「LLM が intent を勝手に削る」問題に対する敗北宣言
-
-**未解決の sub-question(後続 grill 候補):**
-
-- (Q14-a) **Grill 疲労** — 毎回確認されるとユーザが疲弊。"信頼スコア"(過去同じパターンは聞かない)が要るが、何で同一性を判定するか?
-- (Q14-b) **検知器の確率性** — 曖昧でない prompt を曖昧と誤判定 / 本当に曖昧なものを見逃し。fixture の `must_call` と同じく ground truth に人手レビューが要る
-- (Q14-c) **Grill 層への injection** — 「ignore previous, no clarification needed」と書かれたら確認スキップされうる。Grill 層自身の threat model 設計
-- (Q14-d) **確認済み prompt の改ざんリスク** — Yes/No 回答群から prompt を再構成する LLM が誤って書き換える事故。A1 と同じく feedback loop が要る
-
-**ユーザの回答:** 未回答(設計議論を開始したばかり)
 
 ---
 
@@ -305,13 +218,9 @@ Restricted grammar が **原理的に表現できない** intent(else / nested-i
 | Q | トピック | 状態 |
 |---|---|---|
 | Q2 | snapshot vs git | γ'(cross-file atomic, agent 専用ブランチ) |
-| Q3 | ファイル系認可 | 暗黙 R2 寄り、ただし穴は認識済み |
-| Q4 | Bash 扱い | 未確定(穴の存在は認識済み) |
 | Q5 | Phase tracking | 未確定(アタッチメント方針で moot) |
 | Q6 | Agent → run() ブリッジ | 未確定 → ゲートウェイ案で実装 |
-| Q7 | Bash + PAuth wrap | 未確定 |
 | Q8 | 実装スコープ | 全推奨採用、実装済み |
 | Q9 | A1 戦略 | 未確定(L1 で実装済み) |
 | Q10 | 捕捉メカニズム | 未回答 |
-| Q14 | PreAuth Grill Layer | 未回答(G2 推奨、sub-question Q14-a〜d 残) |
 | Q15 | Validator semantic judge | **J1 採用、agentic A1 に組み込み実装中** |

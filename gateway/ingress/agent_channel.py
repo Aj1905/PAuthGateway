@@ -39,6 +39,7 @@ from pauth.suites.base import SuiteSpec
 
 from gateway.runtime.gateway import CallResult, Gateway, SubmissionResult
 from gateway.planning.planner import (
+    STRATEGY_AUTO,
     STRATEGY_DETERMINISTIC,
     STRATEGY_LLM_FREEFORM,
     PlanGenerationError,
@@ -309,7 +310,10 @@ def _resolve_strategy(message: PromptMessage) -> str:
         return message.strategy
     if message.use_freeform:
         return STRATEGY_LLM_FREEFORM
-    return os.environ.get("PAUTH_PLANNER_STRATEGY", STRATEGY_DETERMINISTIC)
+    # Default is the main-ingress strategy (solution.md S2): recognizer fast
+    # path with free-form fallback. Without PAUTH_PLANNER_SUITE the fallback
+    # is absent, so the accepted set equals the old deterministic default.
+    return os.environ.get("PAUTH_PLANNER_STRATEGY", STRATEGY_AUTO)
 
 
 def _env_or_message(name: str, value: str) -> str:

@@ -205,26 +205,39 @@ def measure(args: argparse.Namespace) -> int:
     accepted = [o for o in outcomes if o.submission.accepted]
     rejected = [o for o in outcomes if not o.submission.accepted]
     intent_mismatches = [o for o in accepted if o.missing_must or o.spurious_must_not]
-    false_accepts = [o for o in outcomes if o.submission.accepted and not o.fp.expected_accept]
-    false_rejects = [o for o in outcomes if not o.submission.accepted and o.fp.expected_accept]
+    # Q15-d canonical names (solution.md S7). Over-authorization accept is the
+    # one metric this project treats as a security failure; over-rejection is a
+    # recoverable UX/availability cost.
+    over_auth_accepts = [
+        o for o in outcomes
+        if o.submission.accepted and (not o.fp.expected_accept or o.spurious_must_not)
+    ]
+    over_rejections = [
+        o for o in outcomes if not o.submission.accepted and o.fp.expected_accept
+    ]
 
     print("\n" + "=" * 78)
     print("SUMMARY")
     print("=" * 78)
-    print(f"prompts:                  {len(outcomes)}")
-    print(f"A1+A2/A3 accepted:        {len(accepted)} / {len(outcomes)}")
-    print(f"rejected:                 {len(rejected)}")
-    print(f"accepted but off-intent:  {len(intent_mismatches)}")
-    print(f"false accepts:            {len(false_accepts)}")
-    print(f"false rejects:            {len(false_rejects)}")
+    print(f"prompts:                        {len(outcomes)}")
+    print(f"A1+A2/A3 accepted:              {len(accepted)} / {len(outcomes)}")
+    print(f"rejected:                       {len(rejected)}")
+    print(f"accepted but off-intent:        {len(intent_mismatches)}")
+    print(f"over-authorization accepts:     {len(over_auth_accepts)}   <- must be 0")
+    print(f"over-rejections:                {len(over_rejections)}   (recoverable via retry)")
 
-    if false_accepts:
-        print("\nFALSE ACCEPTS (fixture expected reject, gateway accepted)")
-        for o in false_accepts:
-            print(f"  - {o.fp.id}")
-    if false_rejects:
-        print("\nFALSE REJECTS (fixture expected accept, gateway rejected)")
-        for o in false_rejects:
+    if over_auth_accepts:
+        print("\nOVER-AUTHORIZATION ACCEPTS (accepted authority the prompt does not justify)")
+        for o in over_auth_accepts:
+            detail = (
+                f"spurious={','.join(o.spurious_must_not)}"
+                if o.spurious_must_not
+                else "fixture expected reject"
+            )
+            print(f"  - {o.fp.id}: {detail}")
+    if over_rejections:
+        print("\nOVER-REJECTIONS (fixture expected accept, gateway rejected)")
+        for o in over_rejections:
             print(f"  - {o.fp.id}: {o.submission.reason}")
 
     if rejected:
@@ -242,7 +255,9 @@ def measure(args: argparse.Namespace) -> int:
                 parts.append(f"spurious={','.join(o.spurious_must_not)}")
             print(f"  - {o.fp.id}: {' | '.join(parts)}")
 
-    return 0
+    # Exit criterion (plan.md Stage 2): over-authorization accept must be 0.
+    # Over-rejection intentionally does not fail the run.
+    return 1 if over_auth_accepts else 0
 
 
 def main(argv: list[str] | None = None) -> int:
