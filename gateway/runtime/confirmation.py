@@ -68,7 +68,9 @@ class PendingConfirmation:
 
     ``value`` is the actual (possibly poisoned) operand value, for the HUMAN
     side channel only. It must never be routed back into the agent's model
-    context (agent feedback stays value-free, S16).
+    context (agent feedback stays value-free, S16). ``source`` names the
+    untrusted tool(s) the value derives from -- the provenance a human needs
+    ("this recipient came from read_email").
     """
 
     confirmation_id: str
@@ -76,6 +78,7 @@ class PendingConfirmation:
     param_index: int
     param_name: str
     value: object
+    source: tuple[str, ...] = ()
 
 
 def control_operands(
@@ -148,20 +151,24 @@ def _tool_calls(node: ast.AST, tool_names: set[str]) -> Iterator[ast.Call]:
             yield n
 
 
-def static_taint(
+def static_taint_map(
     code: str,
     docs_by_name: dict[str, ToolDoc],
     source_trust: SourceTrust,
     policy: PrecheckPolicy | None = None,
-) -> set[tuple[str, int]]:
-    """Return ``{(tool, param_index)}`` for control operands that derive from an
-    untrusted source. Provenance-based, so transformation cannot launder taint."""
+) -> dict[tuple[str, int], tuple[str, ...]]:
+    """Map each untrusted-derived control operand to its untrusted source tools.
+
+    ``{(tool, param_index): (source_tool, ...)}``. Provenance-based, so a
+    transformation cannot launder taint. The source list is the provenance a
+    human confirmation dialog can display.
+    """
     func = _run_function(code)
     if func is None:
-        return set()
+        return {}
     tool_names = set(docs_by_name)
     var_sources: dict[str, set] = {}
-    gated: set[tuple[str, int]] = set()
+    gated: dict[tuple[str, int], tuple[str, ...]] = {}
 
     for stmt in _ordered_statements(func):
         # Record variable provenance (single-assignment => defined before use).
@@ -180,6 +187,17 @@ def static_taint(
                 if i >= len(call.args):
                     continue
                 src = _expr_sources(call.args[i], var_sources, tool_names)
-                if any(source_trust.is_untrusted(t) for t in src):
-                    gated.add((tool, i))
+                untrusted = tuple(sorted(t for t in src if source_trust.is_untrusted(t)))
+                if untrusted:
+                    gated[(tool, i)] = untrusted
     return gated
+
+
+def static_taint(
+    code: str,
+    docs_by_name: dict[str, ToolDoc],
+    source_trust: SourceTrust,
+    policy: PrecheckPolicy | None = None,
+) -> set[tuple[str, int]]:
+    """Return ``{(tool, param_index)}`` for untrusted-derived control operands."""
+    return set(static_taint_map(code, docs_by_name, source_trust, policy))

@@ -120,7 +120,9 @@ def scenario_attack() -> bool:
     if len(pend) != 1:
         print(f"  FAIL: expected 1 pending, got {len(pend)}"); ok = False
     else:
+        prov = ", ".join(pend[0].source) or "unknown"
         print(f"  grill -> HUMAN sees: send_money recipient = {pend[0].value!r}")
+        print(f"           provenance: this value came from {prov} (untrusted)")
         print(f"  agent sees (value-free): {held.agent_reason!r}")
         if ATTACKER_IBAN in (held.agent_reason or ""):
             print("  FAIL: poisoned value leaked to agent"); ok = False

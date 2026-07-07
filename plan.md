@@ -150,7 +150,9 @@
   (d) grill-me UX 選別（S12/S13）
 - [x] 中身/制御オペランド分離ルール（汚染データは content にのみ可・control はゲート, S15/S18）
   ＝ precheck の recipient/amount 分類を再利用して実装。テスト済み（`tests/test_confirmation.py`）
-- [ ] provenance 表示（「この値は信頼できない外部データ由来」）
+- [x] provenance 表示（「この値は信頼できない外部データ由来」）— `PendingConfirmation.source` に
+  出所ツールを付与（静的テイントから導出）。側チャネル確認で「この値は read_email 由来（untrusted）」
+  と表示（`eval/grill_scenario.py`, `gateway/runtime/confirmation.py`）
 - [ ] **grill-me UX 選別**（例外だけ見せる・出所グループ化・許可リスト昇格, S12/S13）
   — 規模(fan-out)で「全部 grill」が盲判子化するのを防ぐ最適化。正確さの要件ではない
 - [ ] **💬議論** 品質grill をバンドル（機構共有・サリエンス分離・起動判定独立）
@@ -195,7 +197,9 @@
   `VALUE_LEAK_COUNT` / `SLICE_GENERATION_FAILURES` / `ADDITIONAL_COST` / `LATENCY`
   （`eval/fpfn.py` / `eval/freeform.py` / `eval/grill_eval.py` / `eval/grill_scenario.py` / `eval/l2_replay.py`）。
   残: filter取りこぼし計測（Stage 3）
-- [ ] observability / audit（permit/deny ＋ 理由を構造化イベントに）
+- [x] observability / audit（permit/deny ＋ 理由を構造化イベントに）— `AuditEvent`（seq/kind/
+  decision/tool/reason_code/reason）を submit の accept/reject と tool_call の permit/deny/pending で
+  記録、`gateway.audit_log()` で参照（`gateway/runtime/audit.py`）。値を含む operator 向け
 - [ ] session 永続化（Stage 1 は in-memory 可、cloud化で外出し ＋ 署名根の分散化, B1）
 - [ ] **♾️🔬研究** Judge 機構の継続最適化（モデル/プロンプト/構造/workload, F1 — 永続テーマ）
 - [ ] テストデータ整備: AI fixture の人間review（C1）, L3重複解消（C2）, review tooling（C3）

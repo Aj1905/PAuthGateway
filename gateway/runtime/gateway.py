@@ -63,11 +63,12 @@ from gateway.planning.planner import (
     Planner,
 )
 from gateway.planning.prechecks import PrecheckPolicy, precheck_code
+from gateway.runtime.audit import AuditLog
 from gateway.runtime.confirmation import (
     PendingConfirmation,
     SourceTrust,
     control_operands,
-    static_taint,
+    static_taint_map,
 )
 from gateway.runtime.feedback import (
     ReasonCode,
@@ -137,6 +138,7 @@ class _Session:
     # Static provenance taint (S20): (tool, param_index) control operands that
     # derive from an untrusted source. Computed once from the plan code.
     gated_operands: set = dataclasses.field(default_factory=set)
+    gated_sources: dict = dataclasses.field(default_factory=dict)
     pending: dict[str, PendingConfirmation] = dataclasses.field(default_factory=dict)
     confirmed: set = dataclasses.field(default_factory=set)
     confirm_seq: int = 0
@@ -169,6 +171,7 @@ class _CompositeState:
     docs_by_name: dict[str, Any] = dataclasses.field(default_factory=dict)
     precheck_policy: Any = None
     gated_operands: set = dataclasses.field(default_factory=set)
+    gated_sources: dict = dataclasses.field(default_factory=dict)
     pending: dict[str, PendingConfirmation] = dataclasses.field(default_factory=dict)
     confirmed: set = dataclasses.field(default_factory=set)
     confirm_seq: int = 0
@@ -200,8 +203,13 @@ class Gateway:
         # Side channels denied by default (Stage 1 禁止前提, #4/B5).
         self._side_channel_policy = side_channel_policy or SideChannelPolicy()
         self._isolated_runtime = isolated_runtime
+        self._audit = AuditLog()  # observability / audit (plan.md 横断)
         self._session: _Session | None = None
         self._composite: _CompositeState | None = None
+
+    def audit_log(self) -> list:
+        """Structured permit/deny/accept/reject events (operator-facing)."""
+        return self._audit.events()
 
     # ------------------------------------------------------------------
     # Plan-generation entrypoint -- driven by the user, never the agent.
@@ -319,9 +327,11 @@ class Gateway:
             return SubmissionResult(accepted=False, reason=reason)
 
         self._composite = state
+        reason = f"{plan.reason} ({len(plan.stages)} stages)"
+        self._audit.record("submit", "accept", reason_code="accepted", reason=reason)
         return SubmissionResult(
             accepted=True,
-            reason=f"{plan.reason} ({len(plan.stages)} stages)",
+            reason=reason,
             rule_count=state.stage_rule_total,
         )
 
@@ -352,9 +362,10 @@ class Gateway:
         # folded in, so their provenance is lost here -- fan-out over an
         # untrusted list can under-gate (documented limitation; fan-out is not
         # on the live path yet).
-        state.gated_operands = static_taint(
+        state.gated_sources = static_taint_map(
             code, state.docs_by_name, state.source_trust, state.precheck_policy
         )
+        state.gated_operands = set(state.gated_sources)
         # Non-accumulation: the previous stage's enforcer is discarded; its
         # rules can never authorize again. The envelope store is shared so
         # later guards/operands still reference earlier signed observations.
@@ -469,7 +480,10 @@ class Gateway:
             if existing is None:
                 cid = f"c{state.confirm_seq}"
                 state.confirm_seq += 1
-                state.pending[cid] = PendingConfirmation(cid, tool, i, name, args[i])
+                state.pending[cid] = PendingConfirmation(
+                    cid, tool, i, name, args[i],
+                    source=state.gated_sources.get((tool, i), ()),
+                )
             return CallResult(
                 permit=False,
                 reason=(
@@ -594,6 +608,9 @@ class Gateway:
         runner = suite.runner_factory(env)
 
         docs_by_name = {t.name: t for t in suite.tool_docs()}
+        _gsrc = static_taint_map(
+            draft.code, docs_by_name, self._source_trust, self._precheck_policy
+        )
         self._session = _Session(
             prompt=prompt,
             run_doc=draft.run_doc,
@@ -605,10 +622,10 @@ class Gateway:
             source_trust=self._source_trust,
             docs_by_name=docs_by_name,
             precheck_policy=self._precheck_policy,
-            gated_operands=static_taint(
-                draft.code, docs_by_name, self._source_trust, self._precheck_policy
-            ),
+            gated_operands=set(_gsrc),
+            gated_sources=_gsrc,
         )
+        self._audit.record("submit", "accept", reason_code="accepted", reason=draft.reason)
         return SubmissionResult(
             accepted=True,
             reason=draft.reason,
@@ -623,6 +640,9 @@ class Gateway:
         run_doc: dict[str, Any] | None = None,
         generated_code: str | None = None,
     ) -> _Session:
+        self._audit.record(
+            "submit", "reject", reason_code=classify_reason(reason).value, reason=reason
+        )
         return _Session(
             prompt=prompt,
             run_doc=run_doc,
@@ -689,11 +709,23 @@ class Gateway:
         ))
 
     def _finalize_agent_reason(self, result: CallResult, tool: str) -> CallResult:
-        """Attach a value-free agent-facing reason to any denial."""
+        """Attach a value-free agent-facing reason to any denial, and audit."""
         if not result.permit and result.agent_reason is None:
             result.agent_reason = build_agent_feedback(
                 classify_reason(result.reason), tool=tool
             )
+        code = classify_reason(result.reason) if not result.permit else ReasonCode.NO_RULE
+        if result.permit:
+            decision = "permit"
+        elif code == ReasonCode.PENDING_CONFIRMATION:
+            decision = "pending"
+        else:
+            decision = "deny"
+        self._audit.record(
+            "tool_call", decision, tool=tool,
+            reason_code=(code.value if not result.permit else "authorized"),
+            reason=result.reason,
+        )
         return result
 
     def _handle_tool_call_session(self, tool: str, args: list[Any]) -> CallResult:
