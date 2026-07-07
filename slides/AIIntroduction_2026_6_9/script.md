@@ -1,28 +1,28 @@
-# Automatic Authorization Gateway - Presentation Notes (English, about 7 min 20 sec)
+# Automatic Authorization Gateway - Presentation Notes (English, about 9 min 20 sec)
 
 Speaker notes for `slides/AIIntroduction_2026_6_9/index.html`.
 Each section is separated by slide. The timing is approximate.
 
 ---
 
-## Slide 1 / 10 - Title
+## Slide 1 / 14 - Title
 **Target time: about 20 seconds**
 
-**Chapter:** My AI Practice - Pattern 3: Building a New Feature
-**Title:** Automatic Authorization Gateway for Using AI Agents As-Is
-**Subtitle:** No more pressing "Enter" over and over.
+**Chapter:** Self-Hosted AI Safety
+**Title:** Auto-Authorizing AI Gateway
+**Subtitle:** Don't believe the agent.
 
 **Talk track:**
 
-Today I will talk about an automatic authorization gateway for AI agents.
-This is my example for Pattern 3: planning and building a new feature with AI.
+Today I will talk about an auto-authorizing gateway for AI agents.
+The theme is self-hosted AI safety: building a control layer that you own.
 
-The motivation is simple: I want to delegate work to agents without sitting there pressing Enter all day.
-I built a layer that sits between the agent and the real world.
+The core message is simple: do not believe the agent.
+Let it work, but check every action before it touches the real world.
 
 ---
 
-## Slide 2 / 10 - Goal
+## Slide 2 / 14 - Goal
 **Target time: about 60 seconds**
 
 **Chapter:** Goal
@@ -46,30 +46,28 @@ The starting point for this project was to build structure between agents and re
 
 ---
 
-## Slide 3 / 10 - AI Used
+## Slide 3 / 14 - Background
 **Target time: about 30 seconds**
 
-**Chapter:** AI Used
-**Heading:** The AI systems used for development and validation.
+**Chapter:** Background
+**Heading:** A case of an agent disaster.
 
 **Talk track:**
 
-I used three main AI systems.
+This is the concrete failure mode behind the project.
 
-Claude Code was the development partner.
-It helped interpret the paper's structure, implement the core logic, write tests, and debug.
-I focused on design decisions and review.
+Replit is a cloud development platform where an AI agent can build and deploy applications from prompts.
+In one real case, a single agent command wiped out the user's entire production database.
 
-At runtime, the system uses the Claude API and MCP servers.
-The agent side stays unchanged.
+The cause was not mysterious.
+The agent had been given direct access to production data.
+The only thing between the agent and the damage was the user's judgment, and that was not enough.
 
-For benchmark reproduction, I used OpenAI GPT-4.1 for the A1 code-generation step, matching the paper.
-
-The foundation is the PAuth paper, published in March 2026.
+This is why a structural authorization layer matters.
 
 ---
 
-## Slide 4 / 10 - Capability 1 / 3
+## Slide 4 / 14 - Capability 1 / 3
 **Target time: about 65 seconds**
 
 **Chapter:** Capability 1 / 3
@@ -98,7 +96,7 @@ Every outbound call from the agent is checked against that fixed set.
 
 ---
 
-## Slide 5 / 10 - Capability 2 / 3
+## Slide 5 / 14 - Capability 2 / 3
 **Target time: about 60 seconds**
 
 **Chapter:** Capability 2 / 3
@@ -127,88 +125,190 @@ Attacker text can influence the agent, but it cannot expand the set of allowed o
 
 ---
 
-## Slide 6 / 10 - Capability 3 / 3
+## Slide 6 / 14 - Capability 3 / 3
 **Target time: about 50 seconds**
 
 **Chapter:** Capability 3 / 3
-**Heading:** Drop it directly into an existing Claude Code + MCP setup.
+**Heading:** Drop it directly into an existing agent + tool-server setup.
 
 **Talk track:**
 
 The third capability is practical integration.
-The gateway can be inserted directly into an existing Claude Code and MCP setup.
+The gateway can be inserted directly into an existing agent and tool-server setup.
 
-As shown in the diagram, Claude Code is unchanged.
-The SaaS-side MCP servers are also unchanged.
+As shown in the diagram, the agent, such as Claude Code, is unchanged.
+The external tool servers are also unchanged.
 The new component is only the gateway in the middle.
 
 This has two advantages.
 
 First, it can be adopted independently.
-You do not need to change the agent or the SaaS systems, so safety can improve at your own pace.
+You do not need to change the agent or the external services, so safety can improve at your own pace.
 
 Second, it does not break the existing workflow.
-The current Claude Code and MCP combination continues to work.
+The current agent and tool-server workflow continues to work.
 The gateway simply stands between them.
 
 ---
 
-## Slide 7 / 10 - Process
-**Target time: about 50 seconds**
+## Slide 7 / 14 - The Proposal
+**Target time: about 30 seconds**
 
-**Chapter:** Process
-**Heading:** Implementing the paper with one person + Claude Code.
+**Chapter:** The Proposal
+**Heading:** A new authorization system: PAuth.
 
 **Talk track:**
 
-The implementation was done by one person working with Claude Code.
+The proposal behind this implementation is PAuth.
+It is a task-scoped authorization system for AI agents.
 
-I read the paper and decomposed the system into A1, A2-A3, B1-B4, and the envelope.
-A1 is code generation.
-A2 and A3 derive slices and compile rules.
-B1 through B4 are runtime enforcement.
-The envelope is the signed record of calls.
+The paper was written by Reshabh K Sharma, Linxi Jiang, Zhiqiang Lin, and Shuo Chen.
+It was published on arXiv on March 17, 2026.
 
-The useful part of the paper's structure is that only A1 needs an LLM.
-The rest is deterministic.
-That makes the boundary between AI work and human responsibility much clearer.
-
-Claude Code handled detailed implementation and tests.
-I handled design decisions and validation.
-Finally, I connected the system to AgentDojo's banking, slack, travel, and workspace suites, plus the paper's shopping suite, and built a runner to measure false positives and false negatives.
+The key idea is to derive allowed operations from the user's task and enforce them at every external call.
+That is the authorization model I reproduced in this project.
 
 ---
 
-## Slide 8 / 10 - Results
+## Slide 8 / 14 - Key Terms
+**Target time: about 40 seconds**
+
+**Chapter:** Terms in plain English
+**Heading:** Three PAuth terms matter.
+
+**Talk track:**
+
+Before the mechanism, there are three terms to understand.
+
+First, an allowed-action plan is the fixed checklist made from the user's request.
+It says what the agent may do and which values it may use.
+
+Second, an NL slice is one item in that checklist, written in plain language.
+It describes one external action the agent may take.
+
+Third, a signed envelope is a signed record of what a tool returned.
+Later actions must use values from these records, not values invented by the agent.
+
+So the short version is this: NL slices define what is allowed, and signed envelopes prove where values came from.
+
+---
+
+## Slide 9 / 14 - PAuth Flow
+**Target time: about 35 seconds**
+
+**Chapter:** PAuth - Flow
+**Heading:** The terms work together as a chain.
+
+**Talk track:**
+
+A request becomes rules.
+Tool results become trusted evidence.
+Every later action must match both.
+
+First, the user's request is turned into an allowed-action plan before the agent starts acting.
+
+Second, that plan is split into NL slices.
+Each slice says what is allowed for one external action.
+
+Third, when a tool returns data, PAuth stores it as a signed envelope.
+That means later actions can use values from trusted records, not from whatever the agent says.
+
+Finally, every agent action is checked.
+It is allowed only if it matches the right NL slice and uses values from signed envelopes.
+
+That is why prompt injection is contained.
+It can influence the agent's text, but it cannot create new NL slices or fake signed envelopes.
+
+---
+
+## Slide 10 / 14 - PAuth Analogy
+**Target time: about 35 seconds**
+
+**Chapter:** PAuth - Analogy
+**Heading:** An unreliable delivery driver.
+
+**Talk track:**
+
+Here is the analogy.
+
+The customer's request is trusted.
+The delivery plan written from it is trusted.
+But the delivery driver on the road is not trusted.
+
+In the PAuth model, the delivery company is the PAuth system.
+The houses are external services.
+The delivery slips are NL slices.
+The walker is the agent.
+The package is the external action and its values.
+The receipt stamp is the signed envelope.
+
+The point is that we do not trust the driver.
+We trust the request and the derived plan, and the destinations verify what actually arrives.
+If a suspicious driver shows up, just turn them away.
+
+---
+
+## Slide 11 / 14 - Results
 **Target time: about 60 seconds**
 
 **Chapter:** Results
-**Heading:** Observed behavior.
+**Heading:** Measured error counts: FP = 0, FN = 0.
 
 **Talk track:**
 
-Here are the results.
-The premise is that the prompt entered through the UI is trusted.
-The evaluated set includes tasks where A1 generated code that followed the restricted grammar.
+Here is the current test status.
+First, the definitions.
+FN stands for False Negative.
+It means an unsafe action is allowed.
+It is the more dangerous error because it lets unsafe work through.
+FP stands for False Positive.
+It means a valid action is wrongly blocked.
 
-I ran the four AgentDojo suites plus the shopping suite.
-A1 generated valid executable code for 49 benign tasks and 390 forced-injection tasks.
+There are two groups of measurements.
 
-Across those tasks, false negatives were zero.
-That means no attacks were allowed.
+First, AgentDojo task sets.
+These cover structured banking, Slack, travel, and workspace tasks, plus agentic generation runs.
+546 runs were tested.
+Success over total was 546 out of 546.
+FN was zero.
+FP was also zero.
 
-False positives were also zero.
-That means no valid actions were blocked.
+Second, freeform prompt tests.
+These are 14 shopping prompts: 6 canonical rephrasings and 8 AI-generated prompts.
+11 generated NL slices.
+No NL slice was generated for the other 3, and those were correctly rejected.
 
-Another 50 tasks produced code outside the restricted grammar.
-Those were stopped before reaching the enforcer.
-That is correct default-deny behavior.
+14 prompts were tested.
+NL slices were generated for 11 out of 14 prompts.
+FN was zero.
+FP was also zero after retry.
 
-So the central claim of the paper, zero false positives and zero false negatives on the benchmark, was reproduced.
+The honest limit is coverage.
+The freeform set is still small and shopping-only, so this supports the current safety claim but does not prove arbitrary-prompt safety.
 
 ---
 
-## Slide 9 / 10 - Conclusion
+## Slide 12 / 14 - Current Gaps
+**Target time: about 25 seconds**
+
+**Chapter:** Current Gaps
+**Heading:** The hardest part is capturing intent.
+
+**Talk track:**
+
+This is not production-complete yet.
+There is one main open gap: capturing intent.
+
+The gateway can enforce the plan.
+The hard part is making sure that the plan reflects what the user actually asked for.
+
+There are still other gaps too.
+The main coverage task is to test whether this works for arbitrary user prompts, beyond the current fixtures.
+Production-grade service integration and better user-facing recovery paths are also still open.
+
+---
+
+## Slide 13 / 14 - Conclusion
 **Target time: about 35 seconds**
 
 **Chapter:** Conclusion
@@ -224,15 +324,14 @@ Instead of giving the agent authority and trusting it, every call is checked aga
 Second, if you own the design decisions, Claude Code can now write a large share of the code.
 Reproducing the core of a research paper as one person has become realistic.
 
-Third, the remaining problem is faithful conversion from natural language to restricted-grammar code.
-The paper calls this edge A.
+Third, the remaining problem is capturing intent: turning the user's request into the right allowed-action plan.
 Closing this gap is what would make production use more realistic.
 
 The GitHub link is on the next slide.
 
 ---
 
-## Slide 10 / 10 - GitHub
+## Slide 14 / 14 - GitHub
 **Target time: about 10 seconds**
 
 **Chapter:** GitHub
