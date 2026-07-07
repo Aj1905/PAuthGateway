@@ -160,7 +160,9 @@
   フィードバックの構造的無害化を実装（値ゼロ・型強制, S16, `gateway/runtime/feedback.py`）。
   残: grill 表示(人間向け)の threat model
 - [ ] **🔬研究** 確認済み prompt 再構成の改ざん対策（feedback loop, Q14-d）
-- [ ] **Exit:** 危険フローが deny でなく人間確認で通せる（無人時は deny に退避）
+- [x] **Exit:** 危険フローが deny でなく人間確認で通せる（無人時は deny に退避）— 機構＋eval で
+  実証（`eval/grill_scenario.py`: 攻撃=REJECT/正当=APPROVE/無人=fail-safe deny、`eval/grill_eval.py`:
+  FN=0・VALUE_LEAK=0・APPROVAL_COUNT=理想）。残: 側チャネル確認 UI（B3）
 
 ---
 
@@ -188,7 +190,11 @@
 
 ## 横断的要素（各ステージで並行）
 
-- [ ] 正直な計測の維持（FP/FN・over-rejection・filter取りこぼし・over-auth accept）
+- [x] 正直な計測の維持（FP/FN・over-rejection・over-auth accept）— eval 基盤を `eval/` 直下に
+  集約。指標: `FN_COUNT` / `FP_COUNT` / `ACCEPTANCE_RATE` / `OFF_INTENT_COUNT` / `APPROVAL_COUNT` /
+  `VALUE_LEAK_COUNT` / `SLICE_GENERATION_FAILURES` / `ADDITIONAL_COST` / `LATENCY`
+  （`eval/fpfn.py` / `eval/freeform.py` / `eval/grill_eval.py` / `eval/grill_scenario.py` / `eval/l2_replay.py`）。
+  残: filter取りこぼし計測（Stage 3）
 - [ ] observability / audit（permit/deny ＋ 理由を構造化イベントに）
 - [ ] session 永続化（Stage 1 は in-memory 可、cloud化で外出し ＋ 署名根の分散化, B1）
 - [ ] **♾️🔬研究** Judge 機構の継続最適化（モデル/プロンプト/構造/workload, F1 — 永続テーマ）
