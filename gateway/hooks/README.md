@@ -25,7 +25,13 @@
 .venv/bin/python gateway/serving/http_server.py --host 127.0.0.1 --port 8081
 ```
 
-これは稼働させたままにする。再起動するとすべての有効なセッションが失われる。
+これは稼働させたままにする。再起動するとすべての有効なセッションが失われる
+(`--session-store PATH` で計画の再構築入力を永続化できる。B1)。
+
+任意で `--audit-log PATH` を付けると、permit/deny/accept/reject の判定を JSONL で
+追記する(operator-facing。値を含みうるのでエージェントthat読めない場所に置く)。
+稼働確認は `curl http://127.0.0.1:8081/health`、セッション状態は
+`curl http://127.0.0.1:8081/sessions/<id>`(値フリーの保護レベル・計画有無・ルール数)。
 
 ## 2. Add the hooks to Claude Code settings
 

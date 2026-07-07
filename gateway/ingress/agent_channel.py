@@ -37,6 +37,7 @@ from typing import Any, Callable, Literal, Union
 
 from pauth.suites.base import SuiteSpec
 
+from gateway.runtime.audit import AuditLog
 from gateway.runtime.gateway import CallResult, Gateway, SubmissionResult
 from gateway.planning.planner import (
     STRATEGY_AUTO,
@@ -183,9 +184,18 @@ class AgentChannel:
       silently re-planning mid-task.
     """
 
-    def __init__(self, suite_loader: Callable[[str], SuiteSpec]) -> None:
-        self._gateway = Gateway(suite_loader)
+    def __init__(
+        self,
+        suite_loader: Callable[[str], SuiteSpec],
+        *,
+        audit_log: "AuditLog | None" = None,
+    ) -> None:
+        self._gateway = Gateway(suite_loader, audit_log=audit_log)
         self._prompt_received = False
+
+    def status(self) -> dict[str, Any]:
+        """Value-free session status for health checks (no operand values)."""
+        return {"prompt_received": self._prompt_received, **self._gateway.status()}
 
     # ------------------------------------------------------------------
     # Primary entry: receive a typed message, return a typed response.

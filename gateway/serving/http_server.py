@@ -9,6 +9,13 @@ Wire protocol
   not exist yet, it is implicitly created with the supplied id. This is
   the entry point Claude Code hooks use (they pass their own session_id).
 * ``DELETE /sessions/<id>`` -- discard a session.
+* ``GET /health`` -- liveness + config summary (session count, whether the
+  session store / audit log persistence are enabled). Value-free.
+* ``GET /sessions/<id>`` -- value-free session status for health checks:
+  protection level + caveats, whether a plan is active, rule count, pending
+  confirmation count. Carries no operand values, so it is safe on the
+  unauthenticated localhost surface (unlike the audit log, which is
+  operator-facing and may quote values).
 
 Session state is held in process memory; restarting the server drops
 every session. For production wrap in a real web framework with proper
@@ -39,6 +46,7 @@ from pauth.suites.base import SuiteSpec
 from pauth.suites.shopping import build_suite as build_shopping_suite
 
 from gateway.ingress.agent_channel import AgentChannel
+from gateway.runtime.audit import AuditLog
 from gateway.serving.session_store import SessionStore
 from gateway.serving.config import load_config, suite_loader_for
 
@@ -57,7 +65,10 @@ _SESSION_DELETE_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})$")
 
 
 def restore_channel(
-    suite_loader: Callable[[str], SuiteSpec], store: "SessionStore", session_id: str
+    suite_loader: Callable[[str], SuiteSpec],
+    store: "SessionStore",
+    session_id: str,
+    audit_log: "AuditLog | None" = None,
 ) -> AgentChannel | None:
     """Rebuild a persisted session by replaying its stored prompt (B1).
 
@@ -68,7 +79,7 @@ def restore_channel(
     entry = store.get(session_id)
     if entry is None:
         return None
-    channel = AgentChannel(suite_loader)
+    channel = AgentChannel(suite_loader, audit_log=audit_log)
     message = {"kind": "prompt", "prompt": entry.get("prompt", "")}
     message.update(entry.get("config", {}) or {})
     channel.receive_json(message)
@@ -77,11 +88,37 @@ def restore_channel(
 
 class _Handler(BaseHTTPRequestHandler):
     sessions: dict[str, AgentChannel] = {}
-    suite_loader: Callable[[str], SuiteSpec] = default_suite_loader
+    # staticmethod: a plain function stored as a class attribute would bind to
+    # the handler instance (self.suite_loader -> loader(self, name), 2 args).
+    suite_loader: Callable[[str], SuiteSpec] = staticmethod(default_suite_loader)
     session_store: "SessionStore | None" = None  # B1: opt-in persistence (None = off)
+    audit_log: "AuditLog | None" = None  # opt-in shared persistent audit trail
 
     def log_message(self, fmt: str, *args) -> None:  # noqa: D401 -- quieter logs
         sys.stderr.write("[gateway-http] " + (fmt % args) + "\n")
+
+    # ------------------------------------------------------------------
+    # GET -- health / status (value-free; safe on unauthenticated localhost)
+    # ------------------------------------------------------------------
+    def do_GET(self) -> None:  # noqa: N802 -- BaseHTTPRequestHandler API
+        if self.path == "/health":
+            self._send_json(200, {
+                "status": "ok",
+                "sessions": len(self.sessions),
+                "session_store": self.session_store is not None,
+                "audit_persisted": self.audit_log is not None,
+            })
+            return
+        m = _SESSION_DELETE_RE.match(self.path)  # GET /sessions/<id> -> status
+        if m:
+            session_id = m.group(1)
+            channel = self.sessions.get(session_id)
+            if channel is None:
+                self._send_json(404, {"error": "no such session", "session_id": session_id})
+                return
+            self._send_json(200, {"session_id": session_id, **channel.status()})
+            return
+        self._send_json(404, {"error": f"no route for GET {self.path}"})
 
     # ------------------------------------------------------------------
     # POST
@@ -97,7 +134,9 @@ class _Handler(BaseHTTPRequestHandler):
 
         if self.path == "/sessions":
             session_id = str(uuid.uuid4())
-            self.sessions[session_id] = AgentChannel(self.suite_loader)
+            self.sessions[session_id] = AgentChannel(
+                self.suite_loader, audit_log=self.audit_log
+            )
             self._send_json(201, {"session_id": session_id})
             return
 
@@ -111,10 +150,11 @@ class _Handler(BaseHTTPRequestHandler):
                 # id creates it -- what the Claude Code hooks rely on).
                 if self.session_store is not None:
                     channel = restore_channel(
-                        self.suite_loader, self.session_store, session_id
+                        self.suite_loader, self.session_store, session_id,
+                        audit_log=self.audit_log,
                     )
                 if channel is None:
-                    channel = AgentChannel(self.suite_loader)
+                    channel = AgentChannel(self.suite_loader, audit_log=self.audit_log)
                 self.sessions[session_id] = channel
             response = channel.receive_json(payload)
             # Persist an accepted prompt so it survives a restart.
@@ -168,6 +208,10 @@ def main() -> int:
         "--session-store", default=os.environ.get("SESSION_STORE_PATH", ""),
         help="JSON file to persist sessions across restarts (B1); empty = disabled",
     )
+    parser.add_argument(
+        "--audit-log", default=os.environ.get("AUDIT_LOG_PATH", ""),
+        help="JSONL file to append operator-facing audit events to; empty = in-memory only",
+    )
     args = parser.parse_args()
 
     if args.session_store:
@@ -175,9 +219,14 @@ def main() -> int:
         restored = len(_Handler.session_store)
         print(f"session store: {args.session_store} ({restored} persisted)", file=sys.stderr)
 
+    if args.audit_log:
+        _Handler.audit_log = AuditLog(args.audit_log)
+        print(f"audit log: {args.audit_log} (JSONL, operator-facing)", file=sys.stderr)
+
     if args.config:
         loaded = load_config(args.config)
-        _Handler.suite_loader = suite_loader_for(loaded)
+        # staticmethod so instance access does not bind the loader (see class def).
+        _Handler.suite_loader = staticmethod(suite_loader_for(loaded))
         print(
             f"loaded config :: merged={loaded.merged_name} "
             f"sources={sorted(loaded.sources)}",

@@ -187,6 +187,7 @@ class Gateway:
         source_trust: SourceTrust | None = None,
         side_channel_policy: SideChannelPolicy | None = None,
         isolated_runtime: bool = False,
+        audit_log: AuditLog | None = None,
     ) -> None:
         """``suite_loader(name)`` returns the real-tool ``SuiteSpec`` for ``name``.
 
@@ -203,7 +204,12 @@ class Gateway:
         # Side channels denied by default (Stage 1 禁止前提, #4/B5).
         self._side_channel_policy = side_channel_policy or SideChannelPolicy()
         self._isolated_runtime = isolated_runtime
-        self._audit = AuditLog()  # observability / audit (plan.md 横断)
+        # Observability / audit (plan.md 横断). An injected AuditLog lets a
+        # deployment share one persistent trail across sessions (http_server
+        # --audit-log); the default is a per-gateway in-memory log. Explicit
+        # None check: AuditLog defines __len__, so an empty one is falsy and
+        # `audit_log or AuditLog()` would wrongly discard an injected empty log.
+        self._audit = audit_log if audit_log is not None else AuditLog()
         self._session: _Session | None = None
         self._composite: _CompositeState | None = None
 
@@ -707,6 +713,41 @@ class Gateway:
             side_channels_denied=bool(self._side_channel_policy.denied),
             isolated_runtime=self._isolated_runtime,
         ))
+
+    def status(self) -> dict[str, Any]:
+        """Value-free operational status for health checks (observable health).
+
+        Carries NO operand value or internal reason text -- only booleans,
+        counts, the protection level, and a value-free ``reason_code``. Safe to
+        expose on an unauthenticated localhost health endpoint (unlike
+        ``audit_log()``, which is operator-facing and may quote values).
+        """
+        plan_active = False
+        rule_count = 0
+        reason_code: str | None = None
+        if self._composite is not None:
+            st = self._composite
+            plan_active = (
+                not st.complete and st.enforcer is not None and st.failure is None
+            )
+            rule_count = st.stage_rule_total
+            if st.failure:
+                reason_code = classify_reason(st.failure).value
+        elif self._session is not None:
+            se = self._session
+            plan_active = se.enforcer is not None
+            if se.enforcer is not None:
+                rule_count = sum(len(v) for v in se.enforcer.rules_by_tool.values())
+            elif se.rejection_reason:
+                reason_code = classify_reason(se.rejection_reason).value
+        return {
+            "plan_active": plan_active,
+            "rule_count": rule_count,
+            "pending_confirmations": len(self.pending_confirmations()),
+            "audit_events": len(self._audit),
+            "reason_code": reason_code,
+            "protection": self.protection_report().to_dict(),
+        }
 
     def _finalize_agent_reason(self, result: CallResult, tool: str) -> CallResult:
         """Attach a value-free agent-facing reason to any denial, and audit."""

@@ -395,12 +395,13 @@ prompt capture が弱ければ、システムは L2/L3 から L1/L0 へ落ち、
 
 デモと benchmark の suite では足りない。実デプロイには次が必要である:
 
-- credential ストレージ。
-- ユーザ単位のツール登録。
-- envelope の永続化。
-- audit ログ。
-- プロバイダ固有のエラーハンドリング。
-- API specs が変わったときの安全なリロード。
+- credential ストレージ → 🟡 方針決定(S4: broker 採用)・実装は初の実 SaaS 統合時。
+- ユーザ単位のツール登録 → 🔴 未実装(ユーザモデルthat要る)。
+- envelope の永続化 → ⚪ 意図的に非永続(session_store は再構築入力のみ保存。B1)。
+- audit ログ → 🟢 ファイル永続化実装(`http_server --audit-log`, JSONL 追記,
+  operator-facing)。ローテーション/集約は未。
+- プロバイダ固有のエラーハンドリング → 🔴 未実装。
+- API specs が変わったときの安全なリロード → 🔴 未実装(認証付きリロード endpoint that要る)。
 
 ### 5. Bypass And Side-Channel Policy Is Incomplete
 
@@ -416,7 +417,9 @@ Claude Code のようなエージェントは、shell、ファイルシステム
   `gateway/deploy/egress_lockdown.sh`, Q10。非管理ユーザ前提で外向きを gateway 経由に強制)。
 - credential 隔離 → 🟡 方針決定(S4: broker 採用)・実装は初の実 SaaS 統合時。
 - 未知のツールに対するフォールバック挙動 → 🟢 default-deny(PAuth コア)。
-- 無効化された hook や直接 SaaS 呼び出しを検出する health checks → 🔴 未実装。
+- 可観測 health checks → 🟡 実装(`GET /health` ＋ `GET /sessions/<id>` that値フリーの
+  保護レベル・計画有無・ルール数・pending 確認数を返す)。無効化された hook / 直接 SaaS
+  呼び出しの*能動的*検出(ハートビート等)は未実装。
 - **非ネットワーク副作用(ローカル FS 改ざん・秘密の仕込み)の FS 側隔離** → 🔴 未実装
   (egress ロックダウンの範囲外。隔離モード or FS サンドボックスが要る)。
 
