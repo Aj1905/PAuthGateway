@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pauth-gateway"
+version = "0.1.0"
+description = "PAuth: precise task-scoped authorization gateway for AI agents (OSS core)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+# The enforcement core is stdlib-only so it stays auditable and light. LLM and
+# benchmark deps are optional extras.
+dependencies = []
+
+[project.optional-dependencies]
+llm = ["openai>=2.0,<3.0"]
+bench = ["agentdojo==0.1.35"]
+
+[project.urls]
+Homepage = "https://github.com/Aj1905/PAuthGateway"
+
+# The public OSS core. A private enterprise overlay (see ENTERPRISE.md) depends
+# on this package and plugs premium implementations into its extension points
+# (SessionStore, AuditLog, SuiteFilter scorer, credential broker). tests/ and
+# eval/ are intentionally not distributed.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pauth*", "gateway*"]
+exclude = ["tests*", "eval*"]
