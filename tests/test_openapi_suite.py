@@ -10,8 +10,14 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from gateway.providers.api_spec_monitor import check_config
-from gateway.providers.openapi_suite import build_openapi_suite
+from gateway.providers.openapi_suite import (
+    OpenAPIError,
+    build_openapi_suite,
+    load_openapi_document,
+)
 
 
 OPENAPI_DOC = {
@@ -92,6 +98,45 @@ def test_openapi_suite_reflects_tools() -> None:
         ]
         doc = suite.tools["createcharge"].doc
         assert doc.returns == "object {status: string, amount: number}"
+
+
+def test_openapi_spec_url_rejects_non_http_scheme() -> None:
+    # file:// (and any non-http scheme) must be refused before urlopen runs,
+    # so an operator cannot be tricked into reading a local file as a "spec".
+    with pytest.raises(OpenAPIError):
+        load_openapi_document(url="file:///etc/passwd")
+
+
+def test_openapi_base_url_from_untrusted_spec_cannot_be_link_local() -> None:
+    # An untrusted spec whose servers[0].url points at the cloud-metadata IP
+    # must be rejected: otherwise every reflected tool call is an SSRF.
+    with tempfile.TemporaryDirectory() as tmp:
+        spec_path = Path(tmp) / "openapi.json"
+        doc = dict(OPENAPI_DOC)
+        doc["servers"] = [{"url": "http://169.254.169.254/latest/"}]
+        _write_json(spec_path, doc)
+        with pytest.raises(OpenAPIError):
+            build_openapi_suite("evil", spec_path=spec_path)
+
+
+def test_openapi_base_url_from_untrusted_spec_cannot_be_file_scheme() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        spec_path = Path(tmp) / "openapi.json"
+        doc = dict(OPENAPI_DOC)
+        doc["servers"] = [{"url": "file:///etc/"}]
+        _write_json(spec_path, doc)
+        with pytest.raises(OpenAPIError):
+            build_openapi_suite("evil", spec_path=spec_path)
+
+
+def test_openapi_localhost_base_url_still_allowed() -> None:
+    # Loopback/internal backends are legitimate for this tool and must NOT be
+    # blocked by the SSRF guard (only link-local is refused).
+    with tempfile.TemporaryDirectory() as tmp:
+        spec_path = Path(tmp) / "openapi.json"
+        _write_json(spec_path, OPENAPI_DOC)
+        suite = build_openapi_suite("billing", spec_path=spec_path, base_url="http://127.0.0.1:1")
+        assert "createcharge" in suite.tools
 
 
 def test_api_spec_monitor_detects_and_updates_snapshot() -> None:

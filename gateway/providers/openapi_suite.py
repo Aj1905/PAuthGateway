@@ -46,13 +46,55 @@ class _Operation:
 
 _HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 
+# Only these URL schemes may be dereferenced. urllib.request.urlopen also
+# honours file://, ftp://, data://, etc.; without this gate an untrusted
+# OpenAPI document could set servers[0].url (-> base_url) to file:///etc/passwd
+# and every reflected tool call would read local files (SSRF).
+_ALLOWED_URL_SCHEMES = frozenset({"http", "https"})
+
+
+def _is_link_local_host(host: str) -> bool:
+    """True iff ``host`` is a literal link-local IP (the cloud-metadata range).
+
+    Only link-local (169.254.0.0/16, fe80::/10) is blocked -- that covers the
+    IMDS endpoint 169.254.169.254, which is never a legitimate API backend.
+    Loopback/private ranges are intentionally NOT blocked: this tool is designed
+    to front localhost and internal SaaS (see config.py examples). Literal IPs
+    only; DNS-rebinding to a link-local address is a documented residual risk.
+    """
+    import ipaddress
+
+    candidate = host.strip("[]")  # bracketed IPv6 literal
+    try:
+        return ipaddress.ip_address(candidate).is_link_local
+    except ValueError:
+        return False
+
+
+def _require_http_url(url: str, context: str) -> str:
+    """Reject a URL that is not http/https or points at a link-local host."""
+    parts = urllib.parse.urlsplit(url)
+    scheme = parts.scheme.lower()
+    if scheme not in _ALLOWED_URL_SCHEMES:
+        raise OpenAPIError(
+            f"{context}: refusing non-http(s) URL {url!r} "
+            f"(scheme {scheme or '<none>'!r} is not allowed)"
+        )
+    if parts.hostname and _is_link_local_host(parts.hostname):
+        raise OpenAPIError(
+            f"{context}: refusing link-local host {parts.hostname!r} "
+            "(cloud-metadata/SSRF target)"
+        )
+    return url
+
 
 def load_openapi_document(path: str | Path | None = None, url: str | None = None) -> dict[str, Any]:
     """Load an OpenAPI document from a local path or URL."""
     if bool(path) == bool(url):
         raise OpenAPIError("openapi suite requires exactly one of 'spec_path' or 'spec_url'")
     if url:
-        with urllib.request.urlopen(url, timeout=30) as resp:
+        _require_http_url(url, "openapi spec_url")
+        with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310 -- scheme gated above
             raw = resp.read().decode("utf-8")
     else:
         raw = Path(path or "").read_text()
@@ -343,6 +385,9 @@ def build_openapi_suite(
         raise OpenAPIError(
             f"openapi suite {name!r} requires 'base_url' or a non-empty servers[0].url"
         )
+    # servers[0].url comes from the (possibly untrusted) spec; pin it to http(s)
+    # so it cannot redirect reflected tool calls to file:// or a metadata IP.
+    _require_http_url(resolved_base, f"openapi suite {name!r} base_url")
     tool_specs: dict[str, ToolSpec] = {}
     operations: dict[str, _Operation] = {}
     for path, path_item in doc["paths"].items():
@@ -425,6 +470,9 @@ def _execute_operation(env: _OpenAPIEnv, op: _Operation, kwargs: dict[str, Any])
     url = env.base_url + path
     if query:
         url += "?" + urllib.parse.urlencode(query, doseq=True)
+    # Defense in depth: base_url was gated at build time, but a path segment
+    # must never be able to switch the scheme of the dereferenced URL.
+    _require_http_url(url, f"{op.method} {op.path}")
 
     data = None
     if raw_body is not None or body_obj or op.request_body_required:

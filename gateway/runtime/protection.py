@@ -55,7 +55,14 @@ class SideChannelPolicy:
         t = (tool or "").lower()
         if t in {a.lower() for a in self.allowlist}:
             return False
-        return t in {d.lower() for d in self.denied}
+        denied = {d.lower() for d in self.denied}
+        if t in denied:
+            return True
+        # A merged suite (D2) renames a tool to ``<source>__<tool>``; match the
+        # trailing segment so a namespaced ``billing__bash`` cannot slip a raw
+        # side channel past the exact-name gate. Over-denial here is recoverable
+        # via ``allowlist``; an under-denied side channel is a silent bypass.
+        return "__" in t and t.rsplit("__", 1)[-1] in denied
 
 
 @dataclasses.dataclass(frozen=True)

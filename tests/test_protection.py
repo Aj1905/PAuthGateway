@@ -60,6 +60,20 @@ def test_normal_tools_are_not_side_channels():
     assert SideChannelPolicy().is_denied("BASH")  # case-insensitive
 
 
+def test_namespaced_side_channel_is_denied():
+    # D2 renames a merged-suite tool to ``<source>__<tool>``; a namespaced
+    # side channel must still be caught, not slip past the exact-name gate.
+    p = SideChannelPolicy()
+    assert p.is_denied("billing__bash")
+    assert p.is_denied("MySuite__Exec")
+    assert not p.is_denied("billing__get_charge")
+
+
+def test_namespaced_side_channel_can_be_allowlisted():
+    p = SideChannelPolicy(allowlist=frozenset({"billing__bash"}))
+    assert not p.is_denied("billing__bash")
+
+
 # ---------------------------------------------------------------------------
 # Protection-level reporting
 # ---------------------------------------------------------------------------
