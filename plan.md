@@ -90,7 +90,9 @@
 > 主張: 「複数実SaaSで計画外実行を default-deny。危険データフローは検出して deny」
 
 - [ ] 多 SuiteSpec 合成（registry）: MCP(HTTP) アダプタ
-- [ ] MCP(stdio) アダプタ ＋ ヘルスチェック/再起動 supervisor（B4）
+- [x] MCP(stdio) アダプタ ＋ ヘルスチェック/再起動 supervisor（B4）— `StdioTransport` に
+  `is_alive()`＋自動再起動（crash-loop 上限＋`on_restart` 再初期化フック）。subprocess kill →
+  次の rpc で透過的に再spawn（`gateway/providers/mcp_suite.py`, `tests/test_mcp_supervisor.py`）
 - [ ] OpenAPI 反映アダプタ
 - [ ] **💬議論** tool名 global 一意 → `<suite>:<tool>` namespacing（A1が見るuniverseを変える, D2）
 - [ ] suite_filter で A1 prompt 膨張抑制（D1）
@@ -243,7 +245,7 @@
 - [ ] 🟡 **B3** Grill UI 未実装: closure 設計は確定（2フェーズ＋sink ゲート＋側チャネル確認,
   solution.md S15/S17）。agent 向けフィードバックの無害化は実装済み（S16）。残: grill 機構
   本体（2フェーズ実行・sink ゲート・確認 UI）。推奨 G2。→ **Stage 5**
-- [ ] 🟡 **B4** stdio MCP subprocess のヘルスチェック/再起動なし。選択肢: supervisor 抽象。
+- [x] 🟢 **B4** stdio MCP subprocess のヘルスチェック/再起動を実装（`StdioTransport` supervisor）。
   → **Stage 3**
 - [ ] 🟡 **B5** Bash escape hatch: gateway を通った側チャネル(bash 等)は **default-deny を機構化**
   済み(`SideChannelPolicy`, S21)。out-of-band 迂回(フック未経由の subprocess/直接NW)は保護

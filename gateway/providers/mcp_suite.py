@@ -104,42 +104,96 @@ class StdioTransport:
     this transport.
     """
 
-    def __init__(self, command: list[str]) -> None:
+    def __init__(
+        self,
+        command: list[str],
+        on_restart: "Callable[[StdioTransport], None] | None" = None,
+        max_restarts: int = 3,
+    ) -> None:
+        """Spawn ``command`` and supervise it (B4).
+
+        A crashed subprocess is respawned on the next ``rpc`` up to
+        ``max_restarts`` times (crash-loop guard). ``on_restart`` is invoked
+        after each respawn so callers that need an ``initialize`` handshake can
+        replay it; it may safely call back into ``rpc`` (the lock is re-entrant).
+        """
         if not command:
             raise ValueError("StdioTransport requires a non-empty command")
+        self._command = list(command)
+        self._on_restart = on_restart
+        self._max_restarts = max_restarts
+        self._restarts = 0
+        self._ids = itertools.count(1)
+        self._lock = threading.RLock()
+        self._proc: subprocess.Popen | None = None
+        self._spawn()
+
+    def _spawn(self) -> None:
         self._proc = subprocess.Popen(
-            command,
+            self._command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=0,
             text=False,
         )
-        self._ids = itertools.count(1)
-        self._lock = threading.Lock()
+
+    def is_alive(self) -> bool:
+        return self._proc is not None and self._proc.poll() is None
+
+    @property
+    def restarts(self) -> int:
+        return self._restarts
+
+    def _restart(self) -> None:
+        if self._restarts >= self._max_restarts:
+            raise MCPError(
+                f"stdio MCP subprocess exceeded {self._max_restarts} restarts "
+                "(crash loop); giving up"
+            )
+        try:
+            self._close_proc()
+        except Exception:  # noqa: BLE001
+            pass
+        self._spawn()
+        self._restarts += 1
+        if self._on_restart is not None:
+            try:
+                self._on_restart(self)
+            except Exception as exc:  # noqa: BLE001
+                raise MCPError(f"stdio MCP reinit after restart failed: {exc}") from exc
 
     def rpc(self, method: str, params: dict[str, Any] | None = None) -> Any:
         body = {"jsonrpc": "2.0", "id": next(self._ids), "method": method}
         if params is not None:
             body["params"] = params
         line = (json.dumps(body) + "\n").encode("utf-8")
+        response_line = b""
         with self._lock:
-            if self._proc.stdin is None or self._proc.stdout is None:
-                raise MCPError("stdio MCP subprocess is not running")
-            self._proc.stdin.write(line)
-            self._proc.stdin.flush()
-            response_line = self._proc.stdout.readline()
-        if not response_line:
-            stderr = b""
-            if self._proc.stderr is not None:
+            for _ in range(self._max_restarts + 1):
+                if not self.is_alive():
+                    self._restart()
+                assert self._proc is not None
+                if self._proc.stdin is None or self._proc.stdout is None:
+                    self._restart()
+                    continue
                 try:
-                    stderr = self._proc.stderr.read(2048) or b""
-                except Exception:  # noqa: BLE001
-                    pass
-            raise MCPError(
-                f"stdio MCP subprocess closed before responding "
-                f"({method}); stderr: {stderr.decode('utf-8', 'replace')[:400]!r}"
-            )
+                    self._proc.stdin.write(line)
+                    self._proc.stdin.flush()
+                    response_line = self._proc.stdout.readline()
+                except (BrokenPipeError, OSError):
+                    self._restart()
+                    continue
+                if response_line:
+                    break
+                # empty read -> subprocess closed mid-request; respawn and retry.
+                self._restart()
+            else:
+                stderr = self._read_stderr()
+                raise MCPError(
+                    f"stdio MCP subprocess closed before responding ({method}) "
+                    f"after {self._restarts} restarts; stderr: {stderr[:400]!r}"
+                )
         try:
             payload = json.loads(response_line.decode("utf-8"))
         except json.JSONDecodeError as exc:
@@ -148,8 +202,18 @@ class StdioTransport:
             raise MCPError(f"{method} error: {payload['error']}")
         return payload.get("result")
 
-    def close(self) -> None:
+    def _read_stderr(self) -> str:
+        if self._proc is not None and self._proc.stderr is not None:
+            try:
+                return (self._proc.stderr.read(2048) or b"").decode("utf-8", "replace")
+            except Exception:  # noqa: BLE001
+                pass
+        return ""
+
+    def _close_proc(self) -> None:
         proc = self._proc
+        if proc is None:
+            return
         try:
             if proc.stdin is not None:
                 try:
@@ -168,6 +232,9 @@ class StdioTransport:
                         stream.close()
                     except Exception:  # noqa: BLE001
                         pass
+
+    def close(self) -> None:
+        self._close_proc()
 
 
 # --------------------------------------------------------------------------
