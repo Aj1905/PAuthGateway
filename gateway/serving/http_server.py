@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import uuid
@@ -38,6 +39,7 @@ from pauth.suites.base import SuiteSpec
 from pauth.suites.shopping import build_suite as build_shopping_suite
 
 from gateway.ingress.agent_channel import AgentChannel
+from gateway.serving.session_store import SessionStore
 from gateway.serving.config import load_config, suite_loader_for
 
 
@@ -54,9 +56,29 @@ _SESSION_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})/messages$")
 _SESSION_DELETE_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})$")
 
 
+def restore_channel(
+    suite_loader: Callable[[str], SuiteSpec], store: "SessionStore", session_id: str
+) -> AgentChannel | None:
+    """Rebuild a persisted session by replaying its stored prompt (B1).
+
+    Returns a fresh :class:`AgentChannel` with the plan re-established, or
+    ``None`` if the session is not in the store. Mid-task observations are not
+    restored -- the plan is; the client continues from there.
+    """
+    entry = store.get(session_id)
+    if entry is None:
+        return None
+    channel = AgentChannel(suite_loader)
+    message = {"kind": "prompt", "prompt": entry.get("prompt", "")}
+    message.update(entry.get("config", {}) or {})
+    channel.receive_json(message)
+    return channel
+
+
 class _Handler(BaseHTTPRequestHandler):
     sessions: dict[str, AgentChannel] = {}
     suite_loader: Callable[[str], SuiteSpec] = default_suite_loader
+    session_store: "SessionStore | None" = None  # B1: opt-in persistence (None = off)
 
     def log_message(self, fmt: str, *args) -> None:  # noqa: D401 -- quieter logs
         sys.stderr.write("[gateway-http] " + (fmt % args) + "\n")
@@ -84,13 +106,25 @@ class _Handler(BaseHTTPRequestHandler):
             session_id = m.group(1)
             channel = self.sessions.get(session_id)
             if channel is None:
-                # Implicit session creation: the very first message under a
-                # client-supplied id creates that session. This is what the
-                # Claude Code hooks rely on -- the harness picks the id, the
-                # gateway just honors it.
-                channel = AgentChannel(self.suite_loader)
+                # Restore a persisted session after a restart (B1); otherwise
+                # create implicitly (the first message under a client-supplied
+                # id creates it -- what the Claude Code hooks rely on).
+                if self.session_store is not None:
+                    channel = restore_channel(
+                        self.suite_loader, self.session_store, session_id
+                    )
+                if channel is None:
+                    channel = AgentChannel(self.suite_loader)
                 self.sessions[session_id] = channel
             response = channel.receive_json(payload)
+            # Persist an accepted prompt so it survives a restart.
+            if (
+                self.session_store is not None
+                and payload.get("kind") == "prompt"
+                and response.get("accepted")
+            ):
+                config = {k: v for k, v in payload.items() if k not in ("kind", "prompt")}
+                self.session_store.record(session_id, payload.get("prompt", ""), config)
             self._send_json(200, response)
             return
 
@@ -106,6 +140,8 @@ class _Handler(BaseHTTPRequestHandler):
             return
         session_id = m.group(1)
         existed = self.sessions.pop(session_id, None) is not None
+        if self.session_store is not None:
+            self.session_store.remove(session_id)
         self._send_json(200 if existed else 404, {"deleted": existed})
 
     # ------------------------------------------------------------------
@@ -128,7 +164,16 @@ def main() -> int:
         "--config", default="",
         help="path to a JSON config (see gateway/config.py); if omitted, the shopping-only default is used",
     )
+    parser.add_argument(
+        "--session-store", default=os.environ.get("SESSION_STORE_PATH", ""),
+        help="JSON file to persist sessions across restarts (B1); empty = disabled",
+    )
     args = parser.parse_args()
+
+    if args.session_store:
+        _Handler.session_store = SessionStore(args.session_store)
+        restored = len(_Handler.session_store)
+        print(f"session store: {args.session_store} ({restored} persisted)", file=sys.stderr)
 
     if args.config:
         loaded = load_config(args.config)

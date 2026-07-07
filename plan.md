@@ -48,7 +48,7 @@
   （`gateway/runtime/gateway.py`, `gateway/ingress/agent_channel.py`。pip package 化は未了）
 - [x] **💬議論** credential broker を採用するか → **採用**（solution.md S4）
 - [ ] credential broker 実装: 鍵保持・rotation・隔離（B2）— 最初の実 SaaS と同時に着手
-- [ ] `architecture.md` §9 を broker モデルに更新（「鍵を見ない」→「鍵を持つ」）
+- [x] `architecture.md` §9 を broker モデルに更新（「鍵を見ない」→「鍵を持つ」, S4 で反映済み）
 - [x] B1–B4 default-deny ＋ envelope 記録の SDK 経路結線（`Gateway._accept_draft` / `handle_tool_call`）
 - [x] **💬議論** 側チャネル（生Bash等）の scope 宣言 → **Stage 1 は禁止前提**（solution.md S6。
   SELF_HOSTING / hooks README への明記は未了）
@@ -108,7 +108,8 @@
 - [ ] **🔬研究** 危険フロー検出（trust ラベル＋テイント）は **正確さの要件でなく、
   grill 選別のための最適化**（fan-out で「全部 grill」が盲判子化するのを防ぐ, 規模対策）。
   静的検出で足りる（制限文法ゆえ）。→ **grill-me UX（S12/S13）＋ 規模が問題化してから**
-- [ ] 大きい tool 戻り値の envelope store 圧迫対策（flatten/参照渡し, D3）
+- [ ] 大きい tool 戻り値の envelope store 圧迫対策（flatten/参照渡し, D3）— **保留（安全上）**: envelope
+  verify が改ざん検出のため concrete を毎回再シリアライズする核心機構ゆえ、flatten は tamper 検出を弱める。要 slice 認識設計
 - [ ] **Exit:** 2–3個の実MCP/SaaSで動作、filter取りこぼし計測（危険フローの人間確認は Stage 5）
 
 ---
@@ -204,7 +205,9 @@
 - [x] observability / audit（permit/deny ＋ 理由を構造化イベントに）— `AuditEvent`（seq/kind/
   decision/tool/reason_code/reason）を submit の accept/reject と tool_call の permit/deny/pending で
   記録、`gateway.audit_log()` で参照（`gateway/runtime/audit.py`）。値を含む operator 向け
-- [ ] session 永続化（Stage 1 は in-memory 可、cloud化で外出し ＋ 署名根の分散化, B1）
+- [x] session 永続化（B1）— `SessionStore`（JSON, atomic write）＋ `restore_channel`（restart 後に
+  prompt 再生で plan 再確立）。http_server に opt-in 結線（`--session-store` / `SESSION_STORE_PATH`、既定off）。
+  cloud KV backend と署名根分散化は将来（`gateway/serving/session_store.py`）
 - [ ] **♾️🔬研究** Judge 機構の継続最適化（モデル/プロンプト/構造/workload, F1 — 永続テーマ）
 - [ ] テストデータ整備: AI fixture の人間review（C1）, L3重複解消（C2）, review tooling（C3）
 - [ ] AgentDojo を本番依存から外す（import遅延化維持, D4）
@@ -240,8 +243,7 @@
 
 ### B. Gateway 実装の隙間
 
-- [ ] 🟡 **B1** session が in-memory のみ: restart で消失。選択肢: Redis/DynamoDB/Cosmos
-  外出し。→ **横断（session 永続化）**
+- [x] 🟢 **B1** session 永続化を実装（`SessionStore`＋`restore_channel`, file-backed）。cloud KV は将来。
 - [ ] 🔴 **B2** OAuth/APIキー管理機構が無い: 複数ユーザで credential 隔離/rotation/audit。
   broker **採用は決定済み**（solution.md S4）、実装未着手。→ **Stage 1（credential broker）**
 - [ ] 🟡 **B3** Grill UI 未実装: closure 設計は確定（2フェーズ＋sink ゲート＋側チャネル確認,
