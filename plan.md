@@ -89,12 +89,12 @@
 
 > 主張: 「複数実SaaSで計画外実行を default-deny。危険データフローは検出して deny」
 
-- [ ] 多 SuiteSpec 合成（registry）: MCP(HTTP) アダプタ
+- [x] 多 SuiteSpec 合成（registry）: MCP(HTTP) アダプタ — `merge_suites`＋`HTTPTransport`/`build_mcp_suite` 実装済み（`gateway/providers/registry.py`, `mcp_suite.py`, mock は `tests/fixtures/mock_mcp_server.py`）
 - [x] MCP(stdio) アダプタ ＋ ヘルスチェック/再起動 supervisor（B4）— `StdioTransport` に
   `is_alive()`＋自動再起動（crash-loop 上限＋`on_restart` 再初期化フック）。subprocess kill →
   次の rpc で透過的に再spawn（`gateway/providers/mcp_suite.py`, `tests/test_mcp_supervisor.py`）
-- [ ] OpenAPI 反映アダプタ
-- [ ] **💬議論** tool名 global 一意 → `<suite>:<tool>` namespacing（A1が見るuniverseを変える, D2）
+- [x] OpenAPI 反映アダプタ — `gateway/providers/openapi_suite.py`（spec 反映）＋ `api_spec_monitor.py`（変更検出）実装・テスト済み（`tests/test_openapi_suite.py`）。ホットリロードは未了
+- [x] tool名 namespacing（D2）— `merge_suites(namespace=True)` で `<suite>__<tool>`（識別子安全）。既定は collision で raise（現状維持）。runner が namespaced→owner にルーティング（`tests/test_registry_namespace.py`）
 - [ ] suite_filter で A1 prompt 膨張抑制（D1）
 - [ ] **🔬研究** embedding/LLM ベース suite_filter（キーワードの限界を超える, D1）
 - [x] **filter が必要ツールを落とした率**を新指標として計測（盲点対策）— `FILTER_DROP_COUNT` /
@@ -265,7 +265,7 @@
 
 - [ ] 🟡 **D1** A1 token 膨張: 登録 MCP 増で prompt 線形膨張。現状 suite_filter。選択肢:
   embedding/LLM filter。→ **Stage 3（🔬研究）**
-- [ ] 🟡 **D2** multi-suite tool 名衝突: merge 時 ValueError。選択肢: `<suite>:<tool>` prefix。
+- [x] 🟢 **D2** multi-suite tool 名衝突: `merge_suites(namespace=True)` で `<suite>__<tool>` に解決（識別子安全な区切り）。
   → **Stage 3（💬議論）**
 - [ ] 🟡 **D3** 大きい tool 戻り値が envelope store を圧迫。選択肢: flatten+symbolic化/参照渡し。
   → **Stage 3**

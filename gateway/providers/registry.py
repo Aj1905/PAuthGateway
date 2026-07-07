@@ -35,31 +35,52 @@ class _MergedEnv:
     envs: dict[str, Any]
 
 
-def merge_suites(name: str, suites: dict[str, SuiteSpec]) -> SuiteSpec:
+def namespaced_tool(source: str, tool: str) -> str:
+    """Identifier-safe namespaced tool name (``<suite>__<tool>``, D2).
+
+    The paper notation is ``<suite>:<tool>``, but the restricted grammar calls
+    tools as Python identifiers, so ``:`` is not usable -- ``__`` is.
+    """
+    return f"{source}__{tool}"
+
+
+def merge_suites(
+    name: str, suites: dict[str, SuiteSpec], namespace: bool = False
+) -> SuiteSpec:
     """Return a ``SuiteSpec`` whose tool universe is the union of ``suites``.
 
     ``name`` is the label the merged suite carries (used when the gateway
     asks the suite loader for a name). ``suites`` maps a source-suite
-    label to its ``SuiteSpec``. Source labels are used as namespacing keys
-    when reporting which underlying suite owns a tool; they also drive
-    per-suite env construction.
+    label to its ``SuiteSpec``. Source labels drive per-suite env construction.
 
-    Raises ``ValueError`` on a tool-name collision so the deployer has to
-    rename or namespace at registration time.
+    With ``namespace=False`` (default) a tool-name collision raises
+    ``ValueError`` -- unchanged behaviour. With ``namespace=True`` (D2) every
+    tool is renamed to ``<source>__<tool>`` so collisions are impossible; the
+    generated code and rules use the namespaced name, and the runner maps it
+    back to the owning suite's original tool.
     """
     merged_tools: dict[str, ToolSpec] = {}
     tool_owner: dict[str, str] = {}
+    original_name: dict[str, str] = {}  # merged tool name -> source's tool name
 
     for source_name, source in suites.items():
         for tool_name, spec in source.tools.items():
-            if tool_name in merged_tools:
-                prev = tool_owner[tool_name]
+            merged_name = namespaced_tool(source_name, tool_name) if namespace else tool_name
+            if merged_name in merged_tools:
+                prev = tool_owner[merged_name]
                 raise ValueError(
-                    f"tool name collision: {tool_name!r} is owned by both "
-                    f"{prev!r} and {source_name!r}; rename one before merging"
+                    f"tool name collision: {merged_name!r} is owned by both "
+                    f"{prev!r} and {source_name!r}; rename one or set namespace=True"
                 )
-            merged_tools[tool_name] = spec
-            tool_owner[tool_name] = source_name
+            if namespace:
+                # Rename the tool identifier the grammar/enforcer/A1 see.
+                spec = dataclasses.replace(
+                    spec, name=merged_name,
+                    doc=dataclasses.replace(spec.doc, name=merged_name),
+                )
+            merged_tools[merged_name] = spec
+            tool_owner[merged_name] = source_name
+            original_name[merged_name] = tool_name
 
     def make_env() -> _MergedEnv:
         return _MergedEnv(envs={n: s.make_env() for n, s in suites.items()})
@@ -73,7 +94,7 @@ def merge_suites(name: str, suites: dict[str, SuiteSpec]) -> SuiteSpec:
             owner = tool_owner.get(tool)
             if owner is None:
                 raise ValueError(f"no source suite owns tool {tool!r}")
-            return runners[owner](tool, kwargs)
+            return runners[owner](original_name[tool], kwargs)
 
         return run
 
