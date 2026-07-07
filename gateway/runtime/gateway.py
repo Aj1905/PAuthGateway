@@ -63,6 +63,36 @@ from gateway.planning.planner import (
     Planner,
 )
 from gateway.planning.prechecks import PrecheckPolicy, precheck_code
+from gateway.runtime.confirmation import (
+    PendingConfirmation,
+    SourceTrust,
+    control_operands,
+    static_taint,
+)
+from gateway.runtime.feedback import (
+    ReasonCode,
+    assert_safe_suite,
+    build_agent_feedback,
+    classify_reason,
+)
+from gateway.runtime.protection import (
+    ProtectionInputs,
+    ProtectionReport,
+    SideChannelPolicy,
+    assess,
+)
+
+
+def _confirm_key(value: Any) -> Any:
+    """Hashable key identifying a confirmed operand value (scalars pass through;
+    non-scalars fall back to a stable repr)."""
+    if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+        return value
+    try:
+        hash(value)
+        return value
+    except TypeError:
+        return repr(value)
 
 
 @dataclasses.dataclass
@@ -76,11 +106,18 @@ class SubmissionResult:
 
 @dataclasses.dataclass
 class CallResult:
-    """Outcome of one tool call routed through the gateway."""
+    """Outcome of one tool call routed through the gateway.
+
+    ``reason`` is the internal/human-facing reason and may contain values.
+    ``agent_reason`` is the value-free string safe to surface to the agent's
+    model context (see ``gateway/runtime/feedback.py``, solution.md S16); it is
+    populated on every denial.
+    """
 
     permit: bool
     reason: str
     return_value: Any | None
+    agent_reason: str | None = None
 
 
 @dataclasses.dataclass
@@ -92,6 +129,17 @@ class _Session:
     runner: Callable[[str, dict[str, Any]], Any] | None
     tool_params: dict[str, list[str]]
     generated_code: str | None = None
+    # Confirmation-gated sinks (#1 closure) -- shared with _CompositeState so the
+    # gate runs on the live session path, not only the composite path (S18/S19).
+    source_trust: SourceTrust = dataclasses.field(default_factory=SourceTrust)
+    docs_by_name: dict[str, Any] = dataclasses.field(default_factory=dict)
+    precheck_policy: Any = None
+    # Static provenance taint (S20): (tool, param_index) control operands that
+    # derive from an untrusted source. Computed once from the plan code.
+    gated_operands: set = dataclasses.field(default_factory=set)
+    pending: dict[str, PendingConfirmation] = dataclasses.field(default_factory=dict)
+    confirmed: set = dataclasses.field(default_factory=set)
+    confirm_seq: int = 0
 
 
 @dataclasses.dataclass
@@ -116,6 +164,14 @@ class _CompositeState:
     failure: str | None = None
     any_rules: bool = False
     truncated_total: int = 0
+    # Confirmation-gated sinks (#1 closure, solution.md S15/S17/S20).
+    source_trust: SourceTrust = dataclasses.field(default_factory=SourceTrust)
+    docs_by_name: dict[str, Any] = dataclasses.field(default_factory=dict)
+    precheck_policy: Any = None
+    gated_operands: set = dataclasses.field(default_factory=set)
+    pending: dict[str, PendingConfirmation] = dataclasses.field(default_factory=dict)
+    confirmed: set = dataclasses.field(default_factory=set)
+    confirm_seq: int = 0
 
 
 class Gateway:
@@ -125,16 +181,25 @@ class Gateway:
         self,
         suite_loader: Callable[[str], SuiteSpec],
         precheck_policy: PrecheckPolicy | None = None,
+        source_trust: SourceTrust | None = None,
+        side_channel_policy: SideChannelPolicy | None = None,
+        isolated_runtime: bool = False,
     ) -> None:
         """``suite_loader(name)`` returns the real-tool ``SuiteSpec`` for ``name``.
 
         The gateway calls it once per submitted user prompt to wire up the
         environment, the tool runtime and the per-task envelope store.
         ``precheck_policy`` tunes the deterministic Q15-e gate applied to every
-        accepted plan (solution.md S1).
+        accepted plan (solution.md S1). ``source_trust`` labels which tools
+        return untrusted data, driving the confirmation-gated sink (#1 closure,
+        solution.md S15/S17).
         """
         self._suite_loader = suite_loader
         self._precheck_policy = precheck_policy
+        self._source_trust = source_trust or SourceTrust()
+        # Side channels denied by default (Stage 1 禁止前提, #4/B5).
+        self._side_channel_policy = side_channel_policy or SideChannelPolicy()
+        self._isolated_runtime = isolated_runtime
         self._session: _Session | None = None
         self._composite: _CompositeState | None = None
 
@@ -240,6 +305,9 @@ class Gateway:
             tool_signer=suite.tool_signer(),
             store=EnvelopeStore(KeyRing()),
             bindings={},
+            source_trust=self._source_trust,
+            docs_by_name={t.name: t for t in suite.tool_docs()},
+            precheck_policy=self._precheck_policy,
         )
         error = self._composite_advance(state, initial=True)
         if error:
@@ -279,6 +347,14 @@ class Gateway:
         state.stage_rule_total = len(prepared.rules)
         state.consumed = set()
         state.stage_assignments = assignment_map(code, state.tool_names)
+        # Static provenance taint for this stage's control operands (S20).
+        # NOTE: for a fan-out stage the body's observed constants are already
+        # folded in, so their provenance is lost here -- fan-out over an
+        # untrusted list can under-gate (documented limitation; fan-out is not
+        # on the live path yet).
+        state.gated_operands = static_taint(
+            code, state.docs_by_name, state.source_trust, state.precheck_policy
+        )
         # Non-accumulation: the previous stage's enforcer is discarded; its
         # rules can never authorize again. The envelope store is shared so
         # later guards/operands still reference earlier signed observations.
@@ -339,6 +415,12 @@ class Gateway:
                 None,
             )
 
+        # #1 closure: hold the call if a CONTROL operand carries untrusted-derived
+        # data that the user has not yet confirmed (solution.md S15/S17).
+        gate = self._confirmation_gate(state, tool, list(args))
+        if gate is not None:
+            return gate
+
         params = state.tool_params.get(tool, [])
         if len(params) != len(args):
             return CallResult(
@@ -360,6 +442,43 @@ class Gateway:
                 state.bindings[var] = raw
         self._composite_advance(state)
         return CallResult(True, decision.reason, raw)
+
+    def _confirmation_gate(
+        self, state: "_Session | _CompositeState", tool: str, args: list[Any]
+    ) -> CallResult | None:
+        """Return a PENDING_CONFIRMATION denial if a CONTROL operand is
+        untrusted-derived (static provenance taint, S20) and not yet approved.
+
+        Gating is by ``(tool, position)`` -- a value transformed on the way
+        (``amount * 2``) cannot launder out of it. Confirmation is keyed by the
+        concrete value, so approving one value does not bless a different one.
+        The actual value is stored for the human side channel; the returned
+        reason is value-free (the agent-facing feedback is built from it, S16).
+        """
+        for i, name in control_operands(tool, state.docs_by_name, state.precheck_policy):
+            if (tool, i) not in state.gated_operands or i >= len(args):
+                continue
+            key = _confirm_key(args[i])
+            if (tool, key) in state.confirmed:
+                continue
+            existing = next(
+                (c for c in state.pending.values()
+                 if c.tool == tool and c.param_index == i and _confirm_key(c.value) == key),
+                None,
+            )
+            if existing is None:
+                cid = f"c{state.confirm_seq}"
+                state.confirm_seq += 1
+                state.pending[cid] = PendingConfirmation(cid, tool, i, name, args[i])
+            return CallResult(
+                permit=False,
+                reason=(
+                    f"pending confirmation for {tool} argument #{i} "
+                    "(untrusted-derived control operand)"
+                ),
+                return_value=None,
+            )
+        return None
 
     def _submit_with_planner(
         self,
@@ -397,6 +516,21 @@ class Gateway:
             suite = self._suite_loader(draft.suite_name)
         except Exception as exc:  # noqa: BLE001 -- surface as a clean rejection
             reason = f"unknown suite {draft.suite_name!r}: {type(exc).__name__}: {exc}"
+            self._session = self._rejected_session(
+                prompt,
+                reason,
+                run_doc=draft.run_doc,
+                generated_code=draft.code if generated_code_on_success else None,
+            )
+            return SubmissionResult(accepted=False, reason=reason)
+
+        # Registration-time identifier check (solution.md S16): reject a suite
+        # whose tool/parameter names could carry an injection payload before it
+        # can reach agent feedback.
+        try:
+            assert_safe_suite(suite)
+        except ValueError as exc:
+            reason = f"suite {draft.suite_name!r} has an unsafe identifier: {exc}"
             self._session = self._rejected_session(
                 prompt,
                 reason,
@@ -459,6 +593,7 @@ class Gateway:
         enforcer = Enforcer(prepared.rules, store, suite.tool_signer())
         runner = suite.runner_factory(env)
 
+        docs_by_name = {t.name: t for t in suite.tool_docs()}
         self._session = _Session(
             prompt=prompt,
             run_doc=draft.run_doc,
@@ -467,6 +602,12 @@ class Gateway:
             runner=runner,
             tool_params=suite.tool_params(),
             generated_code=draft.code if generated_code_on_success else None,
+            source_trust=self._source_trust,
+            docs_by_name=docs_by_name,
+            precheck_policy=self._precheck_policy,
+            gated_operands=static_taint(
+                draft.code, docs_by_name, self._source_trust, self._precheck_policy
+            ),
         )
         return SubmissionResult(
             accepted=True,
@@ -503,9 +644,60 @@ class Gateway:
         executes the tool and records the result as an observation envelope,
         so subsequent operand checks reference the gateway's view, not the
         agent's report.
+
+        Every denial is annotated with a value-free ``agent_reason``
+        (``gateway/runtime/feedback.py``) that is safe to surface to the
+        agent's model context: it carries no attacker-controlled bytes by
+        construction (solution.md S16).
         """
+        # Side channels (Bash/shell/exec) are denied unconditionally: the
+        # gateway cannot reason about what they do, so it never authorizes them
+        # (#4/B5, Stage 1 禁止前提). Out-of-band execution that never reaches
+        # this method is a separate, integration-level bypass -- reported by
+        # protection_report(), not preventable here.
+        if self._side_channel_policy.is_denied(tool):
+            return self._finalize_agent_reason(
+                CallResult(
+                    permit=False,
+                    reason=f"side channel tool {tool} is not permitted (default-deny)",
+                    return_value=None,
+                ),
+                tool,
+            )
         if self._composite is not None:
-            return self._handle_tool_call_composite(tool, args)
+            return self._finalize_agent_reason(
+                self._handle_tool_call_composite(tool, args), tool
+            )
+        return self._finalize_agent_reason(
+            self._handle_tool_call_session(tool, args), tool
+        )
+
+    def protection_report(self) -> ProtectionReport:
+        """Honest effective protection level (L0-L3) and its caveats (#4).
+
+        The in-process gateway captures the clean prompt, routes tool calls, and
+        executes tools itself (L3-capable). Side channels are denied when a
+        policy is active, but out-of-band execution stays possible unless the
+        agent runtime is isolated -- surfaced as a caveat, never hidden.
+        """
+        return assess(ProtectionInputs(
+            captures_clean_prompt=True,
+            routes_tool_calls=True,
+            gateway_executes_tools=True,
+            side_channels_denied=bool(self._side_channel_policy.denied),
+            isolated_runtime=self._isolated_runtime,
+        ))
+
+    def _finalize_agent_reason(self, result: CallResult, tool: str) -> CallResult:
+        """Attach a value-free agent-facing reason to any denial."""
+        if not result.permit and result.agent_reason is None:
+            result.agent_reason = build_agent_feedback(
+                classify_reason(result.reason), tool=tool
+            )
+        return result
+
+    def _handle_tool_call_session(self, tool: str, args: list[Any]) -> CallResult:
+        """Session-path enforcement (recognizer / freeform plans)."""
         session = self._session
         if session is None:
             return CallResult(
@@ -523,6 +715,13 @@ class Gateway:
         decision = session.enforcer.check(tool, args)
         if not decision.permit:
             return CallResult(permit=False, reason=decision.reason, return_value=None)
+
+        # #1 closure on the LIVE path: hold the call if a CONTROL operand carries
+        # untrusted-derived data the user has not confirmed (same gate as the
+        # composite path; unified in S19).
+        gate = self._confirmation_gate(session, tool, list(args))
+        if gate is not None:
+            return gate
 
         params = session.tool_params.get(tool, [])
         if len(params) != len(args):
@@ -562,6 +761,33 @@ class Gateway:
         if self._composite is not None:
             return self._composite.stage_code
         return self._session.generated_code if self._session else None
+
+    # ------------------------------------------------------------------
+    # Confirmation side channel -- talks to the USER, not the agent.
+    # The pending value (possibly poisoned) is shown to the human here; it
+    # never re-enters the agent's model context (solution.md S15/S16/S17).
+    # ------------------------------------------------------------------
+    def _active_state(self) -> "_Session | _CompositeState | None":
+        """The active plan state, whichever path is live (composite or session)."""
+        return self._composite if self._composite is not None else self._session
+
+    def pending_confirmations(self) -> list[PendingConfirmation]:
+        """Held sink calls awaiting user approval (for the side-channel UI)."""
+        state = self._active_state()
+        if state is None:
+            return []
+        return list(state.pending.values())
+
+    def confirm(self, confirmation_id: str, approved: bool) -> bool:
+        """Resolve a pending confirmation. On approval the held call's value is
+        whitelisted so the agent's retry of that exact call proceeds."""
+        state = self._active_state()
+        if state is None or confirmation_id not in state.pending:
+            return False
+        pc = state.pending.pop(confirmation_id)
+        if approved:
+            state.confirmed.add((pc.tool, _confirm_key(pc.value)))
+        return True
 
     def composite_status(self) -> dict[str, Any] | None:
         """Introspection for tests/experiments: staged-plan progress."""
