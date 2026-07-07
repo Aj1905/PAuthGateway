@@ -44,14 +44,14 @@ from pauth.suites.shopping import build_suite as build_shopping_suite
 from gateway.planning.agentic_a1 import generate_code_with_self_repair
 from gateway.planning.prechecks import precheck_code
 
-ROOT = Path(__file__).resolve().parent.parent
-CACHE_DIR = ROOT / "experiment" / "cache"
-RESULTS_DIR = ROOT / "experiment" / "results"
+ROOT = Path(__file__).resolve().parent.parent  # repo root (eval/ -> ..)
+CACHE_DIR = ROOT / "tests" / "experiment" / "cache"
+RESULTS_DIR = ROOT / "tests" / "experiment" / "results"
 
 
 def load_env_file() -> None:
     """Load KEY=VALUE pairs from the repo-root .env into the environment."""
-    env_path = ROOT.parent / ".env"  # ROOT is tests/; .env lives at the repo root
+    env_path = ROOT / ".env"  # ROOT is the repo root
     if not env_path.exists():
         return
     for line in env_path.read_text().splitlines():

@@ -1,0 +1,5 @@
+"""Evaluation harnesses for the PAuth gateway (run + read, not CI gates).
+
+Metrics: FN_COUNT, FP_COUNT, ACCEPTANCE_RATE, OFF_INTENT_COUNT, APPROVAL_COUNT,
+VALUE_LEAK_COUNT, SLICE_GENERATION_FAILURES, ADDITIONAL_COST, LATENCY.
+"""

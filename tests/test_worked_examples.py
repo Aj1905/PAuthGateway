@@ -19,7 +19,7 @@ import sys
 import textwrap
 
 from tests.experiment.agentdojo_adapter import load_suite
-from tests.experiment.run_experiment import run_task
+from eval.fpfn import run_task
 from pauth import prepare
 from pauth.suites.base import Call, TaskSpec
 from pauth.suites.shopping import build_suite as build_shopping_suite

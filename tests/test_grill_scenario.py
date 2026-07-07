@@ -1,6 +1,6 @@
 """Grill (HITL confirmation) end-to-end scenarios as regression tests."""
 
-from gateway.examples.run_grill_scenario import (
+from eval.grill_scenario import (
     scenario_attack,
     scenario_legit,
     scenario_unattended,
