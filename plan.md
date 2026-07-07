@@ -97,10 +97,15 @@
 - [ ] **🔬研究** embedding/LLM ベース suite_filter（キーワードの限界を超える, D1）
 - [ ] **filter が必要ツールを落とした率**を新指標として計測（盲点対策）
 - [ ] **💬議論** free-operand 3段ポリシー設計: enforced / free / flow-constrained free（E1）
-- [ ] **🔬研究** 危険フロー検出: untrusted-source → free sensitive-sink を決定的に判定する意味論
-- [ ] 検出した危険フローを当面 default-deny
+- [x] **💬議論** 危険フロー(#1)の閉じ方を再整理（solution.md S15/S17）→ **別建ての「決定的
+  危険フロー検出エンジン」は中核要件ではない**と結論。#1 の closure は **grill 機構**
+  （各 sink のオペランド確定地点で人間が実値を確認 → 凍結）。書き込み後の読みも「各
+  オペランド地点で必ず grill」で自動的に閉じる。→ 機構は **Stage 5** へ移送
+- [ ] **🔬研究** 危険フロー検出（trust ラベル＋テイント）は **正確さの要件でなく、
+  grill 選別のための最適化**（fan-out で「全部 grill」が盲判子化するのを防ぐ, 規模対策）。
+  静的検出で足りる（制限文法ゆえ）。→ **grill-me UX（S12/S13）＋ 規模が問題化してから**
 - [ ] 大きい tool 戻り値の envelope store 圧迫対策（flatten/参照渡し, D3）
-- [ ] **Exit:** 2–3個の実MCP/SaaSで動作、危険フロー検出＋filter取りこぼし計測
+- [ ] **Exit:** 2–3個の実MCP/SaaSで動作、filter取りこぼし計測（危険フローの人間確認は Stage 5）
 
 ---
 
@@ -128,13 +133,32 @@
 
 > 主張: 「危険フローは粗い注入を人間が止める。精巧な注入は scope外（緩和）」
 
+**設計方針（solution.md S12–S17 で確定）:** #1(汚染データフロー)の closure は
+**2フェーズ ＋ grill 機構**。読みスライスを先行実行 → 実値を人間が確認 → 凍結定数で
+書き込み。書き込み後の読みも「各 sink のオペランド確定地点で必ず grill」で自動的に
+閉じる（「書き込み後」を検出する必要すらない）。agent-drives（無改造 Claude Code）
+では **タスク分割でなく「1プラン＋その sink 呼び出しをその場で確認ゲート」**（分割は
+認可空白を作るため不可, S15）。確認は側チャネル（モデルコンテキスト外）で行い、agent
+へ返す理由文は値ゼロ（S16 実装済み）。
+
 - [ ] **💬議論** grill 実装方式の選択: G1(非対話 reject) / G2(Claude Code の additionalContext で半対話, 推奨) / G3(独立UI)（Q14）
-- [ ] 危険フローを実行時 interleave で人間確認（TOCTOU: 値確定の瞬間）
+- [x] **#1 closure 本体（実装済み・全経路に一本化, S18/S19）**: 各 sink の制御オペランドを
+  確定地点でゲートし、実値を側チャネル（`pending_confirmations`/`confirm`）で人間確認 →
+  承認で通す。session/composite 両経路で発火（S19 で一本化、`gateway/runtime/confirmation.py`）。
+  taint は静的プロベナンス（laundering 不可, S20）、fail-closed 対応済み（`SourceTrust.fail_closed`）。
+  残: (a) fan-out stage の provenance 保存, (b) 側チャネル UI, (c) 2フェーズ自動化,
+  (d) grill-me UX 選別（S12/S13）
+- [x] 中身/制御オペランド分離ルール（汚染データは content にのみ可・control はゲート, S15/S18）
+  ＝ precheck の recipient/amount 分類を再利用して実装。テスト済み（`tests/test_confirmation.py`）
 - [ ] provenance 表示（「この値は信頼できない外部データ由来」）
+- [ ] **grill-me UX 選別**（例外だけ見せる・出所グループ化・許可リスト昇格, S12/S13）
+  — 規模(fan-out)で「全部 grill」が盲判子化するのを防ぐ最適化。正確さの要件ではない
 - [ ] **💬議論** 品質grill をバンドル（機構共有・サリエンス分離・起動判定独立）
 - [ ] grill 入力ソースをユーザのみに構造的に拘束（不変条件#1 保持）
 - [ ] **🔬研究** 疲労対策の信頼スコア（「同一パターン」の判定基準, Q14-a）
-- [ ] **🔬研究** grill 層への注入対策（grill 自身の threat model, Q14-c）
+- [x] **🔬研究** grill 層への注入対策（grill 自身の threat model, Q14-c）— agent 向け
+  フィードバックの構造的無害化を実装（値ゼロ・型強制, S16, `gateway/runtime/feedback.py`）。
+  残: grill 表示(人間向け)の threat model
 - [ ] **🔬研究** 確認済み prompt 再構成の改ざん対策（feedback loop, Q14-d）
 - [ ] **Exit:** 危険フローが deny でなく人間確認で通せる（無人時は deny に退避）
 
@@ -144,13 +168,19 @@
 
 > 前提: B（Mode 1）が実証されてから。コア共有なので ingress を1枚足すだけ。
 
-- [ ] 推論プロキシ（base URL 差し替え, API/ToB向け）
-- [ ] ツールプロキシ（MCP/外部呼び出しの強制点）
+- [x] 推論プロキシ（capture）＋ ツールプロキシ（enforce）の**ロジック核を実装**
+  （`gateway/serving/proxy.py`, S22）: intercept→inspect→forward/block。prompt 捕捉・
+  ツール認可・値ゼロ block・側チャネル block をテスト済み（`tests/test_proxy.py`）。
+  残: TLS 終端（base URL 差し替え/MITM）と wire 配線（インフラのシェル）
+- [x] ツールプロキシ（外部呼び出しの強制点）— 上に同じ（permit=転送/deny=block, S22）
 - [ ] **💬議論** 応答書き換えで内蔵ツール（Bash等）を gate するか（B5・脆さ）
-- [ ] **💬議論** Bash 取り扱い方針: B1(全面禁止＋専用ツール化) / B2(残す＋destructive のみ snapshot/denylist) / B3(全体 allowlist)（grill Q4/Q7）
+- [x] **💬議論** Bash 取り扱い方針 → 既定は **B1 相当（側チャネル全面 default-deny）** を
+  機構化（`SideChannelPolicy`, S21）。gateway を通った Bash 等は無条件 deny、allowlist で例外化。
+  out-of-band 迂回は保護レベル報告で開示。残: 専用ツール化・応答書換（Stage 6 本体）
 - [ ] **💬議論** ファイル系認可方針: R1(git 管理下のみ rollback＋他は別機構) / R2(穴を受容) / R3(read allowlist＋write rollback＋Bash制限)（grill Q3）
 - [ ] 同一 `AgentChannel` 契約への正規化
-- [ ] 保護レベル表示（L0–L3）で実効保護を明示
+- [x] 保護レベル表示（L0–L3）で実効保護を明示 — `Gateway.protection_report()` 実装（S21）。
+  非隔離では out-of-band 迂回を caveat として必ず開示（`tests/test_protection.py`）
 - [ ] **💬議論** サブスク認証の扱い（当面非対応と明記するか, TOS/技術の壁）
 - [ ] **Exit:** 無改造 Claude Code を Mode 2 で保護、保護レベルを正直表示
 
@@ -200,11 +230,14 @@
   外出し。→ **横断（session 永続化）**
 - [ ] 🔴 **B2** OAuth/APIキー管理機構が無い: 複数ユーザで credential 隔離/rotation/audit。
   broker **採用は決定済み**（solution.md S4）、実装未着手。→ **Stage 1（credential broker）**
-- [ ] 🔴 **B3** Grill UI 未実装: Q14 PreAuth Grill は設計のみ。推奨 G2。→ **Stage 5**
+- [ ] 🟡 **B3** Grill UI 未実装: closure 設計は確定（2フェーズ＋sink ゲート＋側チャネル確認,
+  solution.md S15/S17）。agent 向けフィードバックの無害化は実装済み（S16）。残: grill 機構
+  本体（2フェーズ実行・sink ゲート・確認 UI）。推奨 G2。→ **Stage 5**
 - [ ] 🟡 **B4** stdio MCP subprocess のヘルスチェック/再起動なし。選択肢: supervisor 抽象。
   → **Stage 3**
-- [ ] 🔴 **B5** Bash escape hatch: Bash が全外部I/Oにアクセス、MCP経由しか enforce しない。
-  選択肢: allowlist/sandbox/FS仮想化。関連 Q4,Q7。→ **Stage 1（scope宣言・💬議論）/ Stage 6（応答書換）**
+- [ ] 🟡 **B5** Bash escape hatch: gateway を通った側チャネル(bash 等)は **default-deny を機構化**
+  済み(`SideChannelPolicy`, S21)。out-of-band 迂回(フック未経由の subprocess/直接NW)は保護
+  レベル報告で開示、根本防止は隔離モード(インフラ)待ち。関連 Q4,Q7。→ **Stage 6（隔離/応答書換）**
 
 ### C. テストデータ / fixture
 
