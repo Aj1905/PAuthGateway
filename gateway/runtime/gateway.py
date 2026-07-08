@@ -130,7 +130,7 @@ class _Session:
     runner: Callable[[str, dict[str, Any]], Any] | None
     tool_params: dict[str, list[str]]
     generated_code: str | None = None
-    # Confirmation-gated sinks (#1 closure) -- shared with _CompositeState so the
+    # Confirmation-gated sinks (primary dangerous-flow closure) -- shared with _CompositeState so the
     # gate runs on the live session path, not only the composite path (S18/S19).
     source_trust: SourceTrust = dataclasses.field(default_factory=SourceTrust)
     docs_by_name: dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -166,7 +166,7 @@ class _CompositeState:
     failure: str | None = None
     any_rules: bool = False
     truncated_total: int = 0
-    # Confirmation-gated sinks (#1 closure).
+    # Confirmation-gated sinks (primary dangerous-flow closure).
     source_trust: SourceTrust = dataclasses.field(default_factory=SourceTrust)
     docs_by_name: dict[str, Any] = dataclasses.field(default_factory=dict)
     precheck_policy: Any = None
@@ -193,14 +193,14 @@ class Gateway:
 
         The gateway calls it once per submitted user prompt to wire up the
         environment, the tool runtime and the per-task envelope store.
-        ``precheck_policy`` tunes the deterministic Q15-e gate applied to every
+        ``precheck_policy`` tunes the deterministic precheck gate applied to every
         accepted plan. ``source_trust`` labels which tools
-        return untrusted data, driving the confirmation-gated sink (#1 closure).
+        return untrusted data, driving the confirmation-gated sink (primary dangerous-flow closure).
         """
         self._suite_loader = suite_loader
         self._precheck_policy = precheck_policy
         self._source_trust = source_trust or SourceTrust()
-        # Side channels denied by default (Stage 1 禁止前提, #4/B5).
+        # Side channels denied by default (the no-raw-side-channels precondition).
         self._side_channel_policy = side_channel_policy or SideChannelPolicy()
         self._isolated_runtime = isolated_runtime
         # Observability / audit (cross-cutting). An injected AuditLog lets a
@@ -431,7 +431,7 @@ class Gateway:
                 None,
             )
 
-        # #1 closure: hold the call if a CONTROL operand carries untrusted-derived
+        # primary dangerous-flow closure: hold the call if a CONTROL operand carries untrusted-derived
         # data that the user has not yet confirmed.
         gate = self._confirmation_gate(state, tool, list(args))
         if gate is not None:
@@ -558,7 +558,7 @@ class Gateway:
             )
             return SubmissionResult(accepted=False, reason=reason)
 
-        # Q15-e hard gate: deterministic one-sided prechecks run at the accept
+        # Deterministic hard gate: one-sided prechecks run at the accept
         # boundary regardless of which planner (or cache) produced the code, so
         # a stale cache entry or a buggy planner cannot smuggle a fabricated
         # recipient/amount past the gateway.
@@ -677,7 +677,7 @@ class Gateway:
         """
         # Side channels (Bash/shell/exec) are denied unconditionally: the
         # gateway cannot reason about what they do, so it never authorizes them
-        # (#4/B5, Stage 1 禁止前提). Out-of-band execution that never reaches
+        # (the no-raw-side-channels precondition). Out-of-band execution that never reaches
         # this method is a separate, integration-level bypass -- reported by
         # protection_report(), not preventable here.
         if self._side_channel_policy.is_denied(tool):
@@ -698,7 +698,7 @@ class Gateway:
         )
 
     def protection_report(self) -> ProtectionReport:
-        """Honest effective protection level (L0-L3) and its caveats (#4).
+        """Honest effective protection level (L0-L3) and its caveats.
 
         The in-process gateway captures the clean prompt, routes tool calls, and
         executes tools itself (L3-capable). Side channels are denied when a
@@ -788,7 +788,7 @@ class Gateway:
         if not decision.permit:
             return CallResult(permit=False, reason=decision.reason, return_value=None)
 
-        # #1 closure on the LIVE path: hold the call if a CONTROL operand carries
+        # primary dangerous-flow closure on the LIVE path: hold the call if a CONTROL operand carries
         # untrusted-derived data the user has not confirmed (same gate as the
         # composite path; unified in S19).
         gate = self._confirmation_gate(session, tool, list(args))

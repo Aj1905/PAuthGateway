@@ -197,7 +197,7 @@ FREEFORM_CASES: list[PromptCase] = [
 
 
 # --------------------------------------------------------------------------
-# Out-of-scope per paper sec. 3 / Q11 -- user prompt itself is trusted; an
+# Out-of-scope per paper sec. 3 -- user prompt itself is trusted; an
 # injection in the prompt is treated as the user's actual intent. PAuth has
 # no defence at this layer; recorded for clarity, NOT for grading.
 # --------------------------------------------------------------------------

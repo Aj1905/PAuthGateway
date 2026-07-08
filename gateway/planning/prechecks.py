@@ -1,6 +1,6 @@
-"""Q15-e deterministic pre-checks: mechanical one-sided safety validation.
+"""Deterministic pre-checks: mechanical one-sided safety validation.
 
-The semantic judge (Q15) is probabilistic. Everything that can be checked
+The semantic judge is probabilistic. Everything that can be checked
 mechanically must be checked mechanically, BEFORE the judge, so the
 over-authorization classes below never depend on an LLM verdict:
 

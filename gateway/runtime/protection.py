@@ -1,4 +1,4 @@
-"""Side-channel policy and protection-level reporting (#4 / B5).
+"""Side-channel policy and protection-level reporting.
 
 Two honest-reporting duties the design demands (DESIGN_STATUS):
 
@@ -7,7 +7,7 @@ Two honest-reporting duties the design demands (DESIGN_STATUS):
    a SaaS through a side channel (a Bash ``curl``, a subprocess, direct
    network). It must (a) DENY the side-channel tools it can see, and (b) report
    honestly that out-of-band execution remains possible without an isolated
-   runtime. This encodes the Stage 1 "no raw side channels" precondition (raw Bash assumed absent)
+   runtime. This encodes the "no raw side channels" precondition (raw Bash assumed absent)
    as an enforced default, not just a documented assumption.
 
 2. **Protection level L0-L3.** The strength of the guarantee depends on what
@@ -45,7 +45,7 @@ _DEFAULT_SIDE_CHANNELS = frozenset({
 class SideChannelPolicy:
     """Which tools are raw side channels the gateway cannot reason about.
 
-    Side-channel tools are DENIED by default (Stage 1 禁止前提). ``allowlist``
+    Side-channel tools are DENIED by default (the no-raw-side-channels precondition). ``allowlist``
     exempts specific tool names a deployment has decided are safe.
     """
 

@@ -80,7 +80,7 @@ AI_RECOGNIZER_CASES: list[PromptCase] = [
             "AI-generated, reviewed 2026-06-04: emoji in Slack body is a legitimate "
             "user intent. The regex uses [^\"]+ which correctly accepts non-ASCII. "
             "Mojibake / unintended-character handling belongs to the PreAuth Grill "
-            "Layer (Q14), not to the recognizer."
+            "layer, not to the recognizer."
         ),
     ),
     PromptCase(
@@ -170,8 +170,8 @@ AI_FREEFORM_CASES: list[PromptCase] = [
             "practice (gpt-4.1 + agentic A1) the LLM simplifies the comparison "
             "and produces a grammar-valid plan that drops part of the user "
             "intent. The gateway accepts because grammar is satisfied; the "
-            "intent drift is a known limitation tracked under Q14 (PreAuth "
-            "Grill Layer). expected_accept reflects the implementation's "
+            "intent drift is a known limitation of the PreAuth "
+            "grill layer. expected_accept reflects the implementation's "
             "current behaviour."
         ),
     ),
@@ -189,7 +189,7 @@ AI_FREEFORM_CASES: list[PromptCase] = [
             "naturally requires nesting / a follow-up conditional. In "
             "practice the LLM drops the conditional entirely and the plan "
             "executes the follow-up unconditionally -- grammar-valid but "
-            "intent-deficient. Same Q14 limitation as "
+            "intent-deficient. Same PreAuth-grill limitation as "
             "ai_free_two_products_pick_cheaper. expected_accept matches the "
             "implementation's current behaviour."
         ),

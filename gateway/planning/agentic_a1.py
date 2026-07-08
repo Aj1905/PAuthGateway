@@ -7,7 +7,7 @@ The paper's A1 step is one-shot. Free-form measurement showed:
 * Grammar-valid outputs sometimes silently drop part of the user's intent
   to satisfy the restricted grammar (B1 / two_products / post_action).
 
-This module adds a two-stage validator inside a feedback loop (Q12 + Q15):
+This module adds a two-stage validator inside a feedback loop (grammar repair + semantic judge):
 
   1. Generate code.
   2. **Grammar check** -- ``pauth.grammar.parse_and_validate``. On failure,
@@ -55,7 +55,7 @@ from .prechecks import PrecheckPolicy, precheck_code
 
 
 # Default judge configuration. Both fields are exposed as parameters so the
-# user can swap models for performance comparison (per design note Q15).
+# user can swap models for performance comparison.
 DEFAULT_JUDGE_MODEL = "claude-opus-4-8"
 # me.env lives one directory above the project (shared across sibling repos).
 ME_ENV_PATH = Path(__file__).resolve().parents[3] / "me.env"
@@ -444,7 +444,7 @@ def generate_code_with_self_repair(
     sequence (grammar then semantic); both must pass to return.
 
     ``enable_judge`` lets callers turn the semantic check off for ablation
-    (e.g. comparing pre-Q15 vs post-Q15 acceptance rates). ``judge_model``
+    (e.g. comparing acceptance rates with and without the semantic judge). ``judge_model``
     is the Anthropic model identifier; production should sweep this when
     comparing judges.
 
@@ -515,7 +515,7 @@ def generate_code_with_self_repair(
             )
             continue
 
-        # Stage 1.5: deterministic one-sided prechecks (Q15-e). Cheaper and
+        # Stage 1.5: deterministic one-sided prechecks. Cheaper and
         # stricter than the judge; runs first so mechanical over-authorization
         # never reaches a probabilistic verdict.
         precheck_issues = precheck_code(task, code, tools, policy=precheck_policy)

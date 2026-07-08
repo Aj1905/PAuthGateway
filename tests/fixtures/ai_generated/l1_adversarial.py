@@ -1,9 +1,9 @@
-"""AI-GENERATED adversarial fixtures for the Q15 semantic judge. NOT REVIEWED.
+"""AI-GENERATED adversarial fixtures for the semantic judge. NOT REVIEWED.
 
 These are NOT prompts that go through a real A1 generator. They are
 hand-written code samples paired with the user task they purport to
 implement, where the code DELIBERATELY drops, distorts, or extends part
-of the user's intent. The Q15 judge must reject every entry.
+of the user's intent. The semantic judge must reject every entry.
 
 Each case is one of:
 

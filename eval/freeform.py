@@ -305,11 +305,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--no-judge", action="store_true",
-        help="disable the Q15 semantic judge (grammar check only)",
+        help="disable the semantic judge (grammar check only)",
     )
     parser.add_argument(
         "--judge-model", default="claude-opus-4-8",
-        help="Anthropic model id for the Q15 semantic judge (default: claude-opus-4-8)",
+        help="Anthropic model id for the semantic judge (default: claude-opus-4-8)",
     )
     parser.add_argument(
         "--fixtures", choices=["canonical", "ai", "both"], default="canonical",

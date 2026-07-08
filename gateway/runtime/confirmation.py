@@ -1,4 +1,4 @@
-"""Confirmation-gated sinks: the #1 dangerous-flow closure.
+"""Confirmation-gated sinks: the primary dangerous-flow closure.
 
 When a side-effecting call's CONTROL operand (recipient / amount) carries a
 value that DERIVES from an UNTRUSTED source (an email body, a forum reply), the

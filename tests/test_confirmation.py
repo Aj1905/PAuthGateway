@@ -1,4 +1,4 @@
-"""Confirmation-gated sink tests (#1 closure) -- offline.
+"""Confirmation-gated sink tests (primary dangerous-flow closure) -- offline.
 
 A dangerous flow: an untrusted read (a "message" whose fields are
 attacker-controlled) feeds a sink's control operand (send_money recipient). The
@@ -244,7 +244,7 @@ def test_untrusted_data_in_content_operand_is_not_gated():
 
 # ---------------------------------------------------------------------------
 # S19: the gate must fire on the LIVE session path (freeform / recognizer),
-# not only the composite path -- this is the unification that closes #1 for
+# not only the composite path -- this is the unification that closes the primary dangerous flow for
 # real prompts.
 # ---------------------------------------------------------------------------
 

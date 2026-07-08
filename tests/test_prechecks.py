@@ -1,4 +1,4 @@
-"""Q15-e deterministic precheck tests (no API key required).
+"""Deterministic precheck tests (no API key required).
 
 Covers the four mechanical one-sided checks and the
 Gateway-level hard gate that applies them planner-independently.

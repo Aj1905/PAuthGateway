@@ -1,4 +1,4 @@
-"""Side-channel policy and protection-level reporting tests (#4 / B5)."""
+"""Side-channel policy and protection-level reporting tests."""
 
 from __future__ import annotations
 

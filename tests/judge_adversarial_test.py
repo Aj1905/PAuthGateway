@@ -1,4 +1,4 @@
-"""Adversarial test of the Q15 semantic judge.
+"""Adversarial test of the semantic judge.
 
 Feeds each hand-written intent-deficient case from
 ``tests/fixtures/ai_generated/l1_adversarial.py`` directly to

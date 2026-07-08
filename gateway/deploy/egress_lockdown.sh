@@ -19,8 +19,8 @@
 #        default-deny, rejects anything that is not an authorized tool call.
 #   So the gateway never has to *read* the bytes of an opaque `curl`: opaque
 #   traffic either has nowhere legal to go, or lands on a default-deny gateway.
-#   This is what turns docs/self-hosting.md's "No Raw Side Channels (Stage 1)"
-#   precondition from an *assumption* into an *enforced* property.
+#   This is what turns the "no raw side channels" precondition
+#   (docs/self-hosting.md) from an *assumption* into an *enforced* property.
 #
 # HARD REQUIREMENT -- THE AGENT USER MUST BE NON-ADMIN
 #   This rule is only as strong as the agent's inability to remove it. If the

@@ -80,7 +80,7 @@ class TaskResult:
     n_injections: int
     fn_calls: list[str]
     # Agentic-planner path only: the plan was grammar-valid but rejected at
-    # the plan layer (Q15-e precheck violation or empty/sentinel plan). For a
+    # the plan layer (deterministic-precheck violation or empty/sentinel plan). For a
     # benign task this is an over-rejection, never an over-authorization.
     plan_denied: str | None = None
 
@@ -113,7 +113,7 @@ def run_task(
 
     ``planner`` selects the A1 path: ``oneshot`` is the paper-faithful single
     call; ``agentic`` uses the grammar/precheck/judge self-repair loop plus
-    the Q15-e plan-layer gate (the free-form product pipeline).
+    the deterministic plan-layer gate (the free-form product pipeline).
     """
     cost = 0.0
     prompt_tokens = completion_tokens = 0
@@ -348,7 +348,7 @@ def print_report(results: list[TaskResult]) -> dict[str, Any]:
     )
     if total_plan_denied:
         print(
-            f"Plan-layer denials (Q15-e precheck / empty plan): {total_plan_denied} "
+            f"Plan-layer denials (deterministic precheck / empty plan): {total_plan_denied} "
             "benign tasks -- over-rejections, recoverable via retry/clarification."
         )
         print("-" * 72)
@@ -411,7 +411,7 @@ def main(argv: list[str] | None = None) -> int:
              "grammar/precheck/judge pipeline (the free-form product path)",
     )
     parser.add_argument("--max-retries", type=int, default=3, help="agentic repair rounds")
-    parser.add_argument("--no-judge", action="store_true", help="disable the Q15 semantic judge")
+    parser.add_argument("--no-judge", action="store_true", help="disable the semantic judge")
     parser.add_argument(
         "--judge-model", default="claude-opus-4-8",
         help="judge model id; claude-* uses Anthropic, otherwise OpenAI",

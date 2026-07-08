@@ -31,10 +31,10 @@ Properties the composition layer must uphold (S10; tested in
    ``max_instances`` instances; overflow is reported, never silently run.
 
 Observation-derived constants in fan-out instances are exempt from the
-Q15-e *prompt*-entailment precheck by construction -- their provenance is a
+deterministic *prompt*-entailment precheck by construction -- their provenance is a
 signed envelope, not LLM text. That trust decision mirrors the paper's
 treatment of data-derived operands (e.g. ``cart.total``) and is the
-dangerous-flow surface Stage 3 studies.
+dangerous-flow surface a later phase studies.
 """
 
 from __future__ import annotations
@@ -404,7 +404,7 @@ def validate_plan(
     tools: list[ToolDoc],
     policy: PrecheckPolicy | None = None,
 ) -> list[str]:
-    """Structural + Q15-e validation of a composite plan.
+    """Structural + deterministic-precheck validation of a composite plan.
 
     Returns a list of violations (empty = structurally acceptable). Instance
     code still passes through ``pauth.prepare`` at activation time; this gate
@@ -433,7 +433,7 @@ def validate_plan(
             except CompositePlanError as exc:
                 violations.append(f"{label}: {exc}")
 
-        # Template code: grammar + Q15-e precheck on author-written constants.
+        # Template code: grammar + deterministic precheck on author-written constants.
         template_code = stage.code
         if stage.fanout is not None:
             if idx == 0:
