@@ -1,1 +1,1 @@
-"""gateway.runtime — see architecture.md §1.1 boundaries."""
+"""gateway.runtime — see docs/architecture.md §1.1 boundaries."""

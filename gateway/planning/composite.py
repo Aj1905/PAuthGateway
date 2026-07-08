@@ -1,4 +1,4 @@
-"""Composite plans: sequential stages + bounded fan-out (solution.md S10/S11).
+"""Composite plans: sequential stages + bounded fan-out (docs/solution.md S10/S11).
 
 A composite plan decomposes one user task into a sequence of stages. Each
 stage's code is ordinary Appendix-A restricted code, validated and compiled

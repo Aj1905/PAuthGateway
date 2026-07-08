@@ -1,1 +1,1 @@
-"""gateway.ingress — see architecture.md §1.1 boundaries."""
+"""gateway.ingress — see docs/architecture.md §1.1 boundaries."""

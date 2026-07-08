@@ -1,1 +1,1 @@
-"""gateway.planning — see architecture.md §1.1 boundaries."""
+"""gateway.planning — see docs/architecture.md §1.1 boundaries."""

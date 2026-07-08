@@ -9,7 +9,7 @@ The TLS termination + networking shell (a ``mitmproxy`` addon, a CA the client
 trusts, or a base-URL swap so the client connects to the proxy directly) is kept
 OUT of this module so the enforcement logic is testable without real sockets.
 That shell feeds parsed requests here and sends ``response``/``block_response``
-back on the wire. The shell is deployment/infra work (see solution.md S22).
+back on the wire. The shell is deployment/infra work (see docs/solution.md S22).
 
 Two request kinds, matching INGRESS_DESIGN's two channels:
 

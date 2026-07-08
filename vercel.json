@@ -1,6 +1,0 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [
-    { "source": "/", "destination": "/slides/AIIntroduction_2026_6_9/index.html" }
-  ]
-}

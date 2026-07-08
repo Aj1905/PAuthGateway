@@ -31,8 +31,8 @@ PAuthGateway は強制点をエージェントの外に出す:
 - **ゲートウェイが観測の権威**。各ツールの実行結果はゲートウェイが署名付き
   envelope として記録し、エージェントが値を偽装しても後続の照合に影響しない。
 
-詳細設計は [`architecture.md`](architecture.md)、防御範囲と非対象は
-[`THREAT_MODEL.md`](THREAT_MODEL.md) を参照。
+詳細設計は [`docs/architecture.md`](docs/architecture.md)、防御範囲と非対象は
+[`docs/threat-model.md`](docs/threat-model.md) を参照。
 
 ## これは何「ではない」か
 
@@ -254,10 +254,16 @@ gateway/
   planner.py            差し替え可能な A1 戦略（決定的recognizer / LLM free-form）
   agent_channel.py      エージェント向け JSON メッセージ境界
   http_server.py        ローカルHTTP daemon
-  BUSINESS_OPERATIONS.md OSS無料範囲 / 商用運用 / 課金境界の整理
-  DESIGN_STATUS.md      現状設計 / 議論中 / 不可能 / ボトルネックの整理
-  PLANNING_STRATEGIES.md A1 戦略カタログ（対話構造化 / 専用モデル / 形式解析）
-  SELF_HOSTING.md       セルフホスト版・ネットワーク接続版の設計境界
+docs/
+  architecture.md       論理設計（システム全体）
+  threat-model.md       防御境界（in / out of scope）
+  self-hosting.md       セルフホスト版・ネットワーク接続版の設計境界
+  ingress-design.md     ingress 二モード（SDK / interception）設計
+  planning-strategies.md A1 戦略カタログ（対話構造化 / 専用モデル / 形式解析）
+  design-status.md      現状設計 / 議論中 / 不可能 / ボトルネックの整理
+  business-operations.md OSS無料範囲 / 商用運用 / 課金境界の整理
+  plan.md               ロードマップ（Stage / 課題カタログ）
+  solution.md           実装決定ログ（S番号）＋設計審議（Q系列）
 tests/experiment/
   agentdojo_adapter.py  AgentDojo 4 スイートを共通 IF に正規化
   forced_injection.py   forced injection 生成（sec. 5.1）

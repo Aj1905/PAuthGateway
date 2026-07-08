@@ -111,7 +111,7 @@ class CallResult:
 
     ``reason`` is the internal/human-facing reason and may contain values.
     ``agent_reason`` is the value-free string safe to surface to the agent's
-    model context (see ``gateway/runtime/feedback.py``, solution.md S16); it is
+    model context (see ``gateway/runtime/feedback.py``, docs/solution.md S16); it is
     populated on every denial.
     """
 
@@ -166,7 +166,7 @@ class _CompositeState:
     failure: str | None = None
     any_rules: bool = False
     truncated_total: int = 0
-    # Confirmation-gated sinks (#1 closure, solution.md S15/S17/S20).
+    # Confirmation-gated sinks (#1 closure, docs/solution.md S15/S17/S20).
     source_trust: SourceTrust = dataclasses.field(default_factory=SourceTrust)
     docs_by_name: dict[str, Any] = dataclasses.field(default_factory=dict)
     precheck_policy: Any = None
@@ -194,9 +194,9 @@ class Gateway:
         The gateway calls it once per submitted user prompt to wire up the
         environment, the tool runtime and the per-task envelope store.
         ``precheck_policy`` tunes the deterministic Q15-e gate applied to every
-        accepted plan (solution.md S1). ``source_trust`` labels which tools
+        accepted plan (docs/solution.md S1). ``source_trust`` labels which tools
         return untrusted data, driving the confirmation-gated sink (#1 closure,
-        solution.md S15/S17).
+        docs/solution.md S15/S17).
         """
         self._suite_loader = suite_loader
         self._precheck_policy = precheck_policy
@@ -204,7 +204,7 @@ class Gateway:
         # Side channels denied by default (Stage 1 禁止前提, #4/B5).
         self._side_channel_policy = side_channel_policy or SideChannelPolicy()
         self._isolated_runtime = isolated_runtime
-        # Observability / audit (plan.md 横断). An injected AuditLog lets a
+        # Observability / audit (docs/plan.md 横断). An injected AuditLog lets a
         # deployment share one persistent trail across sessions (http_server
         # --audit-log); the default is a per-gateway in-memory log. Explicit
         # None check: AuditLog defines __len__, so an empty one is falsy and
@@ -280,7 +280,7 @@ class Gateway:
         return self._submit_with_planner(prompt, planner, generated_code_on_success=True)
 
     # ------------------------------------------------------------------
-    # Composite (staged) plan submission -- solution.md S10/S11.
+    # Composite (staged) plan submission -- docs/solution.md S10/S11.
     # ------------------------------------------------------------------
     def submit_user_prompt_composite(
         self,
@@ -433,7 +433,7 @@ class Gateway:
             )
 
         # #1 closure: hold the call if a CONTROL operand carries untrusted-derived
-        # data that the user has not yet confirmed (solution.md S15/S17).
+        # data that the user has not yet confirmed (docs/solution.md S15/S17).
         gate = self._confirmation_gate(state, tool, list(args))
         if gate is not None:
             return gate
@@ -544,7 +544,7 @@ class Gateway:
             )
             return SubmissionResult(accepted=False, reason=reason)
 
-        # Registration-time identifier check (solution.md S16): reject a suite
+        # Registration-time identifier check (docs/solution.md S16): reject a suite
         # whose tool/parameter names could carry an injection payload before it
         # can reach agent feedback.
         try:
@@ -562,7 +562,7 @@ class Gateway:
         # Q15-e hard gate: deterministic one-sided prechecks run at the accept
         # boundary regardless of which planner (or cache) produced the code, so
         # a stale cache entry or a buggy planner cannot smuggle a fabricated
-        # recipient/amount past the gateway (solution.md S1).
+        # recipient/amount past the gateway (docs/solution.md S1).
         violations = precheck_code(
             prompt, draft.code, suite.tool_docs(), policy=self._precheck_policy
         )
@@ -674,7 +674,7 @@ class Gateway:
         Every denial is annotated with a value-free ``agent_reason``
         (``gateway/runtime/feedback.py``) that is safe to surface to the
         agent's model context: it carries no attacker-controlled bytes by
-        construction (solution.md S16).
+        construction (docs/solution.md S16).
         """
         # Side channels (Bash/shell/exec) are denied unconditionally: the
         # gateway cannot reason about what they do, so it never authorizes them
@@ -838,7 +838,7 @@ class Gateway:
     # ------------------------------------------------------------------
     # Confirmation side channel -- talks to the USER, not the agent.
     # The pending value (possibly poisoned) is shown to the human here; it
-    # never re-enters the agent's model context (solution.md S15/S16/S17).
+    # never re-enters the agent's model context (docs/solution.md S15/S16/S17).
     # ------------------------------------------------------------------
     def _active_state(self) -> "_Session | _CompositeState | None":
         """The active plan state, whichever path is live (composite or session)."""

@@ -3,7 +3,7 @@
 このドキュメントは、現行の gateway 設計を、まだ議論中のアイデア、規定の制約下では
 技術的に不可能と判断された点、そして主要な開発ボトルネックから切り分けて記述する。
 
-OSS のパッケージングと商用運用の前提は `gateway/BUSINESS_OPERATIONS.md` に置く。
+OSS のパッケージングと商用運用の前提は `business-operations.md` に置く。
 
 ## Current Design
 
@@ -85,7 +85,7 @@ flowchart LR
 | Boundary | Current contract | Repo anchor |
 |---|---|---|
 | Agent ingress | gateway message API 上の `PromptMessage` と `ToolCallMessage`。 | `gateway/ingress/agent_channel.py`, `gateway/serving/http_server.py` |
-| Planning | ユーザープロンプトとツールスキーマを、制限付き命令型の `run()` code へ変換する。 | `gateway/planning/planner.py`, `gateway/PLANNING_STRATEGIES.md` |
+| Planning | ユーザープロンプトとツールスキーマを、制限付き命令型の `run()` code へ変換する。 | `gateway/planning/planner.py`, `planning-strategies.md` |
 | Validation | 生成された code は enforcement 前に文法・slicing・ルールコンパイルを通過しなければならない。 | `pauth/grammar.py`, `pauth/pipeline.py`, `pauth/rules.py` |
 | Enforcement | すべてのツール呼び出しは、コンパイル済みルールと envelope 裏付けの観測に対して検査される。 | `pauth/enforcer.py`, `pauth/envelope.py` |
 | Tool source | ツールプロバイダは `SuiteSpec` へと adapt される。 | `pauth/suites/base.py`, `gateway/providers/openapi_suite.py`, `gateway/providers/mcp_suite.py` |

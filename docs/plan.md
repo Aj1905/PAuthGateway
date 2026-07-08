@@ -9,8 +9,8 @@
 - **💬議論** — 設計判断・方針決定が未了で、着手前に議論が必要な箇所。
 - 目印なし — 主にエンジニアリング（やり方は概ね決まっている）。
 
-設計詳細は専用文書へ: `architecture.md`（論理設計）, `THREAT_MODEL.md`（防御境界）,
-`gateway/INGRESS_DESIGN.md`（ingress）, `gateway/DESIGN_STATUS.md`（現状/未決）,
+設計詳細は専用文書へ: `architecture.md`（論理設計）, `threat-model.md`（防御境界）,
+`ingress-design.md`（ingress）, `design-status.md`（現状/未決）,
 `solution.md`（実装中の決定 S番号 ＋ 設計対話 Q番号の出典。旧 `grill.md` を統合）。
 **課題カタログ（旧 `issues.md`, ID A1〜F1 保持）は本書末尾**。
 
@@ -52,7 +52,7 @@
 - [x] B1–B4 default-deny ＋ envelope 記録の SDK 経路結線（`Gateway._accept_draft` / `handle_tool_call`）
 - [x] **💬議論** 側チャネル（生Bash等）の scope 宣言 → **Stage 1 は禁止前提**（solution.md S6。
   SELF_HOSTING「Egress Lockdown」/ hooks README 4b に明記済み ＋ egress lockdown で機構化）
-- [x] self-host 起動手順（`gateway/SELF_HOSTING.md`, `gateway/hooks/README.md`。broker 手順は未了）
+- [x] self-host 起動手順（`self-hosting.md`, `gateway/hooks/README.md`。broker 手順は未了）
 - [x] AgentChannel の forwarding 信頼前提を明文化（A4）（`agent_channel.py` docstring）
 - [ ] **Exit:** 1つの実SaaS（or 1 MCP）で end-to-end、生Bashなし前提で動作
   — 実ツールは **GitHub** に決定（solution.md S5）、統合は未了
@@ -225,7 +225,7 @@
 
 ## 課題カタログ（旧 issues.md, ID 保持）
 
-他文書（`architecture.md` / `solution.md` / `DESIGN_STATUS.md`）は ID（A1, B5 等）で
+他文書（`architecture.md` / `solution.md` / `design-status.md`）は ID（A1, B5 等）で
 参照しているため ID を保持。状態: 🔴未解決 / 🟡暫定対処 / 🟢主要対策済 / ⚪着手しない /
 ♾️永続。各項目は対応 Stage を示す。
 
@@ -237,7 +237,7 @@
   決定的 precheck の 2 層, solution.md S1/S3）。judge の prompt/IR/評価指標の最適化は
   F1 として継続。関連 Q14,Q15。→ **Stage 2（🔬研究）**
 - [ ] ⚪ **A3** UI プロンプト内 injection は scope 外: ユーザ自身が貼った injection は
-  弾けない（論文§3）。関連 Q11,Q14。→ **scope外（`THREAT_MODEL.md` に明記）**
+  弾けない（論文§3）。関連 Q11,Q14。→ **scope外（`threat-model.md` に明記）**
 - [ ] 🟡 **A4** agent forwarding 整合性が新信頼前提: AgentChannel で「agent が prompt を
   改変せず転送」前提が新規。構造強制済。関連 Q13。→ **Stage 1**
 

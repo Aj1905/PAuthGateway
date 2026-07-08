@@ -108,7 +108,7 @@ sudo AGENT_USER=pauth-agent GATEWAY_HOST=127.0.0.1 GATEWAY_PORT=8081 gateway/dep
 
 これにより、エージェントが何を実行しても通信は必ずゲートウェイを通り、通らないものは
 カーネルで drop される。**エージェントに管理者権限を与えるとこの制御は無効になり
-迂回されうる**(詳細と根拠は `gateway/SELF_HOSTING.md` の「Egress Lockdown」節)。
+迂回されうる**(詳細と根拠は `docs/self-hosting.md` の「Egress Lockdown」節)。
 
 ## Failure modes to expect
 
@@ -125,5 +125,5 @@ sudo AGENT_USER=pauth-agent GATEWAY_HOST=127.0.0.1 GATEWAY_PORT=8081 gateway/dep
   Claude Code はそのツールを実行できない。`log` モードでは続行するが、拒否はログに
   残る。強制にコミットする前に、実際の Claude Code の挙動を測定するのに有用だ。
 
-システム全体の設計については `architecture.md` を、決定の履歴（Q10 capture
-mechanism、Q13 trust shift など）については `solution.md`（旧 `grill.md` を統合）を参照。
+システム全体の設計については `docs/architecture.md` を、決定の履歴（Q10 capture
+mechanism、Q13 trust shift など）については `docs/solution.md`（旧 `grill.md` を統合）を参照。

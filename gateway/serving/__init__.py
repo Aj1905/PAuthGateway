@@ -1,1 +1,1 @@
-"""gateway.serving — see architecture.md §1.1 boundaries."""
+"""gateway.serving — see docs/architecture.md §1.1 boundaries."""

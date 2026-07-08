@@ -13,7 +13,7 @@ custom LLM agents, etc.) to the gateway. Two message kinds:
 Trust shift recorded with this interface
 ----------------------------------------
 The earlier converged design required the user prompt to bypass the agent
-(see solution.md, Q-series). Routing it through the agent here re-introduces the
+(see docs/solution.md, Q-series). Routing it through the agent here re-introduces the
 forwarding-integrity assumption: the agent MUST pass the user's prompt
 unchanged. PAuth still defends against off-plan tool calls in the same
 way; what we are *adding* to the trust set is "the agent does not silently
@@ -284,7 +284,7 @@ class AgentChannel:
         rv = _to_wire(result.return_value)
         # Surface the VALUE-FREE ``agent_reason`` on denials, never the internal
         # ``reason`` (which may quote an operand value). This is the channel
-        # that re-enters the agent's model context (solution.md S16).
+        # that re-enters the agent's model context (docs/solution.md S16).
         wire_reason = result.agent_reason if result.agent_reason is not None else result.reason
         return ToolCallResponse(permit=result.permit, reason=wire_reason, return_value=rv)
 
@@ -327,7 +327,7 @@ def _resolve_strategy(message: PromptMessage) -> str:
         return message.strategy
     if message.use_freeform:
         return STRATEGY_LLM_FREEFORM
-    # Default is the main-ingress strategy (solution.md S2): recognizer fast
+    # Default is the main-ingress strategy (docs/solution.md S2): recognizer fast
     # path with free-form fallback. Without PAUTH_PLANNER_SUITE the fallback
     # is absent, so the accepted set equals the old deterministic default.
     return os.environ.get("PAUTH_PLANNER_STRATEGY", STRATEGY_AUTO)

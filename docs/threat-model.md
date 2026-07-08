@@ -173,7 +173,7 @@ egress boundary を越えること**であり、その判断のために最終�
 ## 9. Relationship to other docs
 
 - `architecture.md` §4–§5 — 構築済みの enforcement core とその invariants。
-- `gateway/DESIGN_STATUS.md` — 実装ステータス / bottlenecks。
+- `design-status.md` — 実装ステータス / bottlenecks。
 - `gateway/runtime/policy.py` — 今日 free operands をマークする。§3 はこれを sink
   classification と trust labels で拡張する。
 - `solution.md` — 決定履歴（実装中の決定 S番号 ＋ 設計対話 Q番号。旧 `grill.md` を統合）。

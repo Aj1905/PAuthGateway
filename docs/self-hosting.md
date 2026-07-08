@@ -152,7 +152,7 @@ root / 管理者 / sudo 可能なユーザで動かすと、エージェント(�
 
 ゲートウェイはセッションごとに保護レベル(L0–L3)を追跡すべきである。**L0–L3 の正典
 定義はコード `gateway/runtime/protection.py` の `ProtectionLevel`**(人間向けの表は
-`gateway/DESIGN_STATUS.md`「現行の保護モデル」)。ここでは要点のみ:
+`design-status.md`「現行の保護モデル」)。ここでは要点のみ:
 
 - **L2 未満を「完全な保護」と呼んではならない。** PAuth 流の主張は L2(clean prompt ＋
   ツール呼び出し)から始まり、設計目標は L3(＋ gateway that ツールを実行)。
@@ -194,7 +194,7 @@ upstream tool/SaaS/MCP server
 A1 ロジックは意図的に揮発的だ。ゲートウェイはこれを HTTP/プロキシ表面の一部
 ではなく、置換可能な strategy として扱わなければならない。
 
-strategy カタログは `gateway/PLANNING_STRATEGIES.md` にある。近期の3つの枠は
+strategy カタログは `planning-strategies.md` にある。近期の3つの枠は
 次のとおり。
 
 - 「Grill me」スタイルの明確化ループによる対話的構造化。

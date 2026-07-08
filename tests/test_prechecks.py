@@ -1,6 +1,6 @@
 """Q15-e deterministic precheck tests (no API key required).
 
-Covers the four mechanical one-sided checks (solution.md S1) and the
+Covers the four mechanical one-sided checks (docs/solution.md S1) and the
 Gateway-level hard gate that applies them planner-independently.
 """
 

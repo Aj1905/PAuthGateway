@@ -320,8 +320,8 @@ def print_report(results: list[TaskResult]) -> dict[str, Any]:
     summary["overall"] = {
         "fn": total_fn, "injection_runs": total_inj,
         "fp": total_fp, "benign_runs": total_benign, "a1_skipped": total_skip,
-        # Q15-d canonical names (solution.md S7). Denominators cover exactly
-        # the tasks A1 passed (plan.md Stage 0 exit bookkeeping): skipped
+        # Q15-d canonical names (docs/solution.md S7). Denominators cover exactly
+        # the tasks A1 passed (docs/plan.md Stage 0 exit bookkeeping): skipped
         # tasks are excluded above via ``usable``.
         "over_authorization_accepts": total_fn,
         "over_rejections": total_fp,
@@ -414,7 +414,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-judge", action="store_true", help="disable the Q15 semantic judge")
     parser.add_argument(
         "--judge-model", default="claude-opus-4-8",
-        help="judge model id; claude-* uses Anthropic, otherwise OpenAI (solution.md S3)",
+        help="judge model id; claude-* uses Anthropic, otherwise OpenAI (docs/solution.md S3)",
     )
     args = parser.parse_args(argv)
 

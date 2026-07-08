@@ -113,13 +113,13 @@ issues 系 5〜10 tool に絞った SuiteSpec を手で切り出す。
 与えないデプロイのみを保護対象として主張する)。別機構(allowlist / sandbox /
 FS 仮想化)は Stage 6(Mode 2)の議題として持ち越す。
 
-**根拠:** THREAT_MODEL.md が既に側チャネルを scope 外と明記している。Stage 1 の主張
+**根拠:** threat-model.md が既に側チャネルを scope 外と明記している。Stage 1 の主張
 「乗っ取られたエージェントは承認計画の構造を超える SaaS 実行ができない」は
 「外向き I/O が gateway 経由の tool call のみ」という前提でのみ成立する。この前提を
 満たさないデプロイを黙って L3 と呼ぶことが最大の虚偽表示リスクであり、機構追加
 より先に前提の明文化が必要(DESIGN_STATUS「保護レベルの正直表示」と同旨)。
 
-**影響:** SELF_HOSTING.md / hooks README に「保護の前提条件」として明記する
+**影響:** self-hosting.md / hooks README に「保護の前提条件」として明記する
 (→ 完了 2026-07-08: SELF_HOSTING「Egress Lockdown」/ hooks README 4b。前提を egress
 lockdown で機構化, Q10)。
 
@@ -641,7 +641,7 @@ that本命、MITM＋CA thaピンニング無ければ可)、(b) この核に par
 
 実装の前後で行った設計対話の記録(質問・推奨・ユーザ回答・収束)。上の S 系列(実装中に
 確定した決定)と同じ「決定の結果＋根拠」構成なので本書に一本化した。Q番号は plan.md /
-architecture.md / THREAT_MODEL.md から ID 参照される出典。実装の詳細は該当する S番号を
+architecture.md / threat-model.md から ID 参照される出典。実装の詳細は該当する S番号を
 参照(例: Q15 → S1/S3/S7/S9/S14、Q10 → S21/S22＋egress lockdown)。
 
 ## Q2. snapshot か git か
@@ -720,7 +720,7 @@ I4=Claude Code 改造)
 「ゲートウェイ宛て→default-deny で拒否」の二択になり、中身を解読せず fail-closed になる。
 
 **成立条件(必須):** エージェントが**非管理ユーザ**であること。管理者権限を与えると
-ルールを外せ本制御は無効(SELF_HOSTING.md「Egress Lockdown」に明記)。
+ルールを外せ本制御は無効(self-hosting.md「Egress Lockdown」に明記)。
 **範囲外:** 非ネットワーク副作用(ローカルファイル等)・DoH 独自リゾルバ固定 → 別レイヤ。
 
 ## Q15. Validator 強化: Semantic judge(LLM as a judge)

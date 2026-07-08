@@ -19,7 +19,7 @@
 #        default-deny, rejects anything that is not an authorized tool call.
 #   So the gateway never has to *read* the bytes of an opaque `curl`: opaque
 #   traffic either has nowhere legal to go, or lands on a default-deny gateway.
-#   This is what turns SELF_HOSTING.md's "No Raw Side Channels (Stage 1)"
+#   This is what turns docs/self-hosting.md's "No Raw Side Channels (Stage 1)"
 #   precondition from an *assumption* into an *enforced* property.
 #
 # HARD REQUIREMENT -- THE AGENT USER MUST BE NON-ADMIN
@@ -28,7 +28,7 @@
 #   into running) can flush these rules and bypass the gateway entirely. Run
 #   the agent (Claude Code, Codex, ...) as a DEDICATED NON-ADMIN user with no
 #   sudo. Giving the agent admin privileges voids this control -- see the
-#   WARNING printed at the end and gateway/SELF_HOSTING.md.
+#   WARNING printed at the end and docs/self-hosting.md.
 #
 # WHAT THIS DOES NOT DO
 #   - It does not cover non-network side effects (local file tampering, staging

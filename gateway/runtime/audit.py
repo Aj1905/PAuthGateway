@@ -1,4 +1,4 @@
-"""Structured audit events (plan.md observability / audit).
+"""Structured audit events (docs/plan.md observability / audit).
 
 Every plan submission and tool-call decision the gateway makes is recorded as a
 structured :class:`AuditEvent` -- permit/deny plus a reason -- so an operator or

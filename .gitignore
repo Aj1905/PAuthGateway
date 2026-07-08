@@ -16,3 +16,9 @@ tests/fixtures/real_external_prompts.jsonl
 
 # business strategy memo — kept local, not pushed to remote
 BUSINESS_STRATEGY.md
+
+# not part of the OSS library — kept local, untracked
+slides/
+*.pdf
+vercel.json
+.vercelignore

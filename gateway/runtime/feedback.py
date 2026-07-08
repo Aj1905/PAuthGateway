@@ -1,4 +1,4 @@
-"""Value-free agent-facing denial feedback (solution.md S16).
+"""Value-free agent-facing denial feedback (docs/solution.md S16).
 
 When the gateway denies a call it may return a reason to the agent. That text
 enters the agent's model context, so it must never carry attacker-controlled
@@ -117,7 +117,7 @@ def assert_safe_identifiers(names: object, *, kind: str = "identifier") -> None:
 def assert_safe_suite(suite: object) -> None:
     """Validate every tool and parameter name a suite exposes.
 
-    The secondary defense (solution.md S16): tool surfaces reflected from an
+    The secondary defense (docs/solution.md S16): tool surfaces reflected from an
     untrusted OpenAPI spec could otherwise carry an injection payload in a tool
     or parameter name, which would then be echoed by agent feedback. Reject
     such a suite at registration time. Best-effort: silently returns if the
@@ -151,7 +151,7 @@ def build_agent_feedback(
     Only a fixed template, the reason code, a validated tool identifier, and an
     integer argument position appear in the output. This function has NO
     parameter for an operand value or read result, so by construction no
-    attacker-controlled byte can appear in what it returns (solution.md S16).
+    attacker-controlled byte can appear in what it returns (docs/solution.md S16).
     """
     template = _TEMPLATES[code]
     tool_str = _safe_tool(tool)

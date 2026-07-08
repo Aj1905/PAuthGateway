@@ -1,4 +1,4 @@
-"""Confirmation-gated sink tests (#1 closure, solution.md S15/S17) -- offline.
+"""Confirmation-gated sink tests (#1 closure, docs/solution.md S15/S17) -- offline.
 
 A dangerous flow: an untrusted read (a "message" whose fields are
 attacker-controlled) feeds a sink's control operand (send_money recipient). The

@@ -1,1 +1,1 @@
-"""gateway.examples — see architecture.md §1.1 boundaries."""
+"""gateway.examples — see docs/architecture.md §1.1 boundaries."""

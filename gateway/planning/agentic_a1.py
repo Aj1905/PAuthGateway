@@ -316,7 +316,7 @@ def _judge_intent(
                 text = getattr(block, "text", "") or ""
                 break
     else:
-        # OpenAI-family judge (solution.md S3): same rubric, chat.completions
+        # OpenAI-family judge (docs/solution.md S3): same rubric, chat.completions
         # shape. Weaker decorrelation than a cross-provider judge; used when
         # only an OpenAI key is available. ``temperature`` is omitted for the
         # same reason as the Anthropic branch -- gpt-5-family models reject
@@ -363,7 +363,7 @@ def _get_anthropic_client() -> Any:
 
 
 def _get_judge_client(judge_model: str, generator_client: Any) -> Any:
-    """Resolve the judge client for ``judge_model`` (solution.md S3).
+    """Resolve the judge client for ``judge_model`` (docs/solution.md S3).
 
     Anthropic models get a dedicated Anthropic client. OpenAI-family models
     reuse the generator's client credentials -- model-level decorrelation

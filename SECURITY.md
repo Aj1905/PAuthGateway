@@ -34,8 +34,8 @@ approved plan permits. High-value reports:
 
 ## What is out of scope
 
-Documented, accepted limitations (see `THREAT_MODEL.md`, `DESIGN_STATUS.md`,
-`solution.md`):
+Documented, accepted limitations (see `docs/threat-model.md`, `docs/design-status.md`,
+`docs/solution.md`):
 
 - Injection embedded in the **user's own prompt** (the prompt is trusted).
 - **Out-of-band execution** (a subprocess or direct network call that never

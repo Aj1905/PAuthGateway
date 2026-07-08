@@ -4,13 +4,13 @@
 ingress（beachhead）** とし、**interception ingress（proxy / hooks）は同じ
 contract の背後の slot として**後から構築する、という決定を記録する。
 
-本メモは `DESIGN_STATUS.md` の規律に従う。確定した決定と未解決の問いを分離し、
+本メモは `design-status.md` の規律に従う。確定した決定と未解決の問いを分離し、
 設計が実態以上に固まって見えないようにする。
 
 相互参照: `architecture.md` §1.1/§1.2（ingress 境界 — *adapter* レベルで
 "ingress" を使う。ここの directional model を指し示す "Terminology note" を参照。
 leg モデルが architecture.md に載るのは interception 実装後だけ）、`plan.md`
-issue B5（Bash escape hatch）、`DESIGN_STATUS.md` bottleneck #2（prompt capture が
+issue B5（Bash escape hatch）、`design-status.md` bottleneck #2（prompt capture が
 主要なプロダクトリスク）、`BUSINESS_STRATEGY.md` §3.1（ターゲットセグメントの決定）。
 
 ## 中核原則: ingress モードは agent を誰が所有するかで決まる
@@ -118,7 +118,7 @@ customer agent code
 
 なぜこれが（単なる選択肢ではなく）beachhead なのか:
 
-1. **最も難しい未解決問題を取り除く。** `DESIGN_STATUS.md` bottleneck #2
+1. **最も難しい未解決問題を取り除く。** `design-status.md` bottleneck #2
    （無改変の agent から clean な prompt を堅牢に捕捉する）は **ここには存在しない**
    — 顧客が clean な prompt と tool call を SDK に直接手渡すからだ。base-URL の
    MITM も、hook 除去も、TLS pinning も、TOS のグレーゾーンもない。
@@ -202,7 +202,7 @@ Helicone, OpenRouter。新規なのは、その中継に PAuth を載せる部�
 4. **Subscription サポートの方針。** おそらく「非対応。API / Team / Enterprise のみ」。
    Mode 2 の作業に着手する前に確定する。
 5. **Custody（保管責任）。** plaintext の prompt + キーを見る interception 経路は
-   すべて、信頼が確立されるまで **self-host のみ** とする（`BUSINESS_OPERATIONS.md`）。
+   すべて、信頼が確立されるまで **self-host のみ** とする（`business-operations.md`）。
 
 ## Sequencing（順序付け）
 

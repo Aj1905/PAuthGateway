@@ -5,7 +5,7 @@ PAuth ベースの、改変なしエージェント向け task-scoped authorizat
 `tests/` の実装が体現するシステムレベルの設計を記述する。意思決定の経緯は
 `solution.md`（実装中の決定 S番号 ＋ 設計対話 Q番号。旧 `grill.md` を統合）にある。
 現状の設計ステータス、未着手の実装アイデア、棄却された主張、
-開発上のボトルネックは `gateway/DESIGN_STATUS.md` に分離してある。
+開発上のボトルネックは `design-status.md` に分離してある。
 
 ## 1. System overview
 
@@ -156,7 +156,7 @@ custom client）を指し、それらはすべて `PromptMessage` / `ToolCallMes
 正規化される。これはワイヤレベルでの捕捉 vs 強制の方向を**記述するものではない**。
 往復区間モデル（往路/復路 × ingress/egress — どこで prompt が観測され、どこで
 tool call が観測され、強制が作用できる唯一の区間はどこか）は
-`gateway/INGRESS_DESIGN.md` の "Directional model" で定義されている。この2つの
+`ingress-design.md` の "Directional model" で定義されている。この2つの
 語彙は区別して保つこと: 本ドキュメントの "ingress" = adapter、あちらのドキュメントの
 復路egress = enforcement tap。これらは同義語ではない。
 
@@ -235,8 +235,8 @@ flowchart LR
 
 | Red-dotted zone | 意味 | 現リポジトリでのアンカー |
 |---|---|---|
-| Imperative code generation layer | 未解決の A1 問題: 自然言語から制限付き `run()` コードへ。 | `gateway/planning/planner.py`, `gateway/PLANNING_STRATEGIES.md`, `pauth/codegen.py`, `gateway/planning/agentic_a1.py` |
-| Self-host / gateway configuration layer | ユーザーが gateway をどう実行/設定し、planner strategy を選び、session を管理し、変更された spec をリロードし、audit/notification 出力を受け取るか。 | `gateway/serving/http_server.py`, `gateway/serving/config.py`, `gateway/SELF_HOSTING.md`, `gateway/providers/api_spec_monitor.py` |
+| Imperative code generation layer | 未解決の A1 問題: 自然言語から制限付き `run()` コードへ。 | `gateway/planning/planner.py`, `planning-strategies.md`, `pauth/codegen.py`, `gateway/planning/agentic_a1.py` |
+| Self-host / gateway configuration layer | ユーザーが gateway をどう実行/設定し、planner strategy を選び、session を管理し、変更された spec をリロードし、audit/notification 出力を受け取るか。 | `gateway/serving/http_server.py`, `gateway/serving/config.py`, `self-hosting.md`, `gateway/providers/api_spec_monitor.py` |
 | SaaS configuration layer | 実アプリ/SaaS API がどう登録され、reflect され、monitor され、`SuiteSpec` へ adapt されるか。 | `pauth/suites/base.py`, `gateway/providers/mcp_suite.py`, `gateway/providers/openapi_suite.py`, `gateway/providers/registry.py` |
 
 既存エージェントを囲む黒点線ゾーンは、gateway integration boundary を表す:
@@ -246,7 +246,7 @@ flowchart LR
 ランタイムと日常のユーザーワークフローを改変なしに保ちつつ、可変性を gateway
 ingress・planner strategy・tool-source adapters に移すことである。（ここでの
 "ingress" = adapter レベル; ワイヤレベルの 往路/復路 × ingress/egress 区間モデル
-については `gateway/INGRESS_DESIGN.md` の "Directional model" を参照。）
+については `ingress-design.md` の "Directional model" を参照。）
 
 Prompt capture は adapter ベースである。エージェントごとに公開する信号は異なるが、
 あらゆる capture 経路は `AgentChannel` に到達する前に `PromptMessage` へ正規化
@@ -261,7 +261,7 @@ Prompt capture は adapter ベースである。エージェントごとに公�
 | `pauth/suites/shopping.py` | 自己完結した demo suite: tools、environment、runner、および worked-example のリファレンスコード / task 定義。論文再現（`tests/`）と gateway demo の両方で使われる。 |
 | `gateway/planning/core.py` | NL → run() recognizer（決定的、regex 駆動）。strict path でのみ使われる; agentic/freeform path はこれをスキップする。 |
 | `gateway/planning/planner.py` | プラグ可能な A1 境界。planner strategy が制限付き命令型コードを emit し、`Gateway` がそれを安定した PAuth パイプライン経由でコンパイル・強制する。 |
-| `gateway/PLANNING_STRATEGIES.md` | A1 strategy カタログ: interactive structuring、specialized な命令型コードモデル、formal NL 解析。 |
+| `planning-strategies.md` | A1 strategy カタログ: interactive structuring、specialized な命令型コードモデル、formal NL 解析。 |
 | `gateway/planning/agentic_a1.py` | grammar-feedback ループ付きの LLM A1（Q12）。`pauth.codegen.SYSTEM_PROMPT` をラップし、`RestrictedGrammarError` を catch し、違反したルールを LLM にフィードバックし、最大 N 回リトライする。 |
 | `gateway/runtime/gateway.py` | `Gateway` クラス。1つの task lifecycle を保持する。2つのエントリポイント: `submit_user_prompt(prompt)`（plan once）と `handle_tool_call(tool, args)`（call ごとに enforce）。 |
 | `gateway/ingress/agent_channel.py` | エージェント向け API。2種類のメッセージ: `prompt` と `tool_call`。"prompt first, exactly once" を構造的に強制する。JSON シリアライズ可能なワイヤ形状。 |
@@ -400,7 +400,7 @@ gateway が防御**しない**もの（明示的に対象外）:
 | Recognizer-canonical path vs LLM A1 | gateway/planning/planner.py, gateway/planning/core.py, gateway/planning/agentic_a1.py; Q9, Q12 |
 | Grammar feedback loop with explicit "you MUST obey rule X" | gateway/planning/agentic_a1.py; Q12 answer |
 | Agent-facing channel and trust shift | gateway/ingress/agent_channel.py; Q13 |
-| Self-hosted, user-registered SaaS | gateway/SELF_HOSTING.md; not yet implemented |
+| Self-hosted, user-registered SaaS | self-hosting.md; not yet implemented |
 | Test data layered into L1 / L2 / L3 | tests/fixtures/; user discussion 2026-06-04 |
 | AI-generated fixtures separated for review | tests/fixtures/ai_generated/ |
 
