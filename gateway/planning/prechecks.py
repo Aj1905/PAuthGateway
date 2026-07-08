@@ -18,7 +18,6 @@ Constants are compared against the prompt; variables are left to the
 deterministic dataflow layers (A2/A3 + enforcer), which already bind them to
 signed observations.
 
-Decision record: docs/solution.md S1.
 """
 
 from __future__ import annotations

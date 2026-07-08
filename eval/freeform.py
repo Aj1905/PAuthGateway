@@ -205,7 +205,7 @@ def measure(args: argparse.Namespace) -> int:
     accepted = [o for o in outcomes if o.submission.accepted]
     rejected = [o for o in outcomes if not o.submission.accepted]
     intent_mismatches = [o for o in accepted if o.missing_must or o.spurious_must_not]
-    # Q15-d canonical names (docs/solution.md S7). Over-authorization accept is the
+    # Canonical naming: over-authorization accept / over-rejection. Over-authorization accept is the
     # one metric this project treats as a security failure; over-rejection is a
     # recoverable UX/availability cost.
     over_auth_accepts = [
@@ -289,7 +289,7 @@ def measure(args: argparse.Namespace) -> int:
                 parts.append(f"spurious={','.join(o.spurious_must_not)}")
             print(f"  - {o.fp.id}: {' | '.join(parts)}")
 
-    # Exit criterion (docs/plan.md Stage 2): over-authorization accept must be 0.
+    # Exit criterion: over-authorization accept must be 0.
     # Over-rejection intentionally does not fail the run.
     return 1 if over_auth_accepts else 0
 

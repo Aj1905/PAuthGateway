@@ -1,4 +1,4 @@
-"""Auto strategy tests (docs/solution.md S2): recognizer fast path, LLM fallback."""
+"""Auto strategy tests: recognizer fast path, LLM fallback."""
 
 from __future__ import annotations
 

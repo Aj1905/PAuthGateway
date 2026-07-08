@@ -7,7 +7,7 @@ Two honest-reporting duties the design demands (DESIGN_STATUS):
    a SaaS through a side channel (a Bash ``curl``, a subprocess, direct
    network). It must (a) DENY the side-channel tools it can see, and (b) report
    honestly that out-of-band execution remains possible without an isolated
-   runtime. This encodes docs/plan.md Stage 1's "禁止前提" (raw Bash assumed absent)
+   runtime. This encodes the Stage 1 "no raw side channels" precondition (raw Bash assumed absent)
    as an enforced default, not just a documented assumption.
 
 2. **Protection level L0-L3.** The strength of the guarantee depends on what

@@ -1,4 +1,4 @@
-"""Agent-facing feedback tests (docs/solution.md S16): value-free by construction.
+"""Agent-facing feedback tests: value-free by construction.
 
 The load-bearing guarantee: a denial's ``agent_reason`` -- the text that would
 re-enter the agent's model context -- can never contain an attacker-controlled

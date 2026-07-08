@@ -162,7 +162,7 @@ class LLMFreeformPlanner:
 
 @dataclasses.dataclass(frozen=True)
 class AutoPlanner:
-    """Main ingress strategy (docs/solution.md S2): recognizer fast path, then LLM.
+    """Main ingress strategy: recognizer fast path, then LLM.
 
     The deterministic recognizer, when it matches, is zero-cost and carries
     the strongest guarantee, so it always runs first. Prompts outside its

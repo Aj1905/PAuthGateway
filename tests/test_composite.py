@@ -1,4 +1,4 @@
-"""Composite-plan tests (docs/solution.md S10/S11) -- offline, no API key.
+"""Composite-plan tests -- offline, no API key.
 
 Covers the composition-layer properties that must hold for the paper's
 guarantees to survive decomposition:

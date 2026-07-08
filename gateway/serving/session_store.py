@@ -5,7 +5,7 @@ session, the inputs needed to *reconstruct* it -- the clean user prompt and the
 planner config -- to a JSON file. On startup a deployment can replay them to
 rebuild the plans. It deliberately does NOT serialize live enforcer/envelope
 state (HMAC keys, compiled rules, mid-task observations): those are ephemeral,
-and per docs/plan.md a task whose observations are lost is simply re-driven by
+and a task whose observations are lost is simply re-driven by
 re-submitting the prompt.
 
 This is the file-backed near-term store; the cloud topology swaps the backend
