@@ -125,5 +125,4 @@ sudo AGENT_USER=pauth-agent GATEWAY_HOST=127.0.0.1 GATEWAY_PORT=8081 gateway/dep
   Claude Code はそのツールを実行できない。`log` モードでは続行するが、拒否はログに
   残る。強制にコミットする前に、実際の Claude Code の挙動を測定するのに有用だ。
 
-システム全体の設計については `docs/architecture.md` を、決定の履歴（Q10 capture
-mechanism、Q13 trust shift など）については `docs/solution.md`（旧 `grill.md` を統合）を参照。
+システム全体の設計については `docs/architecture.md` を参照。
