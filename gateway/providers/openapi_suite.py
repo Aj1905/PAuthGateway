@@ -10,6 +10,7 @@ adapters.
 from __future__ import annotations
 
 import dataclasses
+import ipaddress
 import json
 import re
 import urllib.parse
@@ -62,8 +63,6 @@ def _is_link_local_host(host: str) -> bool:
     to front localhost and internal SaaS (see config.py examples). Literal IPs
     only; DNS-rebinding to a link-local address is a documented residual risk.
     """
-    import ipaddress
-
     candidate = host.strip("[]")  # bracketed IPv6 literal
     try:
         return ipaddress.ip_address(candidate).is_link_local
@@ -71,7 +70,7 @@ def _is_link_local_host(host: str) -> bool:
         return False
 
 
-def _require_http_url(url: str, context: str) -> str:
+def _require_http_url(url: str, context: str) -> None:
     """Reject a URL that is not http/https or points at a link-local host."""
     parts = urllib.parse.urlsplit(url)
     scheme = parts.scheme.lower()
@@ -85,7 +84,6 @@ def _require_http_url(url: str, context: str) -> str:
             f"{context}: refusing link-local host {parts.hostname!r} "
             "(cloud-metadata/SSRF target)"
         )
-    return url
 
 
 def load_openapi_document(path: str | Path | None = None, url: str | None = None) -> dict[str, Any]:

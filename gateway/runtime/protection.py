@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import dataclasses
 import enum
+import functools
 
 
 class ProtectionLevel(enum.IntEnum):
@@ -51,18 +52,25 @@ class SideChannelPolicy:
     denied: frozenset[str] = _DEFAULT_SIDE_CHANNELS
     allowlist: frozenset[str] = frozenset()
 
+    @functools.cached_property
+    def _denied_lower(self) -> frozenset[str]:
+        return frozenset(d.lower() for d in self.denied)
+
+    @functools.cached_property
+    def _allowlist_lower(self) -> frozenset[str]:
+        return frozenset(a.lower() for a in self.allowlist)
+
     def is_denied(self, tool: str) -> bool:
         t = (tool or "").lower()
-        if t in {a.lower() for a in self.allowlist}:
+        if t in self._allowlist_lower:
             return False
-        denied = {d.lower() for d in self.denied}
-        if t in denied:
+        if t in self._denied_lower:
             return True
         # A merged suite (D2) renames a tool to ``<source>__<tool>``; match the
         # trailing segment so a namespaced ``billing__bash`` cannot slip a raw
         # side channel past the exact-name gate. Over-denial here is recoverable
         # via ``allowlist``; an under-denied side channel is a silent bypass.
-        return "__" in t and t.rsplit("__", 1)[-1] in denied
+        return "__" in t and t.rsplit("__", 1)[-1] in self._denied_lower
 
 
 @dataclasses.dataclass(frozen=True)
