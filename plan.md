@@ -31,11 +31,11 @@
 - [x] A1 LLM freeform ＋ grammar feedback loop（`gateway/planning/agentic_a1.py`）
 - [x] shopping suite（自己完結・reference code 同梱）（`pauth/suites/shopping.py`）
 - [x] AgentDojo 4 suite アダプタ（banking/slack/travel/workspace）（`tests/experiment/agentdojo_adapter.py`）
-- [x] FP/FN 実験ランナー（Table 2 形式）（`tests/experiment/run_experiment.py`）
+- [x] FP/FN 実験ランナー（Table 2 形式）（`eval/fpfn.py`）
 - [x] worked example オフライン検証（API不要）（`tests/test_worked_examples.py`）
 - [x] **Exit:** A1 が通った全タスクで over-authorization accept = 0 を計測
   （`full_run.json`: FN=0 / 475 injection runs、over-rejection(FP)=7 / 62。
-  正式名の集計は run_experiment に追加済み — solution.md S7）
+  正式名の集計は `eval/fpfn.py` に追加済み — solution.md S7）
 
 ---
 
@@ -51,7 +51,7 @@
 - [x] `architecture.md` §9 を broker モデルに更新（「鍵を見ない」→「鍵を持つ」, S4 で反映済み）
 - [x] B1–B4 default-deny ＋ envelope 記録の SDK 経路結線（`Gateway._accept_draft` / `handle_tool_call`）
 - [x] **💬議論** 側チャネル（生Bash等）の scope 宣言 → **Stage 1 は禁止前提**（solution.md S6。
-  SELF_HOSTING / hooks README への明記は未了）
+  SELF_HOSTING「Egress Lockdown」/ hooks README 4b に明記済み ＋ egress lockdown で機構化）
 - [x] self-host 起動手順（`gateway/SELF_HOSTING.md`, `gateway/hooks/README.md`。broker 手順は未了）
 - [x] AgentChannel の forwarding 信頼前提を明文化（A4）（`agent_channel.py` docstring）
 - [ ] **Exit:** 1つの実SaaS（or 1 MCP）で end-to-end、生Bashなし前提で動作
@@ -251,9 +251,11 @@
   本体（2フェーズ実行・sink ゲート・確認 UI）。推奨 G2。→ **Stage 5**
 - [x] 🟢 **B4** stdio MCP subprocess のヘルスチェック/再起動を実装（`StdioTransport` supervisor）。
   → **Stage 3**
-- [ ] 🟡 **B5** Bash escape hatch: gateway を通った側チャネル(bash 等)は **default-deny を機構化**
-  済み(`SideChannelPolicy`, S21)。out-of-band 迂回(フック未経由の subprocess/直接NW)は保護
-  レベル報告で開示、根本防止は隔離モード(インフラ)待ち。関連 Q4,Q7。→ **Stage 6（隔離/応答書換）**
+- [x] 🟢 **B5** Bash escape hatch: gateway を通った側チャネル(bash 等)は **default-deny を機構化**
+  済み(`SideChannelPolicy`, S21。名前空間付き `suite__bash` も捕捉)。out-of-band 迂回(フック
+  未経由の subprocess/直接NW)は **egress ロックダウン(`gateway/deploy/egress_lockdown.sh`, Q10)
+  でネットワーク面を防止**(非管理ユーザ前提)。残余: 管理者権限エージェント／非NW副作用の
+  FS 隔離。関連 Q4,Q7,Q10。→ **Stage 6（隔離/応答書換）**
 
 ### C. テストデータ / fixture
 

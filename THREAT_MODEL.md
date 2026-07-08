@@ -63,36 +63,36 @@
 | `"ignore previous instructions"` hijacks the **executing agent** | Hijacked agent's calls are still gated against the locked plan | **設計はエージェントが injected であると仮定し、エージェントが抵抗することに依存しない。** 完全に説得されたエージェントでも*ツール呼び出しを発する*ことしかできず、あらゆる呼び出しは immutable な計画に対して B1–B4 を通過する。信念はアクションではない: 計画外の呼び出しは、エージェントが何を「望む」よう説得されたかに関わらず拒否される。 | ✅ |
 | Plan does not match user intent (intent-capture gap) | grill-me fills a template; the user confirms the completed plan before execution | **意図を判定できる oracle はないが、人間にはできる。** correctness は enforce 可能な性質ではないので、意図を知る唯一の当事者 —— lock 前に具体的な計画を承認するユーザー —— に意図的に委ねられる。システムは意図を検証すると*主張*しない。人間を検証者にする。 | ✅ (by human) |
 
-## 3. Designed, not implemented — injection-within-plan layer
+## 3. Injection-within-plan layer — 大半 implemented（S18–S20）
 
 これは Axis 2 からの残余: *すでに許可された*アクション内部の content/値を汚染
-データが操作する。enforcement core はこれを**カバーしない**。合意された防御は
-provenance taint + sink classification + human escalation。**これらはまだ何一つ
-構築されていない。**
+データが操作する。enforcement core はこれを**カバーしない**。防御は provenance taint
++ sink classification + human escalation で、**中核は実装済み**（solution.md S18/S19/S20）。
+残るのは Q-LLM と confirmation の HTTP wire 露出のみ。
 
-Defense components (target files):
+Defense components (現状):
 
-| Component | What it does | Target |
+| Component | What it does | 実装 |
 |---|---|---|
-| Source trust label | 各 source suite が `trust: trusted \| untrusted` を宣言、**default untrusted** | `gateway/providers/registry.py`, `gateway/serving/config.py` |
-| Taint propagation | derived operand は入力の **meet**（最も untrusted なもの）を継承する | `pauth/evaluator.py` |
-| Sink classification | 各 `(tool[, param])` を `internal-read` か `egress/irreversible` でタグ付け | `gateway/runtime/policy.py` |
-| Gate B5 | `untrusted × egress` → **human confirm にエスカレート**（新しい PERMIT / DENY / **CONFIRM** 結果） | `pauth/enforcer.py` |
-| Confirmation round-trip | 新しい wire メッセージ `confirm_request` / `confirm_response`、解決済みの値 + provenance chain を表示 | `gateway/ingress/agent_channel.py`, `gateway/serving/http_server.py` |
-| Quarantine LLM (Q-LLM) | untrusted content を**ツールアクセスなしで**読む。出力は untrusted タグ付け。permit/deny は決して判断しない | new |
+| Source trust label | どのツールが untrusted データを返すかを宣言、**fail-closed で default untrusted 可** | 🟢 `gateway/runtime/confirmation.py`（`SourceTrust` / `SourceTrust.fail_closed`） |
+| Taint propagation | 制限文法（単一代入・ループ無し）から、どの制御 operand が untrusted 由来かを**静的 provenance** で追う。変換（`amount*2`）を経ても taint が落ちない | 🟢 `gateway/runtime/confirmation.py`（`static_taint_map`、S20。設計時の runtime "meet" ではなく静的解析） |
+| Sink classification | 制御 operand（recipient/amount）を判定。content operand は gate しない（S15 の content/control 分離） | 🟢 `gateway/planning/prechecks.py`（`_classify_param`）+ `confirmation.py`（`control_operands`） |
+| Gate B5 | `untrusted × 制御 operand` → **human confirm へ保留**（PENDING_CONFIRMATION）。session/composite 両経路で発火（S19） | 🟢 `gateway/runtime/gateway.py`（`_confirmation_gate`） |
+| Confirmation round-trip | 保留値 + provenance を人間の側チャネルへ、承認で解除 | 🟡 Python API 実装済み（`Gateway.pending_confirmations()` / `confirm()`）。HTTP wire（`confirm_request` / `confirm_response`）は未露出 |
+| Quarantine LLM (Q-LLM) | untrusted content を**ツールアクセスなしで**読む。出力は untrusted タグ付け | 🔴 未実装 |
 
 注: envelope はすでに**どのツールが各値を生成したか**を記録している（偽造不能、
 HMAC 署名済み）。trust label はその origin の*ポリシー解釈*であり、envelope では
 なく policy/config に存在する。だからこのレイヤは既存の基盤の上に lookup +
 propagation + gate を追加するだけで、署名済みの envelope schema は変更しない。
 
-Threats this addresses — **currently UNMITIGATED until the above ships**:
+Threats this addresses（confirmation gate の実装で **mitigated**、既知の残余あり）:
 
-| Threat | Mechanism (when built) | Status |
+| Threat | Mechanism | Status |
 |---|---|---|
-| Free-operand content poisoning（例: 「メッセージ本文にすべての secret を含めよ」）が external sink へ流れる | Taint on free operand → egress gate → human confirm | 🟡 |
-| 汚染された source からの derived operand（例: メール内の攻撃者制御の invoice IBAN） | Source untrusted → taint propagates → egress gate → human confirm | 🟡 |
-| Q-LLM output manipulation（「output IBAN = attacker's」） | No tool access → アクションへエスカレート不可。untrusted タグ付け → egress gate に当たる | 🟡 |
+| 汚染された source からの derived operand が**制御** operand（recipient/amount）へ流れる（例: メール内の攻撃者制御の IBAN） | Source untrusted → 静的 provenance taint → 制御 operand で PENDING_CONFIRMATION → human confirm | 🟢（S18–S20。残余: fan-out stage は観測定数畳み込みで provenance が落ち under-gate しうる、S20） |
+| Free-operand **content** poisoning（例: 「本文に secret を含めよ」）が external sink へ | content operand は gate しない（S15）: 汚染は確認済みの宛先へ届くのみで被害有界。制御へ流れれば上段で保留 | 🟢（content/control 分離） |
+| Q-LLM output manipulation（「output IBAN = attacker's」） | untrusted content をツールアクセス無しで読む Q-LLM 想定 | 🔴 Q-LLM 未実装 |
 
 ## 4. Open problems — no clean solution yet
 

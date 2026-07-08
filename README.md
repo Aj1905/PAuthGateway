@@ -56,7 +56,7 @@ benign タスクをすべて許可し（zero FP）、混入された不正操作
 
 ### 実験結果（GPT-4.1, AgentDojo v1 + shopping）
 
-`python -m experiment.run_experiment --suites all` の実測値:
+`python -m eval.fpfn --suites all` の実測値:
 
 | Suite | #FN (#injection runs) | #FP (#benign runs) | A1 skipped |
 |-------|----------------------|--------------------|------------|
@@ -95,7 +95,7 @@ zero FP・zero FN は PAuth の設計上の自然な帰結* である、とい�
 | AgentDojo 上の実装（sec. 4.1） | `experiment/agentdojo_adapter.py` |
 | Shopping スイート（sec. 5.1） | `pauth/suites/shopping.py` |
 | forced injection（sec. 5.1） | `experiment/forced_injection.py` |
-| FP/FN 評価（sec. 5.2, Table 2） | `experiment/run_experiment.py` |
+| FP/FN 評価（sec. 5.2, Table 2） | `eval/fpfn.py` |
 
 論文の通り、**LLM を要するのは A1 のみ**で、A2/A3/B1-B4 と envelope は完全に決定的です
 （論文 sec. 5.2: "The derivation of slices/rules ... is deterministic without LLM"）。
@@ -132,7 +132,7 @@ Python 3.12 以降を推奨（3.14 で開発・検証済み）。
 Shopping スイートは reference code を同梱するため、これも API なしで実行できます:
 
 ```bash
-.venv/bin/python -m experiment.run_experiment --suites shopping
+.venv/bin/python -m eval.fpfn --suites shopping
 ```
 
 ### 想定外攻撃プローブ（API キー不要）
@@ -164,13 +164,13 @@ A1 を **OpenAI GPT-4.1** で実行し、論文 Table 2 形式の FP/FN を計�
 
 ```bash
 cp .env.example .env          # .env に OPENAI_API_KEY を記入
-.venv/bin/python -m experiment.run_experiment --suites all
+.venv/bin/python -m eval.fpfn --suites all
 ```
 
 `.env` を使わず環境変数でも可:
 
 ```bash
-OPENAI_API_KEY=sk-... .venv/bin/python -m experiment.run_experiment --suites all
+OPENAI_API_KEY=sk-... .venv/bin/python -m eval.fpfn --suites all
 ```
 
 **オプション**
@@ -191,7 +191,7 @@ OPENAI_API_KEY=sk-... .venv/bin/python -m experiment.run_experiment --suites all
 まず安価に試すなら:
 
 ```bash
-.venv/bin/python -m experiment.run_experiment --suites banking --limit 3
+.venv/bin/python -m eval.fpfn --suites banking --limit 3
 ```
 
 ---
@@ -261,7 +261,9 @@ gateway/
 tests/experiment/
   agentdojo_adapter.py  AgentDojo 4 スイートを共通 IF に正規化
   forced_injection.py   forced injection 生成（sec. 5.1）
-  run_experiment.py     FP/FN 実験ランナー（Table 2 / Fig. 10）
+eval/
+  fpfn.py               FP/FN 実験ランナー（Table 2 / Fig. 10）
+  freeform.py           自由形式 A1 の計測ランナー
 tests/
   test_worked_examples.py  オフライン zero-FP/FN 検証（API キー不要）
 ```

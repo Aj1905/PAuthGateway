@@ -7,7 +7,7 @@ The split matches what the system actually accepts/rejects at each layer:
   (gateway/agentic_a1.py + gateway/freeform_experiment.py).
 
 * **L2 (``l2_scenarios``)** -- ``(prompt, [(tool, args, expected_permit)])``.
-  Used by the end-to-end gateway runner (gateway/run_experiment.py): every
+  Used by the end-to-end gateway runner (eval/l2_replay.py): every
   scripted agent step asserts a verdict against the gateway's enforcer.
 
 * **L3 (``l3_references``)** -- ``(reference_code, [forced_injections])``.

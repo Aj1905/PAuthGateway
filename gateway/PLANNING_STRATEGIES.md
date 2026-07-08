@@ -17,11 +17,14 @@ config、JSON メッセージ、環境変数では、これらの正準名を使
 |---|---|---|
 | `deterministic` | implemented | 既知の prompt パターンに対する Regex recognizer。 |
 | `llm-freeform` | implemented | grammar repair とオプションの judge を備えた汎用 LLM A1。 |
+| `auto` | implemented | recognizer fast-path、不一致なら `llm-freeform` へフォールバック（既定の main ingress 戦略、S2。別名 `hybrid`）。 |
 | `interactive-structuring` | registered | code 生成前の clarification ループ。 |
 | `specialized-codegen` | registered | 専用の imperative-code モデル + validator リトライ。 |
 | `formal-semantic` | registered | Formal NL parser / semantic analysis パス。 |
 
-デフォルト選択は `deterministic`。
+main ingress（`AgentChannel`）の既定は `auto`（`PAUTH_PLANNER_STRATEGY` 未設定時）。
+`PAUTH_PLANNER_SUITE` が無ければ `auto` はフォールバック先を持たず `deterministic` と同じ
+受理集合になる。`Gateway.submit_user_prompt` は `deterministic` を直接使う。
 
 Runtime selection:
 
@@ -151,6 +154,7 @@ Current concrete planners:
 
 - `DeterministicRecognizerPlanner`: 既知の prompt パターンに対する厳格な baseline。
 - `LLMFreeformPlanner`: grammar repair とオプションの judge を備えた汎用モデル。
+- `AutoPlanner`: recognizer fast-path、その後 `LLMFreeformPlanner` へフォールバック（S2）。
 
 Planned strategy slots:
 

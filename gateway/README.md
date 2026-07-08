@@ -18,13 +18,13 @@ canonical な run() を導出し、LLM の出力が canonical run() と完全一
 オフラインの決定的 fixture translator:
 
 ```bash
-.venv/bin/python run_gate_experiment/run_experiment.py --backend fixture
+.venv/bin/python -m tests.test_recognizer --backend fixture
 ```
 
 オプションの LLM translator:
 
 ```bash
-.venv/bin/python run_gate_experiment/run_experiment.py --backend llm --model gpt-4.1-mini --temperature 0.2
+.venv/bin/python -m tests.test_recognizer --backend llm --model gpt-4.1-mini --temperature 0.2
 ```
 
 このランナーは以下を行う:

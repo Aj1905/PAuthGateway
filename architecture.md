@@ -81,7 +81,7 @@ gateway は安定したまま、変化の激しい3つの領域が動くよう�
 flowchart LR
     subgraph AgentSide["Agent side (replaceable ingress)"]
         ClaudeHooks["Claude Code hooks\nsubmit_prompt.sh / pretool.sh"]
-        FutureProxy["Future network/MCP/HTTP proxy"]
+        Proxy["InterceptingProxy (proxy.py)\nenforcement core built; TLS/network shell pending"]
         CustomClient["Custom agent client"]
     end
 
@@ -114,7 +114,7 @@ flowchart LR
     end
 
     ClaudeHooks --> AgentChannel
-    FutureProxy --> AgentChannel
+    Proxy --> AgentChannel
     CustomClient --> AgentChannel
 
     AgentChannel --> PlannerSwitch
@@ -145,7 +145,7 @@ flowchart LR
 
 | Boundary | Contract | Replaceable parts | Stable owner |
 |---|---|---|---|
-| Agent ingress | `PromptMessage` と `ToolCallMessage` | Claude hooks、将来の MCP/HTTP proxy、custom client | `gateway/ingress/agent_channel.py` |
+| Agent ingress | `PromptMessage` と `ToolCallMessage` | Claude hooks、InterceptingProxy（`gateway/serving/proxy.py`、enforcement core 実装済み・TLS/network shell 未）、custom client | `gateway/ingress/agent_channel.py` |
 | Planner | 制限付き命令型の `def run(...): ...` | deterministic recognizer、LLM free-form、interactive structuring、specialized model、formal parser | `gateway/planning/planner.py` |
 | Tool source | `SuiteSpec`（`tools`, `make_env`, `runner_factory`） | shopping demo、AgentDojo、MCP servers、OpenAPI specs、将来の SaaS adapters | `pauth/suites/base.py` |
 | Authorization core | コンパイル済みルール + envelope 裏付けの operand チェック | provider ごとに変わるべきではない | `pauth/` |

@@ -119,7 +119,9 @@ FS 仮想化)は Stage 6(Mode 2)の議題として持ち越す。
 満たさないデプロイを黙って L3 と呼ぶことが最大の虚偽表示リスクであり、機構追加
 より先に前提の明文化が必要(DESIGN_STATUS「保護レベルの正直表示」と同旨)。
 
-**影響:** SELF_HOSTING.md / hooks README に「保護の前提条件」として明記する(未了)。
+**影響:** SELF_HOSTING.md / hooks README に「保護の前提条件」として明記する
+(→ 完了 2026-07-08: SELF_HOSTING「Egress Lockdown」/ hooks README 4b。前提を egress
+lockdown で機構化, Q10)。
 
 ## S7. メトリクス命名の確定(Q15-d)
 

@@ -39,8 +39,13 @@ Documented, accepted limitations (see `THREAT_MODEL.md`, `DESIGN_STATUS.md`,
 
 - Injection embedded in the **user's own prompt** (the prompt is trusted).
 - **Out-of-band execution** (a subprocess or direct network call that never
-  reaches the gateway) in non-isolated localhost mode — this is reported by
-  `protection_report()`, not prevented; the fix is an isolated runtime.
+  reaches the gateway). Network-plane out-of-band is *prevented* when the agent
+  runs as a dedicated **non-admin** user under the OS egress lockdown
+  (`gateway/deploy/egress_lockdown.sh`): non-gateway destinations are dropped by
+  the kernel. It remains possible only if the agent has admin privileges (it can
+  remove the rule) or the lockdown is not applied — then it is reported by
+  `protection_report()`, not prevented. **Non-network** side effects (local file
+  tampering) stay out of scope regardless; they need filesystem isolation.
 - **Over-rejection** (a legitimate action wrongly denied) — a usability issue,
   recoverable by retry, not a security failure.
 - **Semantic intent faithfulness** of A1 beyond what the deterministic prechecks

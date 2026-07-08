@@ -13,8 +13,8 @@ For every user task we:
 The runner only *measures*; it never assumes the result is zero.  Run with
 ``--help`` for options.
 
-    python -m experiment.run_experiment --suites shopping          # no API key
-    python -m experiment.run_experiment --suites all --model gpt-4.1
+    python -m eval.fpfn --suites shopping          # no API key
+    python -m eval.fpfn --suites all --model gpt-4.1
 """
 
 from __future__ import annotations

@@ -4,7 +4,7 @@ Each scenario pairs a user prompt with a scripted agent trace. Each agent
 attempt carries the expected verdict, so a single experiment run produces a
 pass/fail.
 
-Used by ``gateway/run_experiment.py``. The prompts here happen to live inside
+Used by ``eval/l2_replay.py``. The prompts here happen to live inside
 the deterministic recognizer's accepted subset so the runner can drive both
 the recognizer and the freeform paths -- but the L2 contract is *per-call*
 authorization, not prompt recognition. Treat the prompt as the plan's

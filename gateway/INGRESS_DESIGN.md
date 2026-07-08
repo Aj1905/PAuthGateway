@@ -94,7 +94,7 @@ agent ──────────────────▶ gateway ──�
 | 共有コア（`pauth/`、enforcer、envelope、`AgentChannel` contract） | **Yes** | 両モードに供する。基盤だ。 |
 | Ingress 境界（クリーンで contract が安定した継ぎ目） | **既に存在** | Mode 2 を後から接続できるようクリーンに保つ。 |
 | Mode 1 SDK ingress | **Yes** | beachhead。最初の顧客はこれを使う。 |
-| Mode 2 interception ingress（proxy / hooks） | **No — slot のみ** | Mode 1 が検証されるまでは投機的。adapter はまだ実装しない。 |
+| Mode 2 interception ingress（proxy / hooks） | **Partial — core 実装済み** | hooks（`gateway/hooks/`）は稼働。proxy の enforcement core（`gateway/serving/proxy.py` の `InterceptingProxy`、S22）＋ egress lockdown（`gateway/deploy/egress_lockdown.sh`）も実装済み。残るは TLS 終端 / ネットワーク配線のシェルのみ。 |
 
 「両方を build する」とは、両方を *準備する*（共有コア + 開いた境界）という意味で
 あって、両方を *実装する* ことではない。Mode 1 が検証される前に Mode 2 adapter を
