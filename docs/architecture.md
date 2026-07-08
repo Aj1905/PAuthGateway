@@ -2,8 +2,7 @@
 
 PAuth ベースの、改変なしエージェント向け task-scoped authorization gateway
 （Claude Code が最初のターゲット）。本ドキュメントは、`pauth/`・`gateway/`・
-`tests/` の実装が体現するシステムレベルの設計を記述する。意思決定の経緯は
-`solution.md`（実装中の決定 S番号 ＋ 設計対話 Q番号。旧 `grill.md` を統合）にある。
+`tests/` の実装が体現するシステムレベルの設計を記述する。
 現状の設計ステータス、未着手の実装アイデア、棄却された主張、
 開発上のボトルネックは `design-status.md` に分離してある。
 

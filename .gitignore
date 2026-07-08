@@ -22,3 +22,7 @@ slides/
 *.pdf
 vercel.json
 .vercelignore
+
+# internal Japanese working logs — kept local, not published
+docs/plan.md
+docs/solution.md

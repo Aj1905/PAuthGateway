@@ -262,8 +262,6 @@ docs/
   planning-strategies.md A1 戦略カタログ（対話構造化 / 専用モデル / 形式解析）
   design-status.md      現状設計 / 議論中 / 不可能 / ボトルネックの整理
   business-operations.md OSS無料範囲 / 商用運用 / 課金境界の整理
-  plan.md               ロードマップ（Stage / 課題カタログ）
-  solution.md           実装決定ログ（S番号）＋設計審議（Q系列）
 tests/experiment/
   agentdojo_adapter.py  AgentDojo 4 スイートを共通 IF に正規化
   forced_injection.py   forced injection 生成（sec. 5.1）
