@@ -26,3 +26,6 @@ vercel.json
 # internal Japanese working logs — kept local, not published
 docs/plan.md
 docs/solution.md
+
+# personal agent/advisory prefs — not project contributor guidance
+AGENTS.md
