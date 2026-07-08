@@ -1,144 +1,151 @@
 # Threat model and defenses
 
-このドキュメントは PAuthGateway が防御する脅威、各脅威を防ぐメカニズム、そして
-—— 最も重要な点として —— **どの防御が実際に構築済みで、どれが設計のみか**を列挙
-する。`architecture.md` §5（enforcement-core の threat model を列挙）を拡張し、
-設計議論で詰めた indirect-prompt-injection / operand-provenance レイヤを加える。
+This document enumerates the threats PAuthGateway defends against, the mechanism
+that defends each threat, and —— most importantly —— **which defenses are actually
+built and which are design only**. It extends `architecture.md` §5 (which enumerates
+the enforcement-core threat model) and adds the indirect-prompt-injection /
+operand-provenance layer worked out in the design discussion.
 
-> 本ファイルの正直さルール: 脅威が ✅ **Resolved (built)** とマークされるのは、
-> 今日コードがそれを enforce している場合**のみ**。provenance / taint / egress
-> レイヤ（§3、§4）は**設計であって実装ではない** —— 参照先のコードが存在する
-> までは、稼働中の防御として引用してはならない。
+> Honesty rule for this file: a threat is marked ✅ **Resolved (built)** **only**
+> when code enforces it today. The provenance / taint / egress layers (§3, §4) are
+> **design, not implementation** —— until the referenced code exists, they must not
+> be cited as an operative defense.
 
 ## 0. The conceptual spine (read this first)
 
-2つのフレーミング軸が、別個の脅威を1語に潰してしまう（「injection をブロック」
-「free operand 問題」）という反復的な混乱を防ぐ。
+Two framing axes prevent the recurring confusion of collapsing distinct threats
+into one phrase ("block injection," "the free operand problem").
 
 **Axis 1 — enforcement gap vs intent-capture gap.**
-- *Enforcement gap*: エージェントがユーザー承認済みの計画の外で行動する。これは
-  authorization の問題。**決定的で解決済み**。
-- *Intent-capture gap*: 計画そのものがユーザーの意図と一致しない。これは
-  correctness の問題。**oracle は存在しない**。完成した計画を人間が確認すること
-  によってのみ解決される。
+- *Enforcement gap*: the agent acts outside the user-approved plan. This is an
+  authorization problem. **Deterministic and resolved.**
+- *Intent-capture gap*: the plan itself does not match the user's intent. This is
+  a correctness problem. **No oracle exists.** It is resolved only by a human
+  confirming the completed plan.
 
 **Axis 2 — action injection vs content/data injection.**
-- *Action injection*: 汚染データがエージェントに**新規の計画外アクション**を取ら
-  せようとする。locked plan + default-deny によって防御される。
-- *Content/data injection*: 汚染データが、**すでに許可されたアクションを流れる
-  content や値**を操作する。これが難しい残余であり、§3–§6 の主題。
+- *Action injection*: tainted data tries to make the agent take a **new off-plan
+  action**. Defended by locked plan + default-deny.
+- *Content/data injection*: tainted data manipulates the **content or values that
+  flow through an already-permitted action**. This is the hard residue, and the
+  subject of §3–§6.
 
-**反復するアンチパターン（暗記せよ）。** 我々が突き当たった行き止まりはすべて
-同じ形をしていた: *攻撃者が制御可能な content をセキュリティ入力として使う*こと。
-あらゆるシグナルをセキュリティ判断で信頼する前に問え: **攻撃者はこれを書ける
-か？** イエスなら、その防御はすでに破れている。§7 を参照。
+**The recurring anti-pattern (memorize it).** Every dead end we hit had the same
+shape: *using attacker-controllable content as a security input*. Before trusting
+any signal in a security decision, ask: **can the attacker write this?** If yes,
+that defense is already broken. See §7.
 
 ## 1. Status legend
 
 | Mark | Meaning |
 |---|---|
-| ✅ | **Resolved (built)** — 今日コードがこれを enforce している |
-| 🟡 | **Designed, not implemented** — メカニズムは合意済み、コードはまだない |
-| 🔶 | **Open problem** — きれいな解がない。アクティブな設計リスク |
-| ⚪ | **Out of scope (accepted)** — 意図的に防御しない |
-| ⛔ | **Irreducible floor** — いかなる設計でも除去できない |
+| ✅ | **Resolved (built)** — code enforces this today |
+| 🟡 | **Designed, not implemented** — the mechanism is agreed, the code does not exist yet |
+| 🔶 | **Open problem** — no clean solution. An active design risk |
+| ⚪ | **Out of scope (accepted)** — intentionally not defended |
+| ⛔ | **Irreducible floor** — cannot be removed by any design |
 
 ## 2. Resolved — enforcement core (built)
 
-これらは今日 `pauth/` + `gateway/` によって enforce されている（`architecture.md`
-§4 invariants、§5 threat table を参照）。**Why it holds** 列は、各脅威が実際に
-閉じている理由を述べる —— メカニズムの名前だけでなく、そのメカニズムを十分たら
-しめている性質を述べる。
+These are enforced today by `pauth/` + `gateway/` (see `architecture.md` §4
+invariants, §5 threat table). The **Why it holds** column states why each threat is
+actually closed —— not just the name of the mechanism, but the property that makes
+the mechanism sufficient.
 
 | Threat | Mechanism | Why it holds | Status |
 |---|---|---|---|
-| Agent issues a tool call not in the plan | Default-deny on missing rule (B1) | **Closed-world enforcement.** 許可された集合は、計画からコンパイルされた rules ちょうどそのもの。明示的に許可されていないものはすべて拒否される。一致する rule なしに「allow」へ至る経路はないので、新規の call が隙間をすり抜けることはできない —— rule の不在が拒否*そのもの*である。 | ✅ |
-| Agent substitutes a constant operand (IBAN, amount, subject, date) | Operand match against compiled rules (B2/B3) | operand の値は計画時に rule の中で固定される。チェックは call の operand をその固定値と比較する。いかなる差し替えも不一致となり拒否される。エージェントは rule を書かないので、自分自身の permission を広げることはできない。 | ✅ |
-| Agent fabricates a derived value it never observed | Symbolic eval against envelope store; agent-reported values ignored (B3) | エージェントではなく gateway がツールを実行し、結果を署名付き envelope として記録する。operand 解決は envelope store **のみ**を読むので、エージェントが捏造した値には裏付けとなる envelope がない → unresolved → 拒否。エージェントが報告した数値は決して判断の入力にならない。 | ✅ |
-| Agent skips an observation and uses its symbolic result | Envelope missing → operand unresolved → deny | derived operand が解決されるのは、上流の observation が実際に走った（その envelope が存在する）場合のみ。observation をスキップすると operand は unresolved のまま残り、enforcer は rule を評価できず拒否する。値を「仮定する」方法は存在しない。 | ✅ |
-| Agent calls a sensitive tool out of order | Guard requires upstream envelopes; missing → deny | 順序は上流 envelope への guard 依存としてエンコードされる。順序を違えて呼ぶと必要な envelope がまだ存在しないので、guard は false に評価され → 拒否。シーケンスは、エージェントが自分で順序づけるのを信頼するのではなく、data dependency によって enforce される。 | ✅ |
-| Agent re-plans mid-session (e.g. on injection) | `AgentChannel` rejects a second `PromptMessage` | 計画はちょうど一度だけ作られ、以後 immutable である（invariant #1）。2つ目の prompt —— injection が新しい計画をインストールするためのベクタ —— は構造的に拒否されるので、lock 後に計画を変異させる API surface は存在しない。 | ✅ |
-| **Action injection** via tool result (new off-plan action) | Plan generated from clean prompt before any tool output exists | **Temporal ordering closes it.** 計画は、エージェントがいかなるツール出力を読む*前*に完全に導出され locked される。だから注入された指示はそれに影響を与えられない。注入された「do X」は計画に存在しないツール呼び出しにマップされる → default-deny (B1)。毒は、それが汚染しえた唯一の判断がすでに下された後に到着する。 | ✅ |
-| `"ignore previous instructions"` reaches the **planner** | Planner (A1) never reads tool output | **Structural immunity, not resistance.** planner の唯一の入力はクリーンな user prompt であり、email/web/tool 結果を読むコードパス上には決して乗らない。injection テキストはそこに到達できないので、抵抗すべきものが何もない —— そのチャネルが存在しない。 | ✅ |
-| `"ignore previous instructions"` hijacks the **executing agent** | Hijacked agent's calls are still gated against the locked plan | **設計はエージェントが injected であると仮定し、エージェントが抵抗することに依存しない。** 完全に説得されたエージェントでも*ツール呼び出しを発する*ことしかできず、あらゆる呼び出しは immutable な計画に対して B1–B4 を通過する。信念はアクションではない: 計画外の呼び出しは、エージェントが何を「望む」よう説得されたかに関わらず拒否される。 | ✅ |
-| Plan does not match user intent (intent-capture gap) | grill-me fills a template; the user confirms the completed plan before execution | **意図を判定できる oracle はないが、人間にはできる。** correctness は enforce 可能な性質ではないので、意図を知る唯一の当事者 —— lock 前に具体的な計画を承認するユーザー —— に意図的に委ねられる。システムは意図を検証すると*主張*しない。人間を検証者にする。 | ✅ (by human) |
+| Agent issues a tool call not in the plan | Default-deny on missing rule (B1) | **Closed-world enforcement.** The permitted set is exactly the rules compiled from the plan. Anything not explicitly permitted is denied. There is no path to "allow" without a matching rule, so a new call cannot slip through a gap —— the absence of a rule *is* the denial. | ✅ |
+| Agent substitutes a constant operand (IBAN, amount, subject, date) | Operand match against compiled rules (B2/B3) | Operand values are fixed inside the rule at plan time. The check compares the call's operand against that fixed value. Any substitution mismatches and is denied. The agent does not write rules, so it cannot widen its own permission. | ✅ |
+| Agent fabricates a derived value it never observed | Symbolic eval against envelope store; agent-reported values ignored (B3) | The gateway, not the agent, executes the tool and records the result as a signed envelope. Operand resolution reads **only** the envelope store, so a value the agent fabricated has no backing envelope → unresolved → denied. Agent-reported numbers never become inputs to the decision. | ✅ |
+| Agent skips an observation and uses its symbolic result | Envelope missing → operand unresolved → deny | A derived operand is resolved only if the upstream observation actually ran (its envelope exists). Skipping the observation leaves the operand unresolved, the enforcer cannot evaluate the rule, and it denies. There is no way to "assume" a value. | ✅ |
+| Agent calls a sensitive tool out of order | Guard requires upstream envelopes; missing → deny | Order is encoded as a guard dependency on upstream envelopes. Calling out of order means the required envelope does not yet exist, so the guard evaluates to false → denied. The sequence is enforced by data dependency, not by trusting the agent to order itself. | ✅ |
+| Agent re-plans mid-session (e.g. on injection) | `AgentChannel` rejects a second `PromptMessage` | The plan is made exactly once and is immutable thereafter (invariant #1). A second prompt —— the vector by which injection would install a new plan —— is structurally rejected, so there is no API surface to mutate the plan after lock. | ✅ |
+| **Action injection** via tool result (new off-plan action) | Plan generated from clean prompt before any tool output exists | **Temporal ordering closes it.** The plan is fully derived and locked *before* the agent reads any tool output. So injected instructions cannot influence it. An injected "do X" maps to a tool call absent from the plan → default-deny (B1). The poison arrives after the only decision it could have tainted was already made. | ✅ |
+| `"ignore previous instructions"` reaches the **planner** | Planner (A1) never reads tool output | **Structural immunity, not resistance.** The planner's only input is the clean user prompt; it is never on a code path that reads email/web/tool results. The injection text cannot reach it, so there is nothing to resist —— that channel does not exist. | ✅ |
+| `"ignore previous instructions"` hijacks the **executing agent** | Hijacked agent's calls are still gated against the locked plan | **The design assumes the agent is injected and does not depend on the agent resisting.** Even a fully persuaded agent can only *emit tool calls*, and every call passes B1–B4 against the immutable plan. Belief is not action: an off-plan call is denied regardless of what the agent has been persuaded to "want." | ✅ |
+| Plan does not match user intent (intent-capture gap) | grill-me fills a template; the user confirms the completed plan before execution | **No oracle can judge intent, but a human can.** Correctness is not an enforceable property, so it is intentionally delegated to the only party who knows the intent —— the user who approves the concrete plan before lock. The system does not *claim* to verify intent. It makes the human the verifier. | ✅ (by human) |
 
-## 3. Injection-within-plan layer — 大半 implemented（S18–S20）
+## 3. Injection-within-plan layer — mostly implemented (S18–S20)
 
-これは Axis 2 からの残余: *すでに許可された*アクション内部の content/値を汚染
-データが操作する。enforcement core はこれを**カバーしない**。防御は provenance taint
-+ sink classification + human escalation で、**中核は実装済み**（S18/S19/S20）。
-残るのは Q-LLM と confirmation の HTTP wire 露出のみ。
+This is the residue from Axis 2: tainted data manipulates content/values inside an
+*already-permitted* action. The enforcement core **does not cover** this. The
+defense is provenance taint + sink classification + human escalation, and **the
+core is implemented** (S18/S19/S20). What remains is only the Q-LLM and the HTTP
+wire exposure of confirmation.
 
-Defense components (現状):
+Defense components (current state):
 
-| Component | What it does | 実装 |
+| Component | What it does | Implementation |
 |---|---|---|
-| Source trust label | どのツールが untrusted データを返すかを宣言、**fail-closed で default untrusted 可** | 🟢 `gateway/runtime/confirmation.py`（`SourceTrust` / `SourceTrust.fail_closed`） |
-| Taint propagation | 制限文法（単一代入・ループ無し）から、どの制御 operand が untrusted 由来かを**静的 provenance** で追う。変換（`amount*2`）を経ても taint が落ちない | 🟢 `gateway/runtime/confirmation.py`（`static_taint_map`、S20。設計時の runtime "meet" ではなく静的解析） |
-| Sink classification | 制御 operand（recipient/amount）を判定。content operand は gate しない（S15 の content/control 分離） | 🟢 `gateway/planning/prechecks.py`（`_classify_param`）+ `confirmation.py`（`control_operands`） |
-| Gate B5 | `untrusted × 制御 operand` → **human confirm へ保留**（PENDING_CONFIRMATION）。session/composite 両経路で発火（S19） | 🟢 `gateway/runtime/gateway.py`（`_confirmation_gate`） |
-| Confirmation round-trip | 保留値 + provenance を人間の側チャネルへ、承認で解除 | 🟡 Python API 実装済み（`Gateway.pending_confirmations()` / `confirm()`）。HTTP wire（`confirm_request` / `confirm_response`）は未露出 |
-| Quarantine LLM (Q-LLM) | untrusted content を**ツールアクセスなしで**読む。出力は untrusted タグ付け | 🔴 未実装 |
+| Source trust label | Declares which tools return untrusted data, **can default to untrusted fail-closed** | 🟢 `gateway/runtime/confirmation.py` (`SourceTrust` / `SourceTrust.fail_closed`) |
+| Taint propagation | From the restricted grammar (single assignment, no loops), tracks which control operands originate from untrusted sources via **static provenance**. Taint is not dropped even through a transform (`amount*2`) | 🟢 `gateway/runtime/confirmation.py` (`static_taint_map`, S20. Static analysis, not the runtime "meet" from the design phase) |
+| Sink classification | Decides the control operand (recipient/amount). Content operands are not gated (the content/control separation of S15) | 🟢 `gateway/planning/prechecks.py` (`_classify_param`) + `confirmation.py` (`control_operands`) |
+| Gate B5 | `untrusted × control operand` → **hold for human confirm** (PENDING_CONFIRMATION). Fires on both the session and composite paths (S19) | 🟢 `gateway/runtime/gateway.py` (`_confirmation_gate`) |
+| Confirmation round-trip | Held value + provenance to a human side channel; released on approval | 🟡 Python API implemented (`Gateway.pending_confirmations()` / `confirm()`). The HTTP wire (`confirm_request` / `confirm_response`) is not exposed |
+| Quarantine LLM (Q-LLM) | Reads untrusted content **without tool access**. Output is tagged untrusted | 🔴 Not implemented |
 
-注: envelope はすでに**どのツールが各値を生成したか**を記録している（偽造不能、
-HMAC 署名済み）。trust label はその origin の*ポリシー解釈*であり、envelope では
-なく policy/config に存在する。だからこのレイヤは既存の基盤の上に lookup +
-propagation + gate を追加するだけで、署名済みの envelope schema は変更しない。
+Note: the envelope already records **which tool produced each value** (unforgeable,
+HMAC-signed). The trust label is a *policy interpretation* of that origin, and lives
+in policy/config, not in the envelope. So this layer only adds lookup + propagation
++ gate on top of the existing foundation, and does not change the signed envelope
+schema.
 
-Threats this addresses（confirmation gate の実装で **mitigated**、既知の残余あり）:
+Threats this addresses (**mitigated** by the confirmation gate implementation, with
+known residue):
 
 | Threat | Mechanism | Status |
 |---|---|---|
-| 汚染された source からの derived operand が**制御** operand（recipient/amount）へ流れる（例: メール内の攻撃者制御の IBAN） | Source untrusted → 静的 provenance taint → 制御 operand で PENDING_CONFIRMATION → human confirm | 🟢（S18–S20。残余: fan-out stage は観測定数畳み込みで provenance が落ち under-gate しうる、S20） |
-| Free-operand **content** poisoning（例: 「本文に secret を含めよ」）が external sink へ | content operand は gate しない（S15）: 汚染は確認済みの宛先へ届くのみで被害有界。制御へ流れれば上段で保留 | 🟢（content/control 分離） |
-| Q-LLM output manipulation（「output IBAN = attacker's」） | untrusted content をツールアクセス無しで読む Q-LLM 想定 | 🔴 Q-LLM 未実装 |
+| A derived operand from a tainted source flows into a **control** operand (recipient/amount) (e.g. an attacker-controlled IBAN inside an email) | Source untrusted → static provenance taint → PENDING_CONFIRMATION at the control operand → human confirm | 🟢 (S18–S20. Residue: the fan-out stage can drop provenance through observed constant folding and under-gate, S20) |
+| Free-operand **content** poisoning (e.g. "include the secret in the body") to an external sink | Content operands are not gated (S15): the taint only reaches a confirmed destination and the damage is bounded. If it flows into a control operand, it is held at the layer above | 🟢 (content/control separation) |
+| Q-LLM output manipulation ("output IBAN = attacker's") | Assumes a Q-LLM that reads untrusted content without tool access | 🔴 Q-LLM not implemented |
 
 ## 4. Open problems — no clean solution yet
 
 | Problem | Why it is hard | Status |
 |---|---|---|
-| **Egress sink enumeration completeness** | 有害な sink（例: `delete`）が `internal-read` と誤分類されると、injection within plan が黙って gate を通過する。防御は sink inventory の精度までしか良くならない。**これが現在の最弱点。** | 🔶 |
-| Per-record trust granularity | Suite-level trust は安全だが粗い（Gmail を全部 untrusted にする → メール由来のあらゆる値が confirm を要する）。より細かい trust は**verified** メタデータ（DKIM/SPF 検証済み送信者、OS path）を使わねばならず、content が主張するメタデータを決して使ってはならない。実際の verification インフラが必要。 | 🔶 |
-| Trust configuration error | デプロイ者が untrusted な source を trusted と誤マークすると gate が開く。default-untrusted で緩和されるが、config は今や attack surface である。 | 🔶 |
-| Usability cost of egress confirmation | あらゆる `untrusted × egress` アクションがユーザーを中断させる。high-automation のユースケースはこれを痛感する。ここで安全かつ無監督の自動経路は存在しない。 | 🔶 |
+| **Egress sink enumeration completeness** | If a harmful sink (e.g. `delete`) is misclassified as `internal-read`, injection within plan silently passes the gate. The defense is only as good as the precision of the sink inventory. **This is the current weakest point.** | 🔶 |
+| Per-record trust granularity | Suite-level trust is safe but coarse (making all of Gmail untrusted → every email-derived value requires confirm). Finer trust must use **verified** metadata (DKIM/SPF-verified sender, OS path) and must never use metadata that the content claims. It needs actual verification infrastructure. | 🔶 |
+| Trust configuration error | If the deployer mis-marks an untrusted source as trusted, the gate opens. Mitigated by default-untrusted, but the config is now an attack surface. | 🔶 |
+| Usability cost of egress confirmation | Every `untrusted × egress` action interrupts the user. High-automation use cases feel this keenly. There is no safe, unsupervised automatic path here. | 🔶 |
 
 ## 5. Out of scope (accepted, not defended)
 
 | Threat | Why accepted |
 |---|---|
-| Injection in the user's own prompt window | input window は trusted —— ユーザーの責任（`architecture.md` §5, Q11） | ⚪ |
-| User disables / bypasses the hook | ユーザーは trusted（Q0） | ⚪ |
-| Side channels: filesystem, bash, child processes, env vars | gateway はツール呼び出ししか見えない。実際の Claude Code firewall はさらに Bash policy / sandbox を要する（Q7/Q10） | ⚪ |
-| Availability attack: a hijacked agent sabotages or derails the task | **有害なアクションを生まない**（計画外の呼び出しは拒否される）—— 進捗の欠如のみ。liveness の問題であって security breach ではない。 | ⚪ |
-| Prompt-correctness beyond what the user approved | PAuth は計画を enforce する。correctness oracle ではない。ユーザーは間違ったことをする計画を承認しうる。 | ⚪ |
+| Injection in the user's own prompt window | The input window is trusted —— the user's responsibility (`architecture.md` §5, Q11) | ⚪ |
+| User disables / bypasses the hook | The user is trusted (Q0) | ⚪ |
+| Side channels: filesystem, bash, child processes, env vars | The gateway can only see tool calls. A real Claude Code firewall additionally requires a Bash policy / sandbox (Q7/Q10) | ⚪ |
+| Availability attack: a hijacked agent sabotages or derails the task | **It produces no harmful action** (off-plan calls are denied) —— only a lack of progress. A liveness problem, not a security breach. | ⚪ |
+| Prompt-correctness beyond what the user approved | PAuth enforces the plan. It is not a correctness oracle. The user can approve a plan that does the wrong thing. | ⚪ |
 
 ## 6. The irreducible floor ⛔
 
-上記すべての防御の後、ひとつの脅威が残り、**いかなる設計でも除去できない**:
+After all of the above defenses, one threat remains, and **cannot be removed by any
+design**:
 
-> **人間が egress confirmation で social engineering され**、明瞭に提示された
-> 悪意あるアクションを承認してしまう。
+> **The human is social-engineered at the egress confirmation** and approves a
+> clearly presented malicious action.
 
-システムの仕事は、問題をこの floor *まで*縮約することだ: confirmation を
-**最大限に informed** にし（解決済みの値 + 偽造不能な provenance chain を表示
-—— 「IBAN …、`unknown@external` からのメール由来、DKIM 未検証」）、**最小限の
-頻度**にする（`untrusted × egress` のみ、plan-time pinning が集合をさらに縮小）。
-この floor を除去できると主張する者は誰でも、存在しない correctness oracle を
-売りつけている。
+The system's job is to shrink the problem *down to* this floor: make the
+confirmation **maximally informed** (show the resolved value + the unforgeable
+provenance chain —— "IBAN …, from an email from `unknown@external`, DKIM unverified")
+and **minimally frequent** (only `untrusted × egress`, with plan-time pinning
+shrinking the set further). Anyone who claims to remove this floor is selling a
+correctness oracle that does not exist.
 
 ## 7. Explicitly rejected anti-patterns
 
-設計で歩いた行き止まり。各々が *攻撃者が制御可能な content をセキュリティ入力と
-して使う*（§0）の具体例。再提案されないよう文書化する。
+The dead ends walked in design. Each is a concrete instance of *using
+attacker-controllable content as a security input* (§0). Documented so they are not
+re-proposed.
 
 | Rejected idea | Why it breaks |
 |---|---|
-| An LLM judges whether an operand "aligns with intent" | judge は汚染データを読む → 自身が injectable。「正しい」値についての独立した ground truth を持たない。injectable な LLM を別の injectable な LLM で直すのは turtles-all-the-way-down |
-| Decide a source's trust by **reading its content** | trust の判断を、content を書く攻撃者に手渡す（「このメールは信頼できる銀行から」） |
-| Trust content-claimed metadata (e.g. the `From:` header) | 偽造可能。暗号的に**検証された** provenance（DKIM/SPF）のみが数える |
-| Treat "free operand" as the unit of defense | derived-operand-from-poisoned-source のケースを見落とす（IBAN は*チェック済み*の operand だが、それでもその source で汚染されている） |
-| Mark a source trusted so the LLM can "understand" it | カテゴリ錯誤: untrusted ≠ unreadable。読むことは internal で常に許可される。trust は egress のみを支配する。読むために trusted とマークすることは、label が存在して塞ぐべきまさにその穴を開ける |
+| An LLM judges whether an operand "aligns with intent" | The judge reads tainted data → it is itself injectable. It has no independent ground truth about the "correct" value. Fixing an injectable LLM with another injectable LLM is turtles-all-the-way-down |
+| Decide a source's trust by **reading its content** | Hands the trust decision to the attacker who writes the content ("this email is from a trusted bank") |
+| Trust content-claimed metadata (e.g. the `From:` header) | Forgeable. Only cryptographically **verified** provenance (DKIM/SPF) counts |
+| Treat "free operand" as the unit of defense | Misses the derived-operand-from-poisoned-source case (the IBAN is a *checked* operand, but is still tainted by its source) |
+| Mark a source trusted so the LLM can "understand" it | Category error: untrusted ≠ unreadable. Reading is internal and always permitted. Trust governs egress only. Marking a source trusted in order to read it opens the very hole the label exists to plug |
 
 ## 8. End-to-end defense flow
 
@@ -165,14 +172,14 @@ HUMAN CONFIRM the egress value + provenance chain   ← irreducible floor (§6)
 suite.runner executes · envelope records signed observation (built, §2)
 ```
 
-Untrusted content は自由に読まれ/理解される（ツールアクセスのない quarantine
-LLM を含む）。システム全体が最終的に gate するのは唯一**untrusted-sourced な値が
-egress boundary を越えること**であり、その判断のために最終的に信頼するのは唯一
-人間 + 暗号的に検証可能な provenance である。
+Untrusted content is freely read/understood (including by a quarantine LLM with no
+tool access). What the whole system ultimately gates is only **an untrusted-sourced
+value crossing the egress boundary**, and the only thing it ultimately trusts for
+that decision is the human + cryptographically verifiable provenance.
 
 ## 9. Relationship to other docs
 
-- `architecture.md` §4–§5 — 構築済みの enforcement core とその invariants。
-- `design-status.md` — 実装ステータス / bottlenecks。
-- `gateway/runtime/policy.py` — 今日 free operands をマークする。§3 はこれを sink
-  classification と trust labels で拡張する。
+- `architecture.md` §4–§5 — the built enforcement core and its invariants.
+- `design-status.md` — implementation status / bottlenecks.
+- `gateway/runtime/policy.py` — marks free operands today. §3 extends this with sink
+  classification and trust labels.

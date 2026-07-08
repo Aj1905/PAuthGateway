@@ -1,62 +1,70 @@
 # PAuthGateway
 
-**AI エージェントと、それが叩く実ツール/SaaS の間に挟まる、
-個人向けの「タスクスコープ認可ファイアウォール」です。**（最初の対象は Claude Code）
+**A personal "task-scoped authorization firewall" that sits between an AI agent
+and the real tools/SaaS it calls.** (The first target is Claude Code.)
 
-ユーザーが入力した自然言語プロンプトを、エージェントが動き出す前に一度だけ
-「制限された計画」へ変換し、以降のすべてのツール呼び出しをその計画に対して
-照合します（default-deny）。これにより、プロンプトインジェクションやツール結果
-汚染でエージェントが乗っ取られても、**ユーザーが実際に頼んでいない操作は実行
-できません**。
+Before the agent starts acting, the natural-language prompt the user enters is
+converted exactly once into a "restricted plan," and every subsequent tool call
+is checked against that plan (default-deny). As a result, even if the agent is
+hijacked by prompt injection or tool-result poisoning, **operations the user did
+not actually request cannot be executed**.
 
-手法そのものは論文 **"PAuth – Precise Task-Scoped Authorization For Agents"**
-(Sharma, Jiang, Lin & Chen, arXiv:2603.17170) に基づきます。
+The method itself is based on the paper **"PAuth – Precise Task-Scoped
+Authorization For Agents"** (Sharma, Jiang, Lin & Chen, arXiv:2603.17170).
 
-## 解決する課題
+## The problem it solves
 
-実システム（銀行・メール・社内 SaaS）にアクセスできる自律エージェントは、
-インジェクション一発で「攻撃者の宛先に送金」「機密メールを転送」といった、
-ユーザーが指示していない操作を実行しうる。既存の対策は (a) エージェント本体を
-改造するか、(b) LLM 自身に自分を取り締まらせる かのどちらかに寄りがちで、
-前者は導入が重く、後者は乗っ取られた当人に判断を委ねている。
+An autonomous agent with access to real systems (banks, email, internal SaaS)
+can, from a single injection, execute operations the user never asked for, such
+as "wire money to the attacker's destination" or "forward confidential email."
+Existing countermeasures tend toward either (a) modifying the agent itself or
+(b) making the LLM police itself. The former is heavy to deploy, and the latter
+delegates the judgment to the very party that has been hijacked.
 
-PAuthGateway は強制点をエージェントの外に出す:
+PAuthGateway moves the enforcement point outside the agent:
 
-- **エージェントは無改造**。Claude Code の hook（将来は MCP/プロキシ）で
-  プロンプトとツール呼び出しを横取りするだけ。
-- **計画は一度だけ**。汚染されたツール出力を見た後にエージェントが計画を
-  書き換えることはできない（plan once / enforce every call）。
-- **強制は決定的**。許可判定に LLM は使わない。計画の生成（A1）だけが LLM で、
-  照合（A2/A3 と B1–B4）は完全に決定的。
-- **ゲートウェイが観測の権威**。各ツールの実行結果はゲートウェイが署名付き
-  envelope として記録し、エージェントが値を偽装しても後続の照合に影響しない。
+- **The agent is unmodified.** It only intercepts prompts and tool calls via
+  Claude Code hooks (later MCP/proxy).
+- **Plan once.** The agent cannot rewrite the plan after seeing poisoned tool
+  output (plan once / enforce every call).
+- **Enforcement is deterministic.** No LLM is used for the permit decision. Only
+  plan generation (A1) uses an LLM; the checking (A2/A3 and B1–B4) is fully
+  deterministic.
+- **The gateway is the authority on observation.** The gateway records each
+  tool's execution result as a signed envelope, so even if the agent forges a
+  value, it does not affect subsequent checks.
 
-詳細設計は [`docs/architecture.md`](docs/architecture.md)、防御範囲と非対象は
-[`docs/threat-model.md`](docs/threat-model.md) を参照。
+For the detailed design see [`docs/architecture.md`](docs/architecture.md); for
+the defense scope and non-targets see
+[`docs/threat-model.md`](docs/threat-model.md).
 
-## これは何「ではない」か
+## What this is *not*
 
-- 正しさの保証ではない。ユーザーが間違った計画を承認すれば、その計画の中で
-  間違ったことは起きる。PAuth は「ユーザーが頼んだ範囲を超えない」ことだけを保証する。
-- エージェント本体のサンドボックスではない。ゲートウェイが見るのはツール呼び出しのみ。
-  Bash やファイル操作の側チャネルは別の仕組み（サンドボックス等）が必要。
+- Not a guarantee of correctness. If the user approves a wrong plan, then wrong
+  things will happen within that plan. PAuth only guarantees that "it does not
+  exceed the scope the user requested."
+- Not a sandbox for the agent itself. The gateway only sees tool calls. Side
+  channels such as Bash or file operations require a separate mechanism (a
+  sandbox, etc.).
 
 ---
 
-## 設計の妥当性（再現実験）
+## Design validity (reproduction experiment)
 
-コアアルゴリズムが論文どおり zero FP / zero FN で成立することを、計測可能な形で
-実証しています。論文の中心的主張 — *NL slice と envelope によるタスクスコープ認可は、
-benign タスクをすべて許可し（zero FP）、混入された不正操作をすべて検出する（zero FN）*
-— を、実際に計測して検証できる形で再構築しました。
+We demonstrate, in a measurable form, that the core algorithm holds with zero FP
+/ zero FN exactly as in the paper. We reconstructed the paper's central claim —
+*task-scoped authorization via NL slices and envelopes permits all benign tasks
+(zero FP) and detects all injected illegitimate operations (zero FN)* — in a
+form that can actually be measured and verified.
 
-> **計測は正直です。** 実験ランナーは FP/FN を 0 と決め打ちしません。LLM が誤った
-> コードを生成すれば FP が出るし、slice が不正確なら FN が出ます。ランナーは
-> 起きたことをそのまま報告します（`ANOMALIES` セクション）。
+> **The measurement is honest.** The experiment runner does not hard-code FP/FN
+> to 0. If the LLM generates wrong code, an FP appears; if a slice is inaccurate,
+> an FN appears. The runner reports what actually happened (the `ANOMALIES`
+> section).
 
-### 実験結果（GPT-4.1, AgentDojo v1 + shopping）
+### Experiment results (GPT-4.1, AgentDojo v1 + shopping)
 
-`python -m eval.fpfn --suites all` の実測値:
+Measured values from `python -m eval.fpfn --suites all`:
 
 | Suite | #FN (#injection runs) | #FP (#benign runs) | A1 skipped |
 |-------|----------------------|--------------------|------------|
@@ -67,128 +75,139 @@ benign タスクをすべて許可し（zero FP）、混入された不正操作
 | workspace | 0 (164) | 0 (22) | 18 |
 | **Overall** | **0 (390)** | **0 (49)** | **50** |
 
-- **zero FP / zero FN** — A1 が文法に適合したコードを生成し実行できた全タスク
-  （benign 49 + forced injection 390 runs）で偽陽性・偽陰性ともに 0。論文 Table 2 の
-  中心的主張を再現。
-- **A1 skipped 50** — GPT-4.1 が制限文法外のコード（ループ・内包表記・メソッド
-  呼び出し・多重代入等）を生成したタスク。A1 ゲートで拒否され enforcer には到達しない。
-  論文は「GPT-4.1 は全100タスクで正しいコードを生成」と報告しており、本実装の A1
-  成功率はそれより低い（プロンプトの厳密さ・モデルスナップショットの差と推測）。
-- **code-crash 3** — 文法は満たすが論理バグ（`str > int` 等の型誤用）で実行時に
-  クラッシュしたコード。FP/FN ではなく `ANOMALIES` に別途報告。
+- **zero FP / zero FN** — Across all tasks where A1 generated grammar-conforming
+  code that could be executed (benign 49 + forced injection 390 runs), both false
+  positives and false negatives were 0. This reproduces the central claim of the
+  paper's Table 2.
+- **A1 skipped 50** — Tasks where GPT-4.1 generated code outside the restricted
+  grammar (loops, comprehensions, method calls, multiple assignment, etc.).
+  Rejected at the A1 gate, they never reach the enforcer. The paper reports that
+  "GPT-4.1 generated correct code for all 100 tasks," whereas this
+  implementation's A1 success rate is lower than that (presumably due to
+  differences in prompt strictness and model snapshot).
+- **code-crash 3** — Code that satisfies the grammar but crashes at runtime due
+  to a logic bug (type misuse such as `str > int`). Not FP/FN; reported
+  separately under `ANOMALIES`.
 
-この結果が示すのは論文 sec. 5.2 の通り — *slice/rule が正しく導出されれば、
-zero FP・zero FN は PAuth の設計上の自然な帰結* である、という点です。
+What this result shows is, as in the paper's sec. 5.2 — *if slices/rules are
+derived correctly, zero FP and zero FN are a natural consequence of PAuth's
+design.*
 
 ---
 
-## 論文との対応
+## Correspondence with the paper
 
-| 論文 | この実装 |
+| Paper | This implementation |
 |------|----------|
-| A1: 命令型コード生成（LLM, sec. 4.1.1） | `pauth/codegen.py`（OpenAI GPT-4.1, Appendix A のプロンプト） |
-| A2: NL slice 導出（sec. 3.3 / 4.1.2, 決定的） | `pauth/slicing.py` |
-| A3: ルールコンパイル（Algorithm 1, 決定的） | `pauth/rules.py` |
-| envelope（署名付き, sec. 3.4 / Fig. 3） | `pauth/envelope.py` |
-| B1-B4: ランタイム強制（sec. 4.1.3, 決定的） | `pauth/enforcer.py` |
-| 制限文法（Appendix A の BNF） | `pauth/grammar.py` |
-| AgentDojo 上の実装（sec. 4.1） | `experiment/agentdojo_adapter.py` |
-| Shopping スイート（sec. 5.1） | `pauth/suites/shopping.py` |
-| forced injection（sec. 5.1） | `experiment/forced_injection.py` |
-| FP/FN 評価（sec. 5.2, Table 2） | `eval/fpfn.py` |
+| A1: imperative code generation (LLM, sec. 4.1.1) | `pauth/codegen.py` (OpenAI GPT-4.1, prompt from Appendix A) |
+| A2: NL slice derivation (sec. 3.3 / 4.1.2, deterministic) | `pauth/slicing.py` |
+| A3: rule compilation (Algorithm 1, deterministic) | `pauth/rules.py` |
+| envelope (signed, sec. 3.4 / Fig. 3) | `pauth/envelope.py` |
+| B1-B4: runtime enforcement (sec. 4.1.3, deterministic) | `pauth/enforcer.py` |
+| restricted grammar (BNF from Appendix A) | `pauth/grammar.py` |
+| implementation on AgentDojo (sec. 4.1) | `experiment/agentdojo_adapter.py` |
+| Shopping suite (sec. 5.1) | `pauth/suites/shopping.py` |
+| forced injection (sec. 5.1) | `experiment/forced_injection.py` |
+| FP/FN evaluation (sec. 5.2, Table 2) | `eval/fpfn.py` |
 
-論文の通り、**LLM を要するのは A1 のみ**で、A2/A3/B1-B4 と envelope は完全に決定的です
-（論文 sec. 5.2: "The derivation of slices/rules ... is deterministic without LLM"）。
+As in the paper, **only A1 requires an LLM**; A2/A3/B1-B4 and the envelope are
+fully deterministic (paper sec. 5.2: "The derivation of slices/rules ... is
+deterministic without LLM").
 
 ---
 
-## セットアップ
+## Setup
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-Python 3.12 以降を推奨（3.14 で開発・検証済み）。
+Python 3.12 or later recommended (developed and verified on 3.14).
 
 ---
 
-## 1. オフライン検証（API キー不要）
+## 1. Offline verification (no API key required)
 
-論文の worked example（banking sec. 5.3 / shopping sec. 4・5.3）に対し、
-**API を一切呼ばずに** 決定的コア（A2/A3/B1-B4）の zero FP / zero FN を検証します。
+Against the paper's worked example (banking sec. 5.3 / shopping sec. 4 · 5.3),
+this verifies zero FP / zero FN of the deterministic core (A2/A3/B1-B4)
+**without calling any API**.
 
 ```bash
 .venv/bin/python -m tests.test_worked_examples
 ```
 
-検証内容:
-- slice 導出が論文 sec. 5.3 の図と一致すること
-- benign 実行ですべての呼び出しが許可されること（zero FP）
-- forced injection（不正な recipient / 金額の改ざん・不正な operator）が
-  すべて拒否されること（zero FN）
-- 実際の AgentDojo banking ツール・環境・pydantic オブジェクト上で動作すること
+What is verified:
+- that slice derivation matches the figures in the paper's sec. 5.3
+- that all calls are permitted in benign execution (zero FP)
+- that forced injection (illegitimate recipient / tampered amount / illegitimate
+  operator) is all rejected (zero FN)
+- that it works on the actual AgentDojo banking tools, environment, and pydantic
+  objects
 
-Shopping スイートは reference code を同梱するため、これも API なしで実行できます:
+The Shopping suite ships with reference code, so it too can run without an API:
 
 ```bash
 .venv/bin/python -m eval.fpfn --suites shopping
 ```
 
-### 想定外攻撃プローブ（API キー不要）
+### Unexpected-attack probes (no API key required)
 
-AgentDojo の injection task 由来ではない攻撃を、正しい slice が生成済みという前提で
-直接 enforcer に投げるテストです。Shopping に加え、AgentDojo の banking / slack /
-travel / workspace の実ツールでも確認します:
+A test that throws attacks not derived from AgentDojo injection tasks directly at
+the enforcer, under the precondition that a correct slice has already been
+generated. In addition to Shopping, it also checks against the real tools of
+AgentDojo banking / slack / travel / workspace:
 
 ```bash
 .venv/bin/python -m tests.test_unexpected_attacks
 ```
 
-検証する攻撃:
-- off-slice な sensitive operator / read operator
-- 宛先・金額・件名・日付・商品名の改ざん
-- upstream envelope が存在しない状態での direct call
-- guard が false の branch にある呼び出しの強制
-- signed envelope の改ざん
+Attacks verified:
+- off-slice sensitive operator / read operator
+- tampering of recipient, amount, subject, date, or product name
+- direct call in a state where no upstream envelope exists
+- enforcement of a call in a branch where the guard is false
+- tampering of a signed envelope
 
-結果の解釈は厳密にしてください。PAuth は task-scope 認可なので off-slice 攻撃は拒否できますが、
-**正規 slice と完全一致する replay は許可されます**。これは実装バグではなく、PAuth の認可境界です。
+Interpret the results strictly. Because PAuth is task-scope authorization, it can
+reject off-slice attacks, but **a replay that exactly matches the legitimate
+slice is permitted**. This is not an implementation bug; it is PAuth's
+authorization boundary.
 
 ---
 
-## 2. フル実験（OpenAI API キーが必要）
+## 2. Full experiment (OpenAI API key required)
 
-AgentDojo の 4 スイート（banking / slack / travel / workspace）について、
-A1 を **OpenAI GPT-4.1** で実行し、論文 Table 2 形式の FP/FN を計測します。
+For the four AgentDojo suites (banking / slack / travel / workspace), this runs
+A1 with **OpenAI GPT-4.1** and measures FP/FN in the paper's Table 2 format.
 
 ```bash
-cp .env.example .env          # .env に OPENAI_API_KEY を記入
+cp .env.example .env          # write OPENAI_API_KEY into .env
 .venv/bin/python -m eval.fpfn --suites all
 ```
 
-`.env` を使わず環境変数でも可:
+An environment variable also works, without `.env`:
 
 ```bash
 OPENAI_API_KEY=sk-... .venv/bin/python -m eval.fpfn --suites all
 ```
 
-**オプション**
+**Options**
 
-| フラグ | 説明 |
+| Flag | Description |
 |--------|------|
-| `--suites all` | shopping + AgentDojo 4 スイート（既定） |
-| `--suites banking,shopping` | スイートを指定 |
-| `--limit N` | 各スイート先頭 N タスクのみ（安価な動作確認用） |
-| `--model gpt-4.1` | A1 のモデル（`gpt-5-mini` 等も可） |
-| `--no-cache` | キャッシュ済み生成コードを無視して再生成 |
-| `--out path.json` | 結果 JSON の出力先 |
+| `--suites all` | shopping + the 4 AgentDojo suites (default) |
+| `--suites banking,shopping` | specify suites |
+| `--limit N` | only the first N tasks of each suite (for cheap sanity checks) |
+| `--model gpt-4.1` | A1's model (`gpt-5-mini` etc. also possible) |
+| `--no-cache` | ignore cached generated code and regenerate |
+| `--out path.json` | output path for the result JSON |
 
-**コストと時間の目安**: 1 タスクあたり約 $0.002–0.04（論文 Fig. 10）。
-全 97 タスクで概ね $1–4、10 分程度。生成コードは `experiment/cache/` に
-キャッシュされるため、2 回目以降の再実行は無料です。
+**Cost and time estimate**: about $0.002–0.04 per task (paper Fig. 10). Roughly
+$1–4 and about 10 minutes for all 97 tasks. Generated code is cached under
+`experiment/cache/`, so re-runs after the first are free.
 
-まず安価に試すなら:
+To try cheaply first:
 
 ```bash
 .venv/bin/python -m eval.fpfn --suites banking --limit 3
@@ -196,7 +215,7 @@ OPENAI_API_KEY=sk-... .venv/bin/python -m eval.fpfn --suites all
 
 ---
 
-## 出力の読み方
+## How to read the output
 
 ```
 Suite       #FN (#injection runs)     #FP (#benign runs)      A1 skipped
@@ -205,86 +224,95 @@ banking     0 (166)                   0 (16)                  0
 Overall     0 (756)                   0 (97)                  0
 ```
 
-- **#FP (#benign runs)** — benign 実行のうち、何らかの呼び出しが拒否されたタスク数。
-- **#FN (#injection runs)** — forced injection のうち PAuth が許可してしまった件数。
-- **A1 skipped** — API キー不在やコード生成エラーで評価不能だったタスク数。
-- **ANOMALIES** — FP/FN または生成コードのクラッシュが起きたタスクの詳細。
-  ここが空であれば zero FP / zero FN が成立しています。
+- **#FP (#benign runs)** — number of benign-execution tasks in which some call
+  was rejected.
+- **#FN (#injection runs)** — number of forced injections that PAuth ended up
+  permitting.
+- **A1 skipped** — number of tasks that could not be evaluated due to a missing
+  API key or a code-generation error.
+- **ANOMALIES** — details of tasks where an FP/FN or a crash of generated code
+  occurred. If this is empty, zero FP / zero FN holds.
 
-詳細は `experiment/results/results.json`（タスクごとの slice・拒否理由・
-トークンコストを含む）に出力されます。
-
----
-
-## FP/FN の計測方法
-
-- **FP（benign）**: A1 が生成したコードを *実際に実行* し、各ツール呼び出しを
-  enforcer に通します。1 つでも拒否されればそのタスクは FP。
-  ルールは同じコードから導出されるため、実装が正しければ FP は 0 になるはずです
-  — もし出れば、それは A1 のコード品質か実装の不整合を示す本物の信号です。
-- **FN（injection）**: forced injection は「benign タスクに紛れ込んだ不正操作」
-  （論文 sec. 5.1）。benign 実行後の envelope ストアを前提に、不正呼び出しを
-  enforcer に提示します。`tool` のいずれかのルールが許可すれば FN。
-  PAuth は default-deny（厳密一致するルールがなければ拒否）です。
-- forced injection は 2 種類: ①operand 改ざん（recipient を攻撃者宛に / 金額を増額）、
-  ②不正 operator（AgentDojo の injection task が持つ機微な呼び出し）。
-
-テストハーネスは vacuous ではありません: on-slice な呼び出しを injection として
-渡せば許可（=FN として検出）されることを確認済みです。
+Details are written to `experiment/results/results.json` (including per-task
+slice, rejection reason, and token cost).
 
 ---
 
-## 構成
+## How FP/FN is measured
+
+- **FP (benign)**: The code generated by A1 is *actually executed*, and each tool
+  call is passed through the enforcer. If even one is rejected, that task is an
+  FP. Since the rules are derived from the same code, if the implementation is
+  correct, FP should be 0 — and if one appears, it is a genuine signal of either
+  A1's code quality or an inconsistency in the implementation.
+- **FN (injection)**: A forced injection is "an illegitimate operation slipped
+  into a benign task" (paper sec. 5.1). Given the envelope store after benign
+  execution, an illegitimate call is presented to the enforcer. If any rule for
+  the `tool` permits it, it is an FN. PAuth is default-deny (rejects if there is
+  no exactly matching rule).
+- Forced injection comes in 2 kinds: (1) operand tampering (recipient → attacker,
+  or amount increased), (2) illegitimate operator (a sensitive call that
+  AgentDojo's injection task carries).
+
+The test harness is not vacuous: it is verified that passing an on-slice call as
+an injection is permitted (i.e., detected as an FN).
+
+---
+
+## Structure
 
 ```
-pauth/                  PAuth コア機構（フレームワーク非依存・大半が決定的）
-  grammar.py            制限文法のパーサ／検証／dead-code 除去（Appendix A）
-  slicing.py            A2: NL slice 導出
-  rules.py              A3: Algorithm 1 によるルールコンパイル
-  envelope.py           envelope データ構造・HMAC 署名・store
-  evaluator.py          slice 式の決定的評価器（ヘルパ len/min/max/first/last 含む）
-  enforcer.py           B1-B4: ランタイム強制 + サンドボックス実行器
-  codegen.py            A1: OpenAI によるコード生成（Appendix A プロンプト）
-  pipeline.py           A1→A2→A3 の結線
-  suites/shopping.py    論文の Shopping スイート（自己完結）
+pauth/                  PAuth core mechanism (framework-independent, mostly deterministic)
+  grammar.py            restricted-grammar parser / validator / dead-code elimination (Appendix A)
+  slicing.py            A2: NL slice derivation
+  rules.py              A3: rule compilation via Algorithm 1
+  envelope.py           envelope data structure, HMAC signing, store
+  evaluator.py          deterministic evaluator for slice expressions (including helpers len/min/max/first/last)
+  enforcer.py           B1-B4: runtime enforcement + sandboxed executor
+  codegen.py            A1: code generation via OpenAI (Appendix A prompt)
+  pipeline.py           wiring of A1→A2→A3
+  suites/shopping.py    the paper's Shopping suite (self-contained)
 gateway/
-  api_spec_monitor.py   OpenAPI仕様の変更検知・通知用レポート生成
-  gateway.py            plan once / enforce every call のランタイム境界
-  openapi_suite.py      OpenAPI 3.x 仕様 → SuiteSpec 自動反映
-  planner.py            差し替え可能な A1 戦略（決定的recognizer / LLM free-form）
-  agent_channel.py      エージェント向け JSON メッセージ境界
-  http_server.py        ローカルHTTP daemon
+  api_spec_monitor.py   report generation for OpenAPI-spec change detection / notification
+  gateway.py            the plan once / enforce every call runtime boundary
+  openapi_suite.py      automatic reflection of OpenAPI 3.x spec → SuiteSpec
+  planner.py            swappable A1 strategy (deterministic recognizer / LLM free-form)
+  agent_channel.py      JSON message boundary for the agent
+  http_server.py        local HTTP daemon
 docs/
-  architecture.md       論理設計（システム全体）
-  threat-model.md       防御境界（in / out of scope）
-  self-hosting.md       セルフホスト版・ネットワーク接続版の設計境界
-  ingress-design.md     ingress 二モード（SDK / interception）設計
-  planning-strategies.md A1 戦略カタログ（対話構造化 / 専用モデル / 形式解析）
-  design-status.md      現状設計 / 議論中 / 不可能 / ボトルネックの整理
-  business-operations.md OSS無料範囲 / 商用運用 / 課金境界の整理
+  architecture.md       logical design (whole system)
+  threat-model.md       defense boundary (in / out of scope)
+  self-hosting.md       design boundaries of the self-hosted / network-connected versions
+  ingress-design.md     ingress two-mode (SDK / interception) design
+  planning-strategies.md A1 strategy catalog (dialogue structuring / dedicated model / formal analysis)
+  design-status.md      organization of current design / under discussion / impossible / bottlenecks
+  business-operations.md organization of OSS free scope / commercial operation / billing boundary
 tests/experiment/
-  agentdojo_adapter.py  AgentDojo 4 スイートを共通 IF に正規化
-  forced_injection.py   forced injection 生成（sec. 5.1）
+  agentdojo_adapter.py  normalizes the 4 AgentDojo suites to a common interface
+  forced_injection.py   forced injection generation (sec. 5.1)
 eval/
-  fpfn.py               FP/FN 実験ランナー（Table 2 / Fig. 10）
-  freeform.py           自由形式 A1 の計測ランナー
+  fpfn.py               FP/FN experiment runner (Table 2 / Fig. 10)
+  freeform.py           measurement runner for free-form A1
 tests/
-  test_worked_examples.py  オフライン zero-FP/FN 検証（API キー不要）
+  test_worked_examples.py  offline zero-FP/FN verification (no API key required)
 ```
 
 ---
 
-## 再現範囲についての注記
+## Notes on reproduction scope
 
-- **A1 のモデル**: 論文は GPT-4.1 を主とし、GPT-5-Mini / Gemini-3-Flash /
-  Sonnet-4.5 も部分評価。本実装は OpenAI 系のみ既定対応（`--model` で切替）。
-- **envelope 署名**: 論文の multi-host ではサーバ間で署名付き envelope を交換。
-  本実装は AgentDojo に合わせた single-host 構成で、共有メモリの envelope store に
-  HMAC 署名を付与（論文 sec. 4.1.3 の構成に忠実）。
-- **Shopping スイート**: 論文独自スイートのため、論文の例（sec. 4 / 5.3）に基づき
-  自己完結で再構築（タスク 2 件、reference code 同梱）。
-- **forced injection 件数**: 論文は各タスク向けに手作りした 634 件。本実装は
-  AgentDojo の injection task と operand 改ざんから自動生成するため件数は一致せず
-  （約 750 件）、より広めの探索になります。
-- AgentDojo `v1` のタスク数は banking 16 / slack 21 / travel 20 / workspace 40。
-  論文の集計（slack 19）とは僅差です。
+- **A1's model**: The paper primarily uses GPT-4.1, with partial evaluation of
+  GPT-5-Mini / Gemini-3-Flash / Sonnet-4.5. This implementation supports only the
+  OpenAI family by default (switchable with `--model`).
+- **envelope signing**: In the paper's multi-host setup, signed envelopes are
+  exchanged between servers. This implementation uses a single-host configuration
+  matched to AgentDojo, attaching HMAC signatures to a shared-memory envelope
+  store (faithful to the paper's sec. 4.1.3 configuration).
+- **Shopping suite**: Since it is the paper's own suite, it is reconstructed
+  self-contained based on the paper's examples (sec. 4 / 5.3) (2 tasks, reference
+  code included).
+- **forced injection count**: The paper hand-crafted 634 cases per task. Because
+  this implementation auto-generates from AgentDojo's injection tasks and operand
+  tampering, the count does not match (about 750), making for a broader search.
+- AgentDojo `v1` task counts are banking 16 / slack 21 / travel 20 /
+  workspace 40. This differs only slightly from the paper's tally (slack 19).

@@ -1,130 +1,144 @@
 # Self-hosted gateway direction
 
-このドキュメントは、現行の PAuth ゲートウェイを、既存のエージェントユーザが
-日々のエージェントワークフローを変えずに接続できる自己ホスト型アプリへと
-仕立てるための、プロダクト目標とエンジニアリング境界を記録する。
+This document records the product goals and engineering boundaries for turning
+the current PAuth gateway into a self-hosted app that existing agent users can
+connect to without changing their day-to-day agent workflow.
 
 ## Target
 
-ユーザはエージェントのプロンプト・エージェントのコード・ツール定義のいずれも
-編集すべきではない。目標はこうだ。初期セットアップ後、ユーザの通常のエージェント
-ワークフローは変わらないように感じられ、その裏でゲートウェイがすべての外向き
-アクションを観測し強制する。
+The user should not have to edit the agent's prompt, the agent's code, or the
+tool definitions. The goal is this: after initial setup, the user's normal agent
+workflow feels unchanged, while behind the scenes the gateway observes and
+enforces every outbound action.
 
-初期セットアップでは、ゲートウェイ統合のインストール／有効化を行ってよい。
-実際にはこれは次の両方を意味する。
+Initial setup may involve installing/enabling the gateway integration. In
+practice this means both of the following.
 
-1. クリーンなユーザプロンプトと試行されたツール呼び出しをゲートウェイへ転送する
-   ライフサイクル hook/プラグイン。
-2. エージェントが外向きアクションでゲートウェイをバイパスするのを防ぐ
-   ネットワーク／ツール経路。
+1. A lifecycle hook/plugin that forwards the clean user prompt and attempted tool
+   calls to the gateway.
+2. A network/tool route that prevents the agent from bypassing the gateway on
+   outbound actions.
 
-この目標が成立するのは、ゲートウェイが次の2つを観測できるときに限られる。
+This goal holds only when the gateway can observe the following two things.
 
-1. ツール結果のインジェクションが計画に影響を与える前の、ユーザのタスクプロンプト。
-2. 具体的なツール名と引数を伴う、すべての外向きツール呼び出し。
+1. The user's task prompt, before tool-result injection can influence the plan.
+2. Every outbound tool call, with concrete tool names and arguments.
 
-対象エージェントがどちらか一方でも、hook/プロキシで観測可能なプロトコル境界を
-通さずに暗号化・隠蔽・内部実行する場合、透過的なネットワーク設定だけでは PAuth
-強制を提供できない。せいぜい宛先単位の粗い allow/deny を提供できるにとどまる。
+If the target agent encrypts, hides, or internally executes either of these
+without passing through a protocol boundary observable via hook/proxy, then a
+transparent network configuration alone cannot provide PAuth enforcement. At
+best it can provide coarse per-destination allow/deny.
 
 ## Setup Boundary
 
-近期で最良のプロダクト契約は「ゼロセットアップ」ではない。次のものだ。
+The best product contract in the near term is not "zero setup." It is the
+following.
 
-- **No agent code changes**: エージェントのバイナリ／ランタイムは未改変のまま。
-- **No prompt workflow changes**: ユーザは引き続きエージェントにタスクを打ち込む。
-- **Gateway setup required once**: hook/プラグインのインストール／有効化、gateway URL
-  の設定、strict/log モードの設定、そして登録済みツール／API 呼び出しをゲートウェイ
-  経由に経路付けする。
-- **Observable health**: ゲートウェイは hook とツール経路が有効かどうかを可視化
-  しなければならない。サイレント障害は無保護より悪い。
+- **No agent code changes**: the agent's binary/runtime stays unmodified.
+- **No prompt workflow changes**: the user keeps typing tasks into the agent.
+- **Gateway setup required once**: install/enable the hook/plugin, configure the
+  gateway URL, set strict/log mode, and route registered tool/API calls through
+  the gateway.
+- **Observable health**: the gateway must make visible whether the hook and tool
+  route are active. Silent failure is worse than no protection.
 
-セットアップがより軽いことを約束する代替案は、いずれも弱い。
+Every alternative that promises lighter setup is weaker.
 
 | Alternative | Why it is not enough |
 |---|---|
-| Pure network/TLS proxy | クリーンなプロンプト・意味的なツール名・構造化された引数を回復できないのが通例。 |
-| SaaS-side only enforcement | すべての SaaS が PAuth を採用するか、互換のポリシ hook を公開することを要求する。 |
-| Agent-vendor native integration | UX は最良だが、ベンダー採用に依存し、自己ホスト側で制御できない。 |
-| Browser/OS observation only | 脆く、決定的・可搬にするのが難しい。 |
+| Pure network/TLS proxy | Typically cannot recover the clean prompt, the semantic tool name, or the structured arguments. |
+| SaaS-side only enforcement | Requires every SaaS to adopt PAuth or expose a compatible policy hook. |
+| Agent-vendor native integration | Best UX, but depends on vendor adoption and cannot be controlled from the self-hosted side. |
+| Browser/OS observation only | Fragile, and hard to make deterministic and portable. |
 
-したがって実用的なアーキテクチャは **gateway app plus agent integration** である。
-ネットワークのファイアウォールだけがセキュリティ境界なのではなく、ライフサイクル
-hook が PAuth に必要な意味的イベントを供給する。
+Therefore the practical architecture is **gateway app plus agent integration**.
+The network firewall is not the only security boundary; the lifecycle hook
+supplies the semantic events PAuth needs.
 
 ## Protection Precondition: No Raw Side Channels (Stage 1)
 
-Stage 1 の保護主張は次の前提でのみ成立する(決定記録: S6、B5)。
+The Stage 1 protection claim holds only under the following preconditions
+(decision records: S6, B5).
 
-- エージェントは生 Bash・直接ネットワーク I/O・観測されない credential 経路を
-  **持たない**。外向きアクションはすべて gateway 経由の tool call である。
-- この前提を満たさないデプロイ(例: Bash が有効な Claude Code)は L3 保護として
-  訴求してはならない。実効保護レベルを正直に L1/L2 として報告すること。
-- 側チャネルの gate 機構(allowlist / sandbox / FS 仮想化 / 応答書き換え)は
-  Stage 6(Mode 2)の議題であり、Stage 1 には含まれない。
+- The agent **does not** have raw Bash, direct network I/O, or unobserved
+  credential paths. Every outbound action is a tool call through the gateway.
+- A deployment that does not satisfy this precondition (e.g. Claude Code with
+  Bash enabled) must not be marketed as L3 protection. Report the effective
+  protection level honestly as L1/L2.
+- Side-channel gate mechanisms (allowlist / sandbox / FS virtualization /
+  response rewriting) are the agenda of Stage 6 (Mode 2) and are not included in
+  Stage 1.
 
-## Egress Lockdown: Stage 1 前提を「仮定」から「強制」へ
+## Egress Lockdown: turning the Stage 1 precondition from "assumption" into "enforcement"
 
-上の前提「エージェントは生 Bash・直接ネットワーク I/O を持たない」を、**セットアップ
-時に OS のネットワーク経路で強制**する。これがなければ前提は単なる仮定であり、
-PreToolUse hook を迂回する経路(許可ツールが生む subprocess、shell に落ちる MCP
-サーバ、注入で `curl` を exec するツール)は素通りする(場合 B)。
+Enforce the above precondition "the agent has no raw Bash and no direct network
+I/O" **through the OS network path at setup time**. Without this, the precondition
+is a mere assumption, and paths that bypass the PreToolUse hook (a subprocess
+spawned by an allowed tool, an MCP server that drops to a shell, a tool that
+execs `curl` on injection) pass through unchecked (case B).
 
-### やること
+### What to do
 
-エージェントアプリ(Claude Code / Codex 等)を**専用の非管理ユーザ**で動かし、その
-ユーザの外向き通信を**ゲートウェイのホスト:ポートだけ**に制限する。setup の一部と
-して、管理者権限で次を一度実行する。
+Run the agent app (Claude Code / Codex etc.) as a **dedicated non-admin user**,
+and restrict that user's outbound communication to **only the gateway's
+host:port**. As part of setup, run the following once with admin privileges.
 
 ```
 sudo AGENT_USER=pauth-agent GATEWAY_HOST=127.0.0.1 GATEWAY_PORT=8081 gateway/deploy/egress_lockdown.sh apply
 ```
 
-これは `gateway/deploy/egress_lockdown.sh` が Linux では nftables/iptables の
-`uid-owner` ルール、macOS では pf の `user` ルールとして適用する。子プロセスは UID を
-継承するため、エージェントが何のコマンドを打とうとツリー全体が同じ制限下に入る。
+`gateway/deploy/egress_lockdown.sh` applies this as an `uid-owner` rule in
+nftables/iptables on Linux, and as a pf `user` rule on macOS. Because child
+processes inherit the UID, whatever command the agent issues, the entire tree
+falls under the same restriction.
 
-### なぜ通信の中身を読めなくても弾けるのか
+### Why you can block it even without reading the traffic content
 
-宛先をゲートウェイに固定すると、迂回の試みは2つの結末しかなく、どちらも失敗する。
+Once the destination is pinned to the gateway, a bypass attempt has only two
+outcomes, and both fail.
 
-1. **外部ホスト宛て**(例: `curl bank.example`)→ このルールが**カーネルで drop**。
-   外に出ない。ゲートウェイは見もしない。
-2. **ゲートウェイ宛て**(唯一到達可能な宛先)→ ゲートウェイが受け取り、**default-deny**
-   なので、正規の認可済みツール呼び出しでないものは拒否する。
+1. **Bound for an external host** (e.g. `curl bank.example`) → this rule
+   **drops it in the kernel**. It never leaves. The gateway never even sees it.
+2. **Bound for the gateway** (the only reachable destination) → the gateway
+   receives it, and because it is **default-deny**, it rejects anything that is
+   not a legitimately authorized tool call.
 
-したがってゲートウェイは不透明な `curl` の**バイトを解読する必要がない**。不透明な
-通信は「行き先がない(drop)」か「default-deny のゲートウェイに着く(拒否)」の
-いずれかで、必ず fail-closed になる。これが「解読するのではなく無力化する」設計で、
-実効保護を honest な L0/L1 から L2/L3 へ引き上げる土台になる。
+Therefore the gateway **does not need to decode the bytes** of an opaque `curl`.
+Opaque traffic either "has nowhere to go (drop)" or "arrives at a default-deny
+gateway (reject)," so it always fail-closes. This is a "neutralize rather than
+decode" design, and it is the foundation for raising effective protection from an
+honest L0/L1 to L2/L3.
 
-### 管理者権限を与えるとバイパスされる(必ず明記)
+### Granting admin privileges bypasses this (must be stated)
 
-**この制御は「エージェントがルールを外せないこと」の上にのみ成立する。** エージェントを
-root / 管理者 / sudo 可能なユーザで動かすと、エージェント(または注入で走らされた
-コード)が firewall ルールを flush し、外部サーバへ直接到達して**ゲートウェイを迂回
-できる**。スクリプトは対象が root の場合に適用を拒否し、適用後にこの警告を出力する。
-**エージェントには管理者権限を与えないこと。** 与えた時点で本制御は無効になり、
-実効保護レベルは L1/L2 として正直に報告しなければならない。
+**This control holds only on top of "the agent cannot remove the rule."** If you
+run the agent as root / admin / a sudo-capable user, the agent (or code made to
+run by injection) can flush the firewall rule, reach an external server directly,
+and **bypass the gateway**. The script refuses to apply when the target is root,
+and prints this warning after applying. **Do not grant the agent admin
+privileges.** The moment you do, this control is void, and the effective
+protection level must be honestly reported as L1/L2.
 
-### 覆わないもの(別途対処)
+### What it does not cover (handle separately)
 
-- **非ネットワークの副作用**(ローカルファイル改ざん、秘密の仕込み)は egress 制限では
-  防げない。ファイルシステム側で別に縛る。
-- **ゲートウェイ自身の egress**: ゲートウェイは実 SaaS に出る必要があるので、エージェント
-  とは**別ユーザ**で動かし、本ルールに巻き込まれないようにする。
-- DNS / IPv6 / QUIC(UDP): スクリプトはエージェントの外部 DNS・IPv6・UDP をまとめて
-  drop する(ゲートウェイが実呼び出しを行うのでエージェントは外部 DNS を要さない)。
-  独自リゾルバ固定の DoH を使うクローズドコードには、別途 DoH 宛先の遮断が要る。
+- **Non-network side effects** (local file tampering, planting secrets) cannot be
+  prevented by egress restriction. Constrain them separately on the filesystem
+  side.
+- **The gateway's own egress**: the gateway needs to reach the real SaaS, so run
+  it as a **separate user** from the agent so it is not caught by this rule.
+- DNS / IPv6 / QUIC (UDP): the script drops the agent's external DNS, IPv6, and
+  UDP together (the agent needs no external DNS because the gateway makes the real
+  calls). Closed-source code that uses DoH pinned to its own resolver needs
+  separate blocking of the DoH destinations.
 
 ## Prompt Capture Boundary
 
-ゲートウェイが、あらゆるエージェントから単一のメカニズムでプロンプトを取得する
-ことは現実的ではない。目標は「同じ捕捉メカニズム」ではなく、「捕捉後の同じ
-正規化イベント」である。
+It is not realistic for the gateway to capture the prompt from every agent with a
+single mechanism. The goal is not "the same capture mechanism" but "the same
+normalized event after capture."
 
-すべての統合は、ネイティブなプロンプトシグナルを次の形に翻訳すべきだ。
+Every integration should translate the native prompt signal into the following
+form.
 
 ```json
 {
@@ -136,28 +150,30 @@ root / 管理者 / sudo 可能なユーザで動かすと、エージェント(�
 }
 ```
 
-現行コードは `gateway/ingress/agent_channel.py` 内の `PromptMessage` を正規化
-プロンプトイベントとして用いる。将来のプロンプト捕捉アダプタも、同じ境界へ
-供給すべきである。
+The current code uses `PromptMessage` in `gateway/ingress/agent_channel.py` as the
+normalized prompt event. Future prompt-capture adapters should also feed the same
+boundary.
 
-プロンプト捕捉の選択肢を、強い順から弱い順に並べる。
+The prompt-capture options, ordered from strongest to weakest.
 
 | Capture route | Strength | Problem |
 |---|---|---|
-| Agent lifecycle hook/plugin | 利用可能なときの近期最良の経路。ツール実行前にプロンプトを捕捉する。 | エージェントごとの統合作業が必要。 |
-| Gateway-owned prompt entrypoint | 最高の完全性。ユーザはまずゲートウェイ経由でタスクを入力する。 | ユーザワークフローを変える。許容できるときのみ使う。 |
-| MCP/session metadata | エージェントがタスクメタデータをツールサーバへ送る場合は有望。 | 普遍的に利用可能でも標準化されてもいない。 |
-| Browser/desktop extension | hook を持たないエージェントを支援できる。 | 脆く、アプリ固有で、順序性を証明しにくい。 |
-| Manual confirmation fallback | 安全上クリティカルなアクションに有用。 | ワークフローを変え、摩擦を加える。 |
+| Agent lifecycle hook/plugin | The best near-term route when available. Captures the prompt before tool execution. | Requires per-agent integration work. |
+| Gateway-owned prompt entrypoint | Highest completeness. The user enters the task through the gateway first. | Changes the user workflow. Use only when acceptable. |
+| MCP/session metadata | Promising when the agent sends task metadata to the tool server. | Neither universally available nor standardized. |
+| Browser/desktop extension | Can help agents that have no hook. | Fragile, app-specific, and hard to prove ordering for. |
+| Manual confirmation fallback | Useful for safety-critical actions. | Changes the workflow and adds friction. |
 
-ゲートウェイはセッションごとに保護レベル(L0–L3)を追跡すべきである。**L0–L3 の正典
-定義はコード `gateway/runtime/protection.py` の `ProtectionLevel`**(人間向けの表は
-`design-status.md`「現行の保護モデル」)。ここでは要点のみ:
+The gateway should track the protection level (L0–L3) per session. **The canonical
+definition of L0–L3 is `ProtectionLevel` in the code `gateway/runtime/protection.py`**
+(the human-facing table is in `design-status.md`, "Current protection model").
+Here only the essentials:
 
-- **L2 未満を「完全な保護」と呼んではならない。** PAuth 流の主張は L2(clean prompt ＋
-  ツール呼び出し)から始まり、設計目標は L3(＋ gateway that ツールを実行)。
-- clean prompt 捕捉または route 制御が欠けるセッションは、完全な PAuth 保護として
-  訴求しない。
+- **Do not call anything below L2 "full protection."** The PAuth-style claim
+  starts at L2 (clean prompt + tool call), and the design goal is L3 (+ gateway
+  that executes the tools).
+- A session that lacks clean-prompt capture or route control is not marketed as
+  full PAuth protection.
 
 ## Architecture Shape
 
@@ -181,89 +197,89 @@ pauth.prepare() -> rules
 upstream tool/SaaS/MCP server
 ```
 
-安定した契約は正規化メッセージ境界である。
+The stable contract is the normalized message boundary.
 
-- `PromptMessage`: タスクプロンプトと planner オプション。
-- `ToolCallMessage`: 具体的なツール名と、順序付きまたは名前付きの引数。
+- `PromptMessage`: the task prompt and planner options.
+- `ToolCallMessage`: the concrete tool name and its ordered or named arguments.
 
-この境界より前のすべてはアダプタ／プロキシの作業だ。planner 境界より後の
-すべては PAuth の決定的コアである。
+Everything before this boundary is adapter/proxy work. Everything after the
+planner boundary is the deterministic core of PAuth.
 
 ## Planner Strategy
 
-A1 ロジックは意図的に揮発的だ。ゲートウェイはこれを HTTP/プロキシ表面の一部
-ではなく、置換可能な strategy として扱わなければならない。
+The A1 logic is intentionally volatile. The gateway must treat it as a replaceable
+strategy rather than part of the HTTP/proxy surface.
 
-strategy カタログは `planning-strategies.md` にある。近期の3つの枠は
-次のとおり。
+The strategy catalog is in `planning-strategies.md`. The three near-term frames
+are the following.
 
-- 「Grill me」スタイルの明確化ループによる対話的構造化。
-- 専用の imperative-code 生成モデルと validator のリトライ。
-- 狭い制御言語ドメイン向けの形式的自然言語解析。
+- Interactive structuring via a "Grill me"-style clarification loop.
+- A dedicated imperative-code generation model with a validator retry.
+- Formal natural-language parsing for a narrow control-language domain.
 
-ランタイムの strategy 切り替えは、現行の HTTP/hook デプロイでは
-`PAUTH_PLANNER_STRATEGY` という名前になっている。正規の値は `deterministic`、
-`llm-freeform`、`interactive-structuring`、`specialized-codegen`、
-`formal-semantic` である。将来のパッケージ化アプリは、planner 境界を変えずに、
-同じ名前を設定ファイルや UI 設定へ移せる。
+Runtime strategy switching is named `PAUTH_PLANNER_STRATEGY` in the current
+HTTP/hook deployment. The canonical values are `deterministic`, `llm-freeform`,
+`interactive-structuring`, `specialized-codegen`, and `formal-semantic`. A future
+packaged app can move the same names into a config file or UI setting without
+changing the planner boundary.
 
-現行の strategy:
+Current strategies:
 
-- `DeterministicRecognizerPlanner`: 厳格な正規表現サブセット。テストや高信頼の
-  デモに向く。
-- `LLMFreeformPlanner`: 文法修復と任意の intent judge を備えた、汎用の
-  prompt-to-code 生成。
+- `DeterministicRecognizerPlanner`: a strict regex subset. Suited to tests and
+  high-confidence demos.
+- `LLMFreeformPlanner`: general-purpose prompt-to-code generation with grammar
+  repair and an optional intent judge.
 
-将来の strategy は同じ planner の形を実装すべきである。
+Future strategies should implement the same planner shape.
 
-- ファインチューンされた prompt-to-code モデル。
-- リモートの planner サービス。
-- 人間がレビューする計画承認。
-- suite 固有の planner。
-- 検索と LLM を組み合わせたハイブリッド planner。
+- A fine-tuned prompt-to-code model.
+- A remote planner service.
+- Human-reviewed plan approval.
+- A suite-specific planner.
+- A hybrid planner combining search and an LLM.
 
-不変条件は、すべての strategy が制限された imperative な `run` コードを発行し、
-続いて `pauth.prepare()` が文法を検証し、slice を導出し、rules をコンパイルする
-ことである。いかなる planner も、その決定的検証をバイパスすることは許されない。
+The invariant is that every strategy emits restricted imperative `run` code, after
+which `pauth.prepare()` validates the grammar, derives the slices, and compiles
+the rules. No planner is allowed to bypass that deterministic validation.
 
 ## Self-hosted Foundation
 
-最小限の自己ホスト型アプリ:
+The minimal self-hosted app:
 
 1. **Configurable upstream registry**
-   - MCP/HTTP/SaaS のツールソースを登録する。
-   - ツールスキーマ・パラメータ順・戻りスキーマを保持する。
-   - 明示的に名前空間化されない限り、ツール名の衝突を拒否する。
-   - HTTP API については OpenAPI spec を `SuiteSpec` へ反映する。
-   - 上流 API spec の変更を検出し、新しいツール表面を受け入れる前にユーザへ
-     通知可能なレポートを発行する。
+   - Register MCP/HTTP/SaaS tool sources.
+   - Retain tool schemas, parameter order, and return schemas.
+   - Reject tool-name collisions unless explicitly namespaced.
+   - For HTTP APIs, reflect the OpenAPI spec into a `SuiteSpec`.
+   - Detect changes in the upstream API spec and issue a report that can notify
+     the user before accepting the new tool surface.
 
 2. **Ingress adapters**
-   - ツール境界が見える MCP/HTTP から始める。
-   - Claude Code hooks はプロダクトコアではなく、互換アダプタとして残す。
-   - プロトコル固有のアダプタは、エージェントによる書き換えを信頼せずに
-     プロンプトとツール呼び出しを露出できるときにのみ追加する。
+   - Start with MCP/HTTP, where the tool boundary is visible.
+   - Keep Claude Code hooks as a compatibility adapter, not the product core.
+   - Add protocol-specific adapters only when they can expose the prompt and tool
+     calls without trusting the agent's rewriting.
 
 3. **Planner plugin boundary**
-   - デプロイ／セッションごとに planner を選ぶ。
-   - 生成コード・検証失敗・リトライ履歴を監査用に保存する。
-   - 本番のデフォルト姿勢は、捏造ではなく不確実時拒否（reject-on-uncertain）に
-     すべきである。
+   - Choose the planner per deployment/session.
+   - Store generated code, validation failures, and retry history for audit.
+   - The default production posture should be reject-on-uncertain rather than
+     fabrication.
 
 4. **Session and audit store**
-   - プロンプト・選択された planner・生成コード・コンパイルされた rule サマリ・
-     決定・拒否・上流呼び出し結果を永続化する。
-   - envelope 署名鍵はデプロイにローカルで保つ。
+   - Persist the prompt, the selected planner, the generated code, the compiled
+     rule summary, decisions, rejections, and upstream call results.
+   - Keep the envelope signing key local to the deployment.
 
 5. **Operations surface**
-   - ツールソースと planner モードのための単一設定ファイル。
-   - 上流ツールと planner クレデンシャルのヘルスチェック。
-   - オンボーディング中はソースごとに strict/log モード。
-   - 設定済み OpenAPI ソースのための定期的な API-spec モニタ。
+   - A single config file for tool sources and planner mode.
+   - Health checks for upstream tools and planner credentials.
+   - Per-source strict/log mode during onboarding.
+   - A periodic API-spec monitor for configured OpenAPI sources.
 
 ## API Spec Reflection And Change Notification
 
-OpenAPI を裏付けとする suite は gateway 設定に登録できる。
+An OpenAPI-backed suite can be registered in the gateway config.
 
 ```json
 {
@@ -279,12 +295,12 @@ OpenAPI を裏付けとする suite は gateway 設定に登録できる。
 }
 ```
 
-gateway 起動時、`gateway/providers/openapi_suite.py` が現行の OpenAPI ドキュメントを
-`SuiteSpec` へ反映する。operation はツールになり、パラメータと JSON ボディの
-フィールドはツールのオペランドになり、レスポンススキーマは A1 のツールドキュメント
-になる。
+At gateway startup, `gateway/providers/openapi_suite.py` reflects the current
+OpenAPI document into a `SuiteSpec`. Operations become tools, parameters and JSON
+body fields become the tool's operands, and the response schema becomes the A1
+tool documentation.
 
-通知／更新ワークフローのためには、次を実行する。
+For the notification/update workflow, run the following.
 
 ```bash
 .venv/bin/python -m gateway.api_spec_monitor \
@@ -293,29 +309,28 @@ gateway 起動時、`gateway/providers/openapi_suite.py` が現行の OpenAPI �
   --update
 ```
 
-このモニタは、変更された spec・追加／削除されたツール・変更されたパラメータ
-リストを記述した JSON を発行する。自己ホスト型デプロイは、その JSON をメール・
-Slack・アプリ UI 通知・あるいは再起動／リロードのワークフローへ配線できる。
+This monitor emits JSON describing the changed spec, the added/removed tools, and
+the changed parameter lists. A self-hosted deployment can wire that JSON into
+email, Slack, an app UI notification, or a restart/reload workflow.
 
-現状の制限: 稼働中の `gateway/serving/http_server.py` は、変更された OpenAPI spec を
-ホットリロードしない。次の層では、認証付きのリロードエンドポイント、または
-ユーザが変更されたツール表面を受け入れた後にスーパーバイザ管理で再起動する
-仕組みを追加すべきである。
+Current limitation: the running `gateway/serving/http_server.py` does not hot-reload
+a changed OpenAPI spec. The next layer should add an authenticated reload
+endpoint, or a supervisor-managed restart after the user accepts the changed tool
+surface.
 
 ## Non-goals For The First Cut
 
-- 任意のエージェントに対する汎用 TLS MITM。運用上脆く、それ単体では意味的な
-  ツール名や引数を回復できない。
-- prompt-to-code の正しさの主張。PAuth は生成された計画を強制するのであって、
-  その計画がユーザの意図を忠実に捉えていることを証明するわけではない。
-- 完全な SaaS マルチテナントホスティング。近期目標は自己ホストの、単一ユーザ
-  または単一チームのデプロイである。
+- Generic TLS MITM against arbitrary agents. Operationally fragile, and on its own
+  it cannot recover semantic tool names or arguments.
+- Claims about the correctness of prompt-to-code. PAuth enforces the generated
+  plan; it does not prove that the plan faithfully captures the user's intent.
+- Full SaaS multi-tenant hosting. The near-term goal is a self-hosted,
+  single-user or single-team deployment.
 
 ## Immediate Engineering Order
 
-1. `pauth/` を安定かつフレームワーク中立に保つ。
-2. すべての A1 変種を `gateway.planner` の背後へ移す。
-3. `AgentChannel` の JSON メッセージを内部の正規化プロトコルとして扱う。
-4. 実際のエージェントトラフィックをそのプロトコルへ翻訳する ingress アダプタを
-   構築する。
-5. 正規化プロトコルが安定した後に、永続化／監査を追加する。
+1. Keep `pauth/` stable and framework-neutral.
+2. Move all A1 variants behind `gateway.planner`.
+3. Treat the `AgentChannel` JSON messages as the internal normalized protocol.
+4. Build ingress adapters that translate real agent traffic into that protocol.
+5. Add persistence/audit after the normalized protocol has stabilized.

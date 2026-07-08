@@ -1,30 +1,31 @@
 # Planning strategies
 
-gateway は、ひとつの prompt-to-code 手法に製品を賭けてはならない。PAuth の安定
-した境界は次のとおり:
+The gateway must not bet the product on a single prompt-to-code method. PAuth's
+stable boundary is as follows:
 
 ```text
 user intent -> restricted imperative run() code -> pauth.prepare() -> rules
 ```
 
-`pauth.prepare()` より前のすべては、差し替え可能な A1 strategy である。
+Everything before `pauth.prepare()` is a swappable A1 strategy.
 
 ## Strategy Names
 
-config、JSON メッセージ、環境変数では、これらの正準名を使うこと:
+In config, JSON messages, and environment variables, use these canonical names:
 
 | Name | Status | Meaning |
 |---|---|---|
-| `deterministic` | implemented | 既知の prompt パターンに対する Regex recognizer。 |
-| `llm-freeform` | implemented | grammar repair とオプションの judge を備えた汎用 LLM A1。 |
-| `auto` | implemented | recognizer fast-path、不一致なら `llm-freeform` へフォールバック（既定の main ingress 戦略、S2。別名 `hybrid`）。 |
-| `interactive-structuring` | registered | code 生成前の clarification ループ。 |
-| `specialized-codegen` | registered | 専用の imperative-code モデル + validator リトライ。 |
-| `formal-semantic` | registered | Formal NL parser / semantic analysis パス。 |
+| `deterministic` | implemented | Regex recognizer for known prompt patterns. |
+| `llm-freeform` | implemented | A general-purpose LLM A1 with grammar repair and an optional judge. |
+| `auto` | implemented | Recognizer fast-path, falling back to `llm-freeform` on a miss (the default main ingress strategy, S2; also known as `hybrid`). |
+| `interactive-structuring` | registered | A clarification loop before code generation. |
+| `specialized-codegen` | registered | A dedicated imperative-code model + validator retries. |
+| `formal-semantic` | registered | A formal NL parser / semantic analysis pass. |
 
-main ingress（`AgentChannel`）の既定は `auto`（`PAUTH_PLANNER_STRATEGY` 未設定時）。
-`PAUTH_PLANNER_SUITE` が無ければ `auto` はフォールバック先を持たず `deterministic` と同じ
-受理集合になる。`Gateway.submit_user_prompt` は `deterministic` を直接使う。
+The default for the main ingress (`AgentChannel`) is `auto` (when
+`PAUTH_PLANNER_STRATEGY` is unset). Without `PAUTH_PLANNER_SUITE`, `auto` has no
+fallback target and has the same acceptance set as `deterministic`.
+`Gateway.submit_user_prompt` uses `deterministic` directly.
 
 Runtime selection:
 
@@ -35,136 +36,142 @@ PAUTH_PLANNER_MODEL=gpt-4.1
 PAUTH_PLANNER_MAX_RETRIES=3
 ```
 
-registered だが未実装の strategy は、明確なメッセージとともに意図的に reject する。
-それらは strategy slot であって、黙った fallback ではない。
+A registered but unimplemented strategy is deliberately rejected with a clear
+message. They are strategy slots, not silent fallbacks.
 
 ## Strategy 1: Interactive Structuring
 
-A1 生成の前に、ガイド付きの「Grill me」スタイルの対話を使う。
+Before A1 generation, use a guided, "Grill me"-style dialogue.
 
 Flow:
 
-1. ユーザーの生の自然言語タスクから始める。
-2. 欠けている operand、条件、ツール、日付、数量、recipient、および曖昧性解消に
-   ついて、的を絞った質問をする。
-3. 構造化されたタスク prompt または構造化された intent object を生成する。
-4. その構造化表現を code generator に渡す。
-5. 生成された imperative code を `pauth.prepare()` で検証する。
+1. Start from the user's raw natural-language task.
+2. Ask targeted questions about missing operands, conditions, tools, dates,
+   quantities, recipients, and disambiguation.
+3. Produce a structured task prompt or a structured intent object.
+4. Pass that structured representation to the code generator.
+5. Validate the generated imperative code with `pauth.prepare()`.
 
-これは入力タスクが underspecified または曖昧なときに有用。また早期のプロダクト
-作業にも適している。モデルが黙って値を捏造させるのではなく、欠けている意図を
-可視化するからだ。
+This is useful when the input task is underspecified or ambiguous. It also suits
+early product work, because it surfaces the missing intent rather than letting
+the model silently fabricate values.
 
-Hard constraint: この strategy は計画の前に user-interaction surface を要する。
-gateway が user-facing な prompt ステップを所有していない限り、すでに走っている
-エージェントに対する「network config only」と同じではない。
+Hard constraint: this strategy requires a user-interaction surface before
+planning. Unless the gateway owns the user-facing prompt step, it is not the same
+as "network config only" for an agent that is already running.
 
 Failure mode:
 
-- agent firewall を装った form-filling プロダクトになりうる。
-- 質問が広すぎると、ユーザーは曖昧な答えを返し、planner はやはり詳細を捏造する。
-- 結果の構造化 prompt が監査可能でなければ、この strategy は hallucination を
-  code 生成から prompt 書き換えへ移すだけになる。
+- It can become a form-filling product masquerading as an agent firewall.
+- If the questions are too broad, the user gives vague answers and the planner
+  still fabricates the details.
+- If the resulting structured prompt is not auditable, this strategy merely moves
+  hallucination from code generation to prompt rewriting.
 
 Design implication:
 
-- interactive collector を PAuth core の外に保つ。
-- その出力を、もうひとつの planner 入力として扱う。
-- 生の prompt、質問、回答、最終的な構造化 prompt、生成された code、検証結果を
-  保存する。
+- Keep the interactive collector outside the PAuth core.
+- Treat its output as just another planner input.
+- Store the raw prompt, the questions, the answers, the final structured prompt,
+  the generated code, and the validation result.
 
 ## Strategy 2: Specialized Imperative-Code Model
 
-ユーザーのタスク + tool schema から restricted imperative `run` code を吐くこと
-だけを仕事とするモデルを訓練ないしチューニングする。
+Train or tune a model whose only job is to emit restricted imperative `run` code
+from the user's task + tool schema.
 
 Flow:
 
-1. ユーザータスクと利用可能な tool schema を提供する。
-2. 専用モデルが `def run(...): ...` を吐く。
-3. 決定的な validator を走らせる: grammar、semantic checks、slicing、rule
-   compilation。
-4. 検証が失敗したら、正確な validator エラーをフィードバックしてリトライする。
-5. リトライ予算が尽きたら、タスクを reject する。
+1. Provide the user task and the available tool schema.
+2. The dedicated model emits `def run(...): ...`.
+3. Run a deterministic validator: grammar, semantic checks, slicing, rule
+   compilation.
+4. On validation failure, retry with the exact validator error fed back.
+5. When the retry budget is exhausted, reject the task.
 
-これが機能すれば、gateway は手の込んだ prompt-template ロジックを必要としない。
-複雑さはモデルの訓練/評価と、小さな決定的 repair ループへ移る。
+If this works, the gateway needs no elaborate prompt-template logic. The
+complexity moves to the model's training/evaluation and a small deterministic
+repair loop.
 
-この strategy が魅力的なのは、runtime architecture がシンプルなまま保たれる
-からだ:
+This strategy is appealing because the runtime architecture stays simple:
 
-- 1回の generation call;
-- 1つの validator;
+- one generation call;
+- one validator;
 - bounded retries;
-- 失敗時の default-deny。
+- default-deny on failure.
 
-居心地の悪い部分はデータだ。十分な高品質の
-`prompt + tool schema -> restricted run() code` の例がなければ、この strategy は
-ラベルが良いだけの希望的観測にすぎない。モデルは grammar の妥当性だけでなく、
-exact intent capture で評価されねばならない。
+The uncomfortable part is the data. Without enough high-quality
+`prompt + tool schema -> restricted run() code` examples, this strategy is just
+wishful thinking with good labels. The model must be evaluated not only on
+grammar validity but on exact intent capture.
 
 Failure mode:
 
-- grammar 上は妥当だがユーザー意図を落とす code。
-- よくあるベンチマークは満たすが、実際のユーザー prompt では失敗する code。
-- toy suite に overfit し、実際の MCP ツールへ転移しない訓練データ。
+- Code that is grammatically valid but drops the user's intent.
+- Code that satisfies common benchmarks but fails on real user prompts.
+- Training data that overfits a toy suite and does not transfer to real MCP
+  tools.
 
 Design implication:
 
-- validator フィードバックを model-agnostic に保つ。
-- 失敗したすべての generation と validator エラーを訓練データとしてログする。
-- grammar 成功メトリクスを intent-faithfulness メトリクスから分離する。
+- Keep the validator feedback model-agnostic.
+- Log every failed generation and validator error as training data.
+- Separate the grammar-success metric from the intent-faithfulness metric.
 
 ## Strategy 3: Formal Natural-Language Analysis
 
-自然言語 prompt を形式化し、syntactic/semantic analysis を通して翻訳することで、
-LLM の役割をできる限り縮小する。
+Minimize the LLM's role as much as possible by formalizing the natural-language
+prompt and translating it through syntactic/semantic analysis.
 
 Candidate shape:
 
-1. 受理するタスク言語を制限する。
-2. formal grammar で prompt をパースする。例えば categorial grammar や関連する
-   compositional semantic parser。
-3. パース済みの semantic form を tool action、operand、guard、data dependency へ
-   マップする。
-4. restricted imperative `run` code を吐く。
-5. `pauth.prepare()` で検証する。
+1. Restrict the accepted task language.
+2. Parse the prompt with a formal grammar. For example, categorial grammar or a
+   related compositional semantic parser.
+3. Map the parsed semantic form to tool actions, operands, guards, and data
+   dependencies.
+4. Emit restricted imperative `run` code.
+5. Validate with `pauth.prepare()`.
 
-これは最も知的にクリーンな方向だが、最も product-ready でない方向でもある。
-受理するタスク言語を意図的に狭くするか、プロダクトが明示的な controlled language
-を許容できる場合にのみ実用的になる。
+This is the most intellectually clean direction, but also the least
+product-ready. It becomes practical only if you deliberately narrow the accepted
+task language, or the product can tolerate an explicit controlled language.
 
 Failure mode:
 
-- 実際のユーザー prompt が grammar の外に落ちる。
-- grammar が保守不能な例外の山へ成長する。
-- 手選びの例ではカバレッジが良く見え、production の言語では崩壊する。
-- 曖昧性解消が、いつの間にかもうひとつの隠れた LLM 的コンポーネントになる。
+- Real user prompts fall outside the grammar.
+- The grammar grows into an unmaintainable pile of exceptions.
+- Coverage looks good on hand-picked examples and collapses on production
+  language.
+- Disambiguation quietly becomes yet another hidden LLM-like component.
 
 Design implication:
 
-- デフォルトパスではなく research slot として保つ。
-- template と formal semantics が現実的な、狭くて high-value なドメインに使う。
-- rejection rate を correctness とは別に測る。多くの prompt を reject する formal
-  parser でも、受理した prompt が信頼できるなら依然として価値がある。
+- Keep it as a research slot, not the default path.
+- Use it for narrow, high-value domains where templates and formal semantics are
+  realistic.
+- Measure the rejection rate separately from correctness. A formal parser that
+  rejects many prompts is still valuable if the prompts it accepts are
+  trustworthy.
 
 ## Current Implementation Mapping
 
 Current concrete planners:
 
-- `DeterministicRecognizerPlanner`: 既知の prompt パターンに対する厳格な baseline。
-- `LLMFreeformPlanner`: grammar repair とオプションの judge を備えた汎用モデル。
-- `AutoPlanner`: recognizer fast-path、その後 `LLMFreeformPlanner` へフォールバック（S2）。
+- `DeterministicRecognizerPlanner`: a strict baseline for known prompt patterns.
+- `LLMFreeformPlanner`: a general-purpose model with grammar repair and an
+  optional judge.
+- `AutoPlanner`: recognizer fast-path, then fallback to `LLMFreeformPlanner`
+  (S2).
 
 Planned strategy slots:
 
-- `InteractiveStructuringPlanner`: user-facing な clarification セッションをラップ
-  し、その後別の code generator へ委譲する。
-- `SpecializedCodegenPlanner`: 専用の imperative-code モデルを呼び、リトライは
-  主に validator フィードバックに頼る。
-- `FormalSemanticPlanner`: controlled natural language を semantic form へパース
-  し、restricted imperative code を吐く。
+- `InteractiveStructuringPlanner`: wraps a user-facing clarification session,
+  then delegates to a separate code generator.
+- `SpecializedCodegenPlanner`: calls a dedicated imperative-code model, relying
+  mainly on validator feedback for retries.
+- `FormalSemanticPlanner`: parses controlled natural language into a semantic
+  form and emits restricted imperative code.
 
-どちらの planned strategy も、依然として restricted imperative code を返し、
-`pauth.prepare()` を通過せねばならない。どの strategy も rule を直接吐くことは
-許されない。
+Both planned strategies must still return restricted imperative code and pass
+through `pauth.prepare()`. No strategy is allowed to emit rules directly.
