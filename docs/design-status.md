@@ -153,7 +153,7 @@ should the default security story require an isolated agent runtime?
 - VPC/クラウド配置を主たるフレームにしない。
 - `localhost` を最初のユーザ体験として想定する。
 - VM/コンテナ/サンドボックスの隔離を、より強い containment モードとして扱う。
-- **決着(2026-07-08, Q10 / solution.md):** localhost でも、エージェントを**専用の非管理
+- **決着(2026-07-08, Q10):** localhost でも、エージェントを**専用の非管理
   ユーザ**で動かし OS の egress ロックダウン(`gateway/deploy/egress_lockdown.sh`)を掛ければ、
   **その外向き通信は必ず gateway を通る**(通らないものはカーネルで drop)。よって「localhost
   では route を強制できない」はもはや正しくない — *非管理ユーザという前提の下で*強制できる。
@@ -411,7 +411,7 @@ Claude Code のようなエージェントは、shell、ファイルシステム
 
 製品に必要な明示ポリシーと現状:
 
-- shell コマンドの allow/deny → **🟢 実装済み**(`SideChannelPolicy` 既定拒否, solution.md S21。
+- shell コマンドの allow/deny → **🟢 実装済み**(`SideChannelPolicy` 既定拒否, S21。
   ただし「gateway を通った呼び出し」限定。名前空間付きも捕捉)。
 - outbound ネットワーク制限 → **🟢 実装済み**(OS egress ロックダウン
   `gateway/deploy/egress_lockdown.sh`, Q10。非管理ユーザ前提で外向きを gateway 経由に強制)。

@@ -67,7 +67,7 @@
 
 これは Axis 2 からの残余: *すでに許可された*アクション内部の content/値を汚染
 データが操作する。enforcement core はこれを**カバーしない**。防御は provenance taint
-+ sink classification + human escalation で、**中核は実装済み**（solution.md S18/S19/S20）。
++ sink classification + human escalation で、**中核は実装済み**（S18/S19/S20）。
 残るのは Q-LLM と confirmation の HTTP wire 露出のみ。
 
 Defense components (現状):

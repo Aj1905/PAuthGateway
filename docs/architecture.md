@@ -499,14 +499,14 @@ aspirational なバージョンである。
 * **State。** Session はプロセスメモリに存在する。``systemctl restart`` で
   失われる。ユーザーが単に prompt を再送信できるうちは許容範囲;
   長時間実行タスクが現実になったら見直す。
-* **Secrets（credential broker モデル、solution.md S4）。** SaaS credential は
+* **Secrets（credential broker モデル、S4）。** SaaS credential は
   gateway が **保持・実行**する。L3（gateway が tool を自ら実行し署名済み envelope を
   記録する）を成立させるには、実行主体である gateway が credential を持つ必要が
   ある。実行点と enforcement 点を分離する旧モデル（「gateway は API key を決して
   見ない」）は L3 と両立しないため廃止した。鍵集積点になるリスクは、この
   self-hosted 形状（ユーザ自身の VM 上で動く 1 VM / 1 user）を前提とすることで
   受容する。broker の実装要件: per-suite の隔離保管、rotation、アクセス audit。
-  （実装は最初の実 SaaS 統合と同時 -- plan.md Stage 1）
+  （実装は最初の実 SaaS 統合と同時）
 * **Network。** ``gateway-http`` は ``127.0.0.1`` に bind するため、HTTP API は
   box 外から到達できない。hook はローカルなので到達できる。ローカルホップに
   TLS はない。public SaaS への outbound は、Monocle が公開する private route と
@@ -596,7 +596,7 @@ managed-cloud 形状に対するトレードオフ:
   （AWS）または Managed Identity（Azure）。gateway は、その role/identity が
   触れることを許された resource に対してのみ SaaS call を authorize できる。
   ユーザーの token が漏れた場合の半径を削る。
-* **Secrets（credential broker モデル、solution.md S4）。** Per-user OAuth token は、
+* **Secrets（credential broker モデル、S4）。** Per-user OAuth token は、
   ユーザーの identity でスコープされた Secrets Manager（AWS）/ Key Vault（Azure）に
   存在し、**gateway（broker）が call 時に pull して tool を実行する**。MCP shim を
   経由する場合も、shim は gateway の管理下にあるコンポーネントであり、credential の

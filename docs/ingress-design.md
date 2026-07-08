@@ -9,9 +9,8 @@ contract の背後の slot として**後から構築する、という決定を
 
 相互参照: `architecture.md` §1.1/§1.2（ingress 境界 — *adapter* レベルで
 "ingress" を使う。ここの directional model を指し示す "Terminology note" を参照。
-leg モデルが architecture.md に載るのは interception 実装後だけ）、`plan.md`
-issue B5（Bash escape hatch）、`design-status.md` bottleneck #2（prompt capture が
-主要なプロダクトリスク）、`BUSINESS_STRATEGY.md` §3.1（ターゲットセグメントの決定）。
+leg モデルが architecture.md に載るのは interception 実装後だけ）、`design-status.md`
+bottleneck #2（prompt capture が主要なプロダクトリスク）。
 
 ## 中核原則: ingress モードは agent を誰が所有するかで決まる
 

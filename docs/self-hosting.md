@@ -55,7 +55,7 @@ hook が PAuth に必要な意味的イベントを供給する。
 
 ## Protection Precondition: No Raw Side Channels (Stage 1)
 
-Stage 1 の保護主張は次の前提でのみ成立する(決定記録: solution.md S6、B5)。
+Stage 1 の保護主張は次の前提でのみ成立する(決定記録: S6、B5)。
 
 - エージェントは生 Bash・直接ネットワーク I/O・観測されない credential 経路を
   **持たない**。外向きアクションはすべて gateway 経由の tool call である。
