@@ -84,7 +84,7 @@ agent ──────────────────▶ gateway ──�
 - **Mode 2（interception）は後回しにする。** ingress 境界を開いたままにして同じ
   contract の背後に接続できるようにするが、**interception adapter はまだ実装しない。**
 - **ToC は課金セグメントではない。** 消費者向けの subscription ベースの支払い /
-  課金経路は設けない。`BUSINESS_STRATEGY.md` を参照。
+  課金経路は設けない。
 
 構築の規律（3層、これらを潰さないこと）:
 
@@ -132,7 +132,7 @@ customer agent code
 - **より狭いセグメント。** ほとんどの企業は既製の agent を使う。自社で agent を
   構築し *かつ* サードパーティの認可フレームワークを望む層はより小さい。だが、
   より洗練され、価値が高く、いったん統合されると粘着性が高い。
-  `BUSINESS_STRATEGY.md` の「狭く防御可能なウェッジ」に合致する。
+  「狭く防御可能なウェッジ」の戦略に合致する。
 - **より激しい競争。** 「自社 agent を保護する」領域は、無改変 agent firewall 領域
   よりも直接競合が多い（NeMo Guardrails, Guardrails AI, Llama Guard, agent
   フレームワーク群）。差別化は、その場しのぎ / 確率的なチェックに対して
