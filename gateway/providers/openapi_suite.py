@@ -53,21 +53,45 @@ _HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 # and every reflected tool call would read local files (SSRF).
 _ALLOWED_URL_SCHEMES = frozenset({"http", "https"})
 
+# Cap bytes read from an untrusted spec / upstream response so a hostile server
+# cannot exhaust memory by streaming an unbounded body.
+_MAX_RESPONSE_BYTES = 10 * 1024 * 1024
+
+
+def _parse_host_ip(host: str) -> ipaddress._BaseAddress | None:
+    """Parse ``host`` as an IP, including non-canonical integer/hex/octal forms.
+
+    ``getaddrinfo`` accepts ``2852039166`` and ``0xA9FEA9FE`` as 169.254.169.254,
+    so a link-local check that only understands dotted-quad is trivially bypassed.
+    Try dotted/colon first, then a bare integer literal (base 0 covers 0x/0o/decimal).
+    """
+    candidate = host.strip("[]")  # bracketed IPv6 literal
+    try:
+        return ipaddress.ip_address(candidate)
+    except ValueError:
+        pass
+    try:
+        value = int(candidate, 0)
+    except (ValueError, TypeError):
+        return None
+    try:
+        return ipaddress.ip_address(value)
+    except ValueError:
+        return None
+
 
 def _is_link_local_host(host: str) -> bool:
-    """True iff ``host`` is a literal link-local IP (the cloud-metadata range).
+    """True iff ``host`` resolves (as a literal) to a link-local IP.
 
     Only link-local (169.254.0.0/16, fe80::/10) is blocked -- that covers the
     IMDS endpoint 169.254.169.254, which is never a legitimate API backend.
     Loopback/private ranges are intentionally NOT blocked: this tool is designed
-    to front localhost and internal SaaS (see config.py examples). Literal IPs
-    only; DNS-rebinding to a link-local address is a documented residual risk.
+    to front localhost and internal SaaS (see config.py examples). Non-canonical
+    integer/hex encodings of the metadata IP are caught too; DNS-rebinding to a
+    link-local address remains a documented residual risk.
     """
-    candidate = host.strip("[]")  # bracketed IPv6 literal
-    try:
-        return ipaddress.ip_address(candidate).is_link_local
-    except ValueError:
-        return False
+    ip = _parse_host_ip(host)
+    return ip is not None and ip.is_link_local
 
 
 def _require_http_url(url: str, context: str) -> None:
@@ -86,14 +110,37 @@ def _require_http_url(url: str, context: str) -> None:
         )
 
 
+class _ValidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Re-validate every redirect hop so a 30x cannot escape the scheme/IP gate.
+
+    urllib follows redirects automatically; without this an allowed initial URL
+    can 302 to file:// or the metadata IP. Each hop is checked before it is taken.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _require_http_url(newurl, "redirect")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_SAFE_OPENER = urllib.request.build_opener(_ValidatingRedirectHandler())
+
+
+def _urlopen_safe(url: str, *, context: str, **kw):
+    """urlopen that gates the initial URL and every redirect hop."""
+    _require_http_url(url, context)
+    return _SAFE_OPENER.open(url, **kw)
+
+
 def load_openapi_document(path: str | Path | None = None, url: str | None = None) -> dict[str, Any]:
     """Load an OpenAPI document from a local path or URL."""
     if bool(path) == bool(url):
         raise OpenAPIError("openapi suite requires exactly one of 'spec_path' or 'spec_url'")
     if url:
-        _require_http_url(url, "openapi spec_url")
-        with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310 -- scheme gated above
-            raw = resp.read().decode("utf-8")
+        with _urlopen_safe(url, context="openapi spec_url", timeout=30) as resp:  # noqa: S310
+            body = resp.read(_MAX_RESPONSE_BYTES + 1)
+            if len(body) > _MAX_RESPONSE_BYTES:
+                raise OpenAPIError("openapi spec exceeds size cap")
+            raw = body.decode("utf-8")
     else:
         raw = Path(path or "").read_text()
     return _parse_document(raw, str(url or path))
@@ -120,29 +167,39 @@ def _parse_document(raw: str, source: str) -> dict[str, Any]:
     return doc
 
 
-def _resolve_ref(doc: dict[str, Any], value: Any) -> Any:
-    """Resolve local JSON-pointer refs inside an OpenAPI document."""
+def _resolve_ref(doc: dict[str, Any], value: Any, _seen: frozenset[str] = frozenset()) -> Any:
+    """Resolve local JSON-pointer refs inside an OpenAPI document.
+
+    Tracks the chain of visited refs so a cyclic ``$ref`` (A -> A, or A -> B -> A)
+    raises instead of recursing forever (untrusted-spec DoS).
+    """
     if not isinstance(value, dict) or "$ref" not in value:
         return value
     ref = value["$ref"]
     if not isinstance(ref, str) or not ref.startswith("#/"):
         raise OpenAPIError(f"only local OpenAPI refs are supported, got {ref!r}")
+    if ref in _seen:
+        raise OpenAPIError(f"cyclic OpenAPI $ref chain at {ref!r}")
     cur: Any = doc
     for part in ref[2:].split("/"):
         key = part.replace("~1", "/").replace("~0", "~")
         if not isinstance(cur, dict) or key not in cur:
             raise OpenAPIError(f"unresolvable OpenAPI ref {ref!r}")
         cur = cur[key]
-    return _resolve_ref(doc, cur)
+    return _resolve_ref(doc, cur, _seen | {ref})
 
 
-def _schema_type(doc: dict[str, Any], schema: Any) -> str:
+def _schema_type(doc: dict[str, Any], schema: Any, _depth: int = 0) -> str:
+    # Depth cap so a deeply nested (untrusted) schema cannot blow the stack.
+    if _depth > 64:
+        return "any"
     schema = _resolve_ref(doc, schema)
     if not isinstance(schema, dict):
         return "any"
+    d = _depth + 1
     if "oneOf" in schema or "anyOf" in schema:
         variants = schema.get("oneOf") or schema.get("anyOf") or []
-        return "|".join(_schema_type(doc, s) for s in variants) or "any"
+        return "|".join(_schema_type(doc, s, d) for s in variants) or "any"
     if "allOf" in schema:
         return "object"
     t = schema.get("type")
@@ -155,17 +212,17 @@ def _schema_type(doc: dict[str, Any], schema: Any) -> str:
     if t == "boolean":
         return "boolean"
     if t == "array":
-        return f"list of {_schema_type(doc, schema.get('items', {}))}"
+        return f"list of {_schema_type(doc, schema.get('items', {}), d)}"
     if t == "object" or "properties" in schema:
         props = schema.get("properties")
         if isinstance(props, dict):
             inner = ", ".join(
-                f"{name}: {_schema_type(doc, prop)}" for name, prop in props.items()
+                f"{name}: {_schema_type(doc, prop, d)}" for name, prop in props.items()
             )
             return f"object {{{inner}}}"
         return "object"
     if isinstance(t, list):
-        return "|".join(_schema_type(doc, {"type": item}) for item in t)
+        return "|".join(_schema_type(doc, {"type": item}, d) for item in t)
     return "any"
 
 
@@ -480,8 +537,11 @@ def _execute_operation(env: _OpenAPIEnv, op: _Operation, kwargs: dict[str, Any])
 
     req = urllib.request.Request(url, data=data, headers=headers, method=op.method)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = resp.read()
+        # Initial URL gated just above; the safe opener re-validates redirect hops.
+        with _SAFE_OPENER.open(req, timeout=30) as resp:
+            raw = resp.read(_MAX_RESPONSE_BYTES + 1)
+            if len(raw) > _MAX_RESPONSE_BYTES:
+                raise OpenAPIError(f"{op.method} {op.path}: response exceeds size cap")
             content_type = resp.headers.get("Content-Type", "")
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:500]

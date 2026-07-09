@@ -133,6 +133,14 @@ def parse_and_validate(code: str) -> ast.FunctionDef:
             )
         if isinstance(node, ast.FunctionDef) and node is not func:
             raise RestrictedGrammarError("nested function definitions are forbidden")
+        # Dunder / private attribute access is a sandbox-escape primitive: from
+        # any wrapped value, ``x.__getattr__.__globals__['__builtins__']`` reaches
+        # the real builtins even under exec with __builtins__={}. Business field
+        # paths never start with an underscore, so ban it outright.
+        if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
+            raise RestrictedGrammarError(
+                f"attribute '{node.attr}' is not allowed (underscore/dunder access)"
+            )
 
     _check_no_nested_if(func)
     _check_lambdas(func)
@@ -247,6 +255,17 @@ def validate_semantics(func: ast.FunctionDef, tool_names: set[str]) -> None:
             "must have a single definition (rules 14a/14f: no scoped assignments)"
         )
 
+    # A tool/helper name must always resolve to the enforcer wrapper. Allowing an
+    # assignment to shadow one (``send = something``) lets grammar-valid code call
+    # an arbitrary callable through a name the call-target check accepts -- the
+    # second half of the sandbox escape. Forbid shadowing outright.
+    shadowed = sorted(set(assigned) & (tool_names | HELPERS))
+    if shadowed:
+        raise RestrictedGrammarError(
+            f"name(s) {shadowed} shadow a tool/helper; tool and helper names "
+            "cannot be reassigned"
+        )
+
     for node in ast.walk(func):
         if not isinstance(node, ast.Call):
             continue
@@ -266,6 +285,16 @@ def validate_semantics(func: ast.FunctionDef, tool_names: set[str]) -> None:
                     f"helper '{name}' must take a bare variable as its first argument "
                     "(rule 2b3 / <HelperCall>)"
                 )
+        elif node.keywords:
+            # Tool calls MUST be positional-only. The slicer and the taint gate
+            # build operand rules from positional args only; a keyword-passed
+            # control operand (recipient/amount) would otherwise be enforced by
+            # neither and skip the confirmation gate. Rule 6 already mandates
+            # positional args, so reject any keyword on a tool call.
+            raise RestrictedGrammarError(
+                f"tool call '{name}(...)' uses keyword arguments; tools must be "
+                "called with positional arguments only (rule 6)"
+            )
         elif id(node) not in sliceable:
             raise RestrictedGrammarError(
                 f"tool call '{name}(...)' is nested inside an expression; tool "

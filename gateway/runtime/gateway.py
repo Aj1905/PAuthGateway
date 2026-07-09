@@ -85,15 +85,23 @@ from gateway.runtime.protection import (
 
 
 def _confirm_key(value: Any) -> Any:
-    """Hashable key identifying a confirmed operand value (scalars pass through;
-    non-scalars fall back to a stable repr)."""
-    if isinstance(value, (str, int, float)) and not isinstance(value, bool):
-        return value
+    """Hashable, TYPE-EXACT key identifying a confirmed operand value.
+
+    Confirmation is an exact-value whitelist, so the key must not collapse
+    distinct values into one. Python's ``1 == 1.0 == True`` (and equal hashes)
+    would otherwise let an approval of ``1`` bless ``1.0`` or ``True`` -- a value
+    the human never saw. Tagging by type keeps ``(int,1)``, ``(float,1.0)`` and
+    ``(bool,True)`` distinct set elements.
+    """
+    if isinstance(value, bool):
+        return ("bool", value)
+    if isinstance(value, (str, int, float)):
+        return (type(value).__name__, value)
     try:
         hash(value)
-        return value
+        return ("obj", type(value).__name__, value)
     except TypeError:
-        return repr(value)
+        return ("repr", repr(value))
 
 
 @dataclasses.dataclass

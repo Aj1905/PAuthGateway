@@ -57,6 +57,19 @@ die() { echo "egress-lockdown: $*" >&2; exit 1; }
 
 AGENT_UID="$(id -u "$AGENT_USER")" || die "unknown user '$AGENT_USER'"
 
+# Validate GATEWAY_HOST/PORT: they are interpolated into firewall commands and,
+# on macOS, written verbatim into a pf.conf anchor that pfctl parses. Accept only
+# a bare IP literal and a numeric port so nothing pf- or shell-significant (a
+# rule fragment that widens the policy to allow-all, i.e. fail-open) can reach
+# the ruleset.
+[[ "$GATEWAY_PORT" =~ ^[0-9]+$ ]] && (( GATEWAY_PORT >= 1 && GATEWAY_PORT <= 65535 )) \
+  || die "GATEWAY_PORT must be an integer 1-65535, got '$GATEWAY_PORT'"
+if [[ "$GATEWAY_HOST" == *:* ]]; then
+  [[ "$GATEWAY_HOST" =~ ^[0-9A-Fa-f:]+$ ]] || die "GATEWAY_HOST must be a bare IPv6 literal, got '$GATEWAY_HOST'"
+else
+  [[ "$GATEWAY_HOST" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || die "GATEWAY_HOST must be a bare IPv4 literal, got '$GATEWAY_HOST'"
+fi
+
 # Refuse to lock down a privileged account: the control would be self-defeating.
 if [[ "$AGENT_UID" -eq 0 ]]; then
   die "'$AGENT_USER' is root; an admin agent can undo this rule. Use a non-admin user."
@@ -145,6 +158,9 @@ linux_status() {
 # --------------------------------------------------------------------------
 MAC_ANCHOR_FILE="/etc/pf.anchors/${ANCHOR}"
 
+MAC_BEGIN="# BEGIN ${ANCHOR} (managed by egress_lockdown.sh)"
+MAC_END="# END ${ANCHOR}"
+
 macos_apply() {
   [[ "$GW_IS_V6" -eq 0 ]] || die "IPv6 gateway host on macOS pf is not scripted here; set an IPv4 GATEWAY_HOST"
   cat > "$MAC_ANCHOR_FILE" <<PF
@@ -152,20 +168,44 @@ macos_apply() {
 block drop out proto { tcp udp } from any to any user $AGENT_UID
 pass out proto tcp from any to $GATEWAY_HOST port $GATEWAY_PORT user $AGENT_UID
 PF
-  # Wire the anchor into the main ruleset if not already present, then load.
-  if ! grep -q "anchor \"$ANCHOR\"" /etc/pf.conf 2>/dev/null; then
-    printf '\nanchor "%s"\nload anchor "%s" from "%s"\n' "$ANCHOR" "$ANCHOR" "$MAC_ANCHOR_FILE" >> /etc/pf.conf
+  # Wire the anchor into the main ruleset between sentinels (idempotent: strip an
+  # old block first). Validate the resulting ruleset BEFORE loading it, and back
+  # up the original -- a broken edit must never leave pf loaded with the block
+  # rule stripped (fail-open egress).
+  cp /etc/pf.conf "/etc/pf.conf.pauth.bak.$$"
+  _macos_strip_block > /etc/pf.conf.tmp
+  {
+    printf '%s\n' "$MAC_BEGIN"
+    printf 'anchor "%s"\nload anchor "%s" from "%s"\n' "$ANCHOR" "$ANCHOR" "$MAC_ANCHOR_FILE"
+    printf '%s\n' "$MAC_END"
+  } >> /etc/pf.conf.tmp
+  if ! pfctl -n -f /etc/pf.conf.tmp; then
+    rm -f /etc/pf.conf.tmp
+    die "pf.conf failed validation; original left untouched (backup: /etc/pf.conf.pauth.bak.$$)"
   fi
-  pfctl -f /etc/pf.conf
+  mv /etc/pf.conf.tmp /etc/pf.conf
+  pfctl -f /etc/pf.conf || die "pfctl load failed; egress NOT locked -- investigate before running the agent"
   pfctl -e 2>/dev/null || true
+}
+
+# Print /etc/pf.conf with any prior BEGIN..END sentinel block removed.
+_macos_strip_block() {
+  awk -v b="$MAC_BEGIN" -v e="$MAC_END" '
+    $0==b {skip=1; next} $0==e {skip=0; next} !skip {print}
+  ' /etc/pf.conf
 }
 
 macos_remove() {
   rm -f "$MAC_ANCHOR_FILE"
-  # Strip the two lines we appended (best-effort).
-  if grep -q "anchor \"$ANCHOR\"" /etc/pf.conf 2>/dev/null; then
-    grep -v "\"$ANCHOR\"" /etc/pf.conf > /etc/pf.conf.tmp && mv /etc/pf.conf.tmp /etc/pf.conf
-    pfctl -f /etc/pf.conf 2>/dev/null || true
+  # Strip only our sentinel-delimited block (never a substring match).
+  if grep -qF "$MAC_BEGIN" /etc/pf.conf 2>/dev/null; then
+    _macos_strip_block > /etc/pf.conf.tmp
+    if ! pfctl -n -f /etc/pf.conf.tmp; then
+      rm -f /etc/pf.conf.tmp
+      die "pf.conf failed validation after strip; left untouched"
+    fi
+    mv /etc/pf.conf.tmp /etc/pf.conf
+    pfctl -f /etc/pf.conf || die "pfctl reload failed after remove"
   fi
 }
 

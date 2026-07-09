@@ -147,7 +147,11 @@ def message_from_dict(payload: dict[str, Any]) -> AgentMessage | None:
             suite_name=payload.get("suite_name"),
             model=str(payload.get("model", "gpt-4.1")),
             max_retries=_payload_int(payload.get("max_retries", 3), 3),
-            cache_dir=payload.get("cache_dir"),
+            # cache_dir is a deployment setting, NOT wire-controllable: it is a
+            # filesystem path that generated code is written to (mkdir + write),
+            # so accepting it from the request body is an arbitrary-directory
+            # write. Take it only from PAUTH_PLANNER_CACHE_DIR (see _handle_prompt).
+            cache_dir=None,
             enable_judge=_payload_bool(payload.get("enable_judge", True)),
             judge_model=payload.get("judge_model"),
         )
