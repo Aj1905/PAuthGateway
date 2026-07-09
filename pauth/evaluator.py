@@ -305,13 +305,16 @@ def _compare(op: ast.cmpop, left: Any, right: Any) -> bool:
 def values_match(expected: Any, actual: Any) -> bool:
     """Equality used by the enforcer to compare an operand to its rule.
 
-    Numbers are compared with a small tolerance so that floating-point
+    Numbers are compared with a small RELATIVE tolerance so that floating-point
     re-computation of, e.g., ``balance / 4`` does not cause a false positive.
+    No absolute tolerance: an ``abs_tol`` would let an expected ``0`` authorize a
+    small non-zero actual (e.g. 9e-7) -- an off-slice operand. rel_tol alone
+    absorbs genuine float noise (~1e-15 relative) while ``0`` matches only ``0``.
     """
     if isinstance(expected, bool) or isinstance(actual, bool):
         return bool(expected) == bool(actual)
     if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
-        return math.isclose(expected, actual, rel_tol=1e-9, abs_tol=1e-6)
+        return math.isclose(expected, actual, rel_tol=1e-9)
     if expected is None or actual is None:
         return expected is None and actual is None
     if isinstance(expected, str) and isinstance(actual, str):

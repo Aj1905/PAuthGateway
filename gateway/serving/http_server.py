@@ -43,8 +43,9 @@ import json
 import os
 import re
 import sys
+import threading
 import uuid
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
 
@@ -136,6 +137,8 @@ def restore_channel(
 class _Handler(BaseHTTPRequestHandler):
     sessions: dict[str, AgentChannel] = {}
     session_owners: dict[str, str] = {}  # session_id -> authenticated principal
+    _lock = threading.Lock()             # guards the session tables (threaded server)
+    max_sessions: int = 10_000           # cap the table; evict oldest (FIFO) beyond it
     # staticmethod: a plain function stored as a class attribute would bind to
     # the handler instance (self.suite_loader -> loader(self, name), 2 args).
     suite_loader: Callable[[str], SuiteSpec] = staticmethod(default_suite_loader)
@@ -175,6 +178,17 @@ class _Handler(BaseHTTPRequestHandler):
             if entry is not None:
                 return entry.get("owner")
         return None
+
+    @classmethod
+    def _add_session(cls, session_id: str, channel: AgentChannel, principal: str) -> None:
+        """Insert a session, evicting the oldest if the table is at capacity."""
+        with cls._lock:
+            while len(cls.sessions) >= cls.max_sessions and session_id not in cls.sessions:
+                oldest = next(iter(cls.sessions))
+                cls.sessions.pop(oldest, None)
+                cls.session_owners.pop(oldest, None)
+            cls.sessions[session_id] = channel
+            cls.session_owners[session_id] = principal
 
     # ------------------------------------------------------------------
     # GET -- health / status (value-free; safe on unauthenticated localhost)
@@ -231,10 +245,11 @@ class _Handler(BaseHTTPRequestHandler):
 
         if self.path == "/sessions":
             session_id = str(uuid.uuid4())
-            self.sessions[session_id] = AgentChannel(
-                self.suite_loader, audit_log=self.audit_log
+            self._add_session(
+                session_id,
+                AgentChannel(self.suite_loader, audit_log=self.audit_log),
+                principal,
             )
-            self.session_owners[session_id] = principal
             self._send_json(201, {"session_id": session_id})
             return
 
@@ -263,8 +278,7 @@ class _Handler(BaseHTTPRequestHandler):
                     )
                 if channel is None:
                     channel = AgentChannel(self.suite_loader, audit_log=self.audit_log)
-                self.sessions[session_id] = channel
-                self.session_owners[session_id] = principal
+                self._add_session(session_id, channel, principal)
             response = channel.receive_json(payload)
             # Persist an accepted prompt (with its owner) so it survives a restart.
             if (
@@ -375,7 +389,9 @@ def main() -> int:
             file=sys.stderr,
         )
 
-    server = HTTPServer((args.host, args.port), _Handler)
+    # Threaded so one slow request (e.g. an LLM planning call) cannot wedge the
+    # whole daemon; the session tables are guarded by a lock.
+    server = ThreadingHTTPServer((args.host, args.port), _Handler)
     print(f"gateway-http listening on http://{args.host}:{args.port}", file=sys.stderr)
     try:
         server.serve_forever()

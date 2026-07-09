@@ -44,6 +44,10 @@ class AuditLog:
         self._path = Path(path) if path else None
         if self._path is not None:
             self._path.parent.mkdir(parents=True, exist_ok=True)
+            # The trail carries internal reasons (which may quote operand values);
+            # keep it owner-readable only, not world-readable via the umask.
+            self._path.touch(exist_ok=True)
+            os.chmod(self._path, 0o600)
 
     def record(
         self, kind: str, decision: str, *, tool: str | None = None,

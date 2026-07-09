@@ -37,7 +37,9 @@ def _to_jsonable(value: Any) -> Any:
         return {str(k): _to_jsonable(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}
     if isinstance(value, (list, tuple)):
         return [_to_jsonable(v) for v in value]
-    return repr(value)
+    # Unknown object: fall back to a repr, but tag it with the type so two
+    # distinct types that happen to share a repr do not compare/sign as equal.
+    return f"{type(value).__module__}.{type(value).__qualname__}:{value!r}"
 
 
 def _digest(symbolic: str, concrete: Any) -> bytes:
