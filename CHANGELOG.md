@@ -13,6 +13,10 @@ Working toward the first tagged release, `0.1.0`.
 - OS egress lockdown script that forces a dedicated non-admin agent user's
   outbound traffic through the gateway host only, so a `curl`/subprocess bypass
   is dropped by the kernel rather than reaching an external service.
+- HTTP Bearer-token authentication (`--auth-token` / `--auth-tokens`) with
+  per-principal session ownership: every route except `GET /health` requires a
+  valid token, and a session can only be read, driven, or deleted by the
+  principal that created it. Open mode (no auth) warns and expects loopback.
 - File-backed audit trail (`--audit-log`, JSONL) and value-free health/status
   endpoints (`GET /health`, `GET /sessions/<id>`).
 - Confirmation-gated sinks: an untrusted-derived control operand (recipient or

@@ -34,10 +34,14 @@ ti = json.loads(sys.argv[2])
 print(json.dumps({"kind": "tool_call", "tool": tool, "kwargs": ti}))
 ' "$tool_name" "$tool_input_json")
 
+AUTH_HEADER=()
+[[ -n "${GATEWAY_AUTH_TOKEN:-}" ]] && AUTH_HEADER=(-H "Authorization: Bearer ${GATEWAY_AUTH_TOKEN}")
+
 response=$(curl --silent --show-error --fail-with-body \
   --max-time 30 \
   -X POST \
   -H "Content-Type: application/json" \
+  "${AUTH_HEADER[@]}" \
   -d "$body" \
   "$GATEWAY_URL/sessions/$session_id/messages" 2>&1) || {
   echo "[gateway-hook] gateway HTTP error on tool '$tool_name': $response" >&2

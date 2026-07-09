@@ -60,6 +60,7 @@ The scripts honor environment variables.
 | Variable | Values | Default | Effect |
 |---|---|---|---|
 | `GATEWAY_URL` | URL | `http://127.0.0.1:8081` | POST target. |
+| `GATEWAY_AUTH_TOKEN` | token | (unset) | If the daemon runs with `--auth-token`, set the same value here so the hooks send `Authorization: Bearer <token>`. |
 | `GATEWAY_MODE_PROMPT` | `strict` / `log` | `strict` | When the gateway rejects a prompt, whether to block Claude Code (`strict`) or just log and continue (`log`). |
 | `GATEWAY_MODE_TOOL` | `strict` / `log` | `log` | The same setting for tool calls. Keep the default `log` while validating the integration, and switch to `strict` once the enforced tool set is fixed. |
 | `GATEWAY_MODE` | `strict` / `log` | — | Fallback for when the more specific variant is unset. |

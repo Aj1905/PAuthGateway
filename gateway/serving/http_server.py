@@ -17,18 +17,28 @@ Wire protocol
   unauthenticated localhost surface (unlike the audit log, which is
   operator-facing and may quote values).
 
-Session state is held in process memory; restarting the server drops
-every session. For production wrap in a real web framework with proper
-auth and persistent state.
+Authentication
+--------------
+With ``--auth-token`` (or ``--auth-tokens <principal:token map>``) every route
+except ``GET /health`` requires ``Authorization: Bearer <token>``; the token's
+principal is bound to the sessions it creates, so no other principal can read,
+drive, or delete them (constant-time token compare; ownership survives a restart
+via the session store). Without either flag the server runs in OPEN mode and
+must be bound to loopback only -- it prints a warning at startup.
+
+Session state is held in process memory; restarting the server drops the live
+channels (the plan is rebuilt from the session store on the next message).
 
 Usage::
 
-    .venv/bin/python gateway/http_server.py --host 127.0.0.1 --port 8081
+    GATEWAY_AUTH_TOKEN=... .venv/bin/python gateway/serving/http_server.py \
+        --host 127.0.0.1 --port 8081 --auth-token "$GATEWAY_AUTH_TOKEN"
 """
 
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import os
 import re
@@ -37,6 +47,43 @@ import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Callable
+
+
+class TokenAuth:
+    """Bearer-token authentication mapping a presented token to a principal.
+
+    A request must carry ``Authorization: Bearer <token>``; the matching token's
+    principal becomes the caller identity, which is bound to the sessions it
+    creates (so no other principal can read/inject/delete them). Tokens are
+    compared in constant time.
+    """
+
+    def __init__(self, principal_tokens: dict[str, str]) -> None:
+        # principal -> token. Reject empty tokens so a blank never authenticates.
+        self._tokens = {str(p): str(t) for p, t in principal_tokens.items() if t}
+
+    def principal_for(self, auth_header: str | None) -> str | None:
+        prefix = "Bearer "
+        if not auth_header or not auth_header.startswith(prefix):
+            return None
+        presented = auth_header[len(prefix):]
+        for principal, token in self._tokens.items():
+            if hmac.compare_digest(presented, token):
+                return principal
+        return None
+
+    @classmethod
+    def from_config(cls, single_token: str, tokens_file: str) -> "TokenAuth | None":
+        """Build from a single ``--auth-token`` and/or a ``{principal: token}`` file."""
+        principal_tokens: dict[str, str] = {}
+        if tokens_file:
+            data = json.loads(Path(tokens_file).read_text())
+            if not isinstance(data, dict):
+                raise ValueError("auth-tokens file must be a JSON object {principal: token}")
+            principal_tokens.update({str(p): str(t) for p, t in data.items()})
+        if single_token:
+            principal_tokens.setdefault("operator", single_token)
+        return cls(principal_tokens) if principal_tokens else None
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -88,32 +135,70 @@ def restore_channel(
 
 class _Handler(BaseHTTPRequestHandler):
     sessions: dict[str, AgentChannel] = {}
+    session_owners: dict[str, str] = {}  # session_id -> authenticated principal
     # staticmethod: a plain function stored as a class attribute would bind to
     # the handler instance (self.suite_loader -> loader(self, name), 2 args).
     suite_loader: Callable[[str], SuiteSpec] = staticmethod(default_suite_loader)
     session_store: "SessionStore | None" = None  # B1: opt-in persistence (None = off)
     audit_log: "AuditLog | None" = None  # opt-in shared persistent audit trail
+    auth: "TokenAuth | None" = None  # None = open mode (loopback only; warned)
 
     def log_message(self, fmt: str, *args) -> None:  # noqa: D401 -- quieter logs
         sys.stderr.write("[gateway-http] " + (fmt % args) + "\n")
 
     # ------------------------------------------------------------------
+    # auth + session ownership
+    # ------------------------------------------------------------------
+    def _authenticate(self) -> str | None:
+        """Return the caller's principal, or send 401 and return None.
+
+        In open mode (no auth configured) every caller is the shared ``local``
+        principal; the deployment is expected to be loopback-only (warned at
+        startup). With auth configured, a valid Bearer token is required.
+        """
+        if self.auth is None:
+            return "local"
+        principal = self.auth.principal_for(self.headers.get("Authorization"))
+        if principal is None:
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", "Bearer")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        return principal
+
+    def _owner_of(self, session_id: str) -> str | None:
+        """The principal that owns ``session_id`` (in memory or persisted), or None."""
+        if session_id in self.session_owners:
+            return self.session_owners[session_id]
+        if self.session_store is not None:
+            entry = self.session_store.get(session_id)
+            if entry is not None:
+                return entry.get("owner")
+        return None
+
+    # ------------------------------------------------------------------
     # GET -- health / status (value-free; safe on unauthenticated localhost)
     # ------------------------------------------------------------------
     def do_GET(self) -> None:  # noqa: N802 -- BaseHTTPRequestHandler API
-        if self.path == "/health":
+        if self.path == "/health":  # liveness only; value-free, no session data
             self._send_json(200, {
                 "status": "ok",
                 "sessions": len(self.sessions),
+                "auth": self.auth is not None,
                 "session_store": self.session_store is not None,
                 "audit_persisted": self.audit_log is not None,
             })
+            return
+        principal = self._authenticate()
+        if principal is None:
             return
         m = _SESSION_DELETE_RE.match(self.path)  # GET /sessions/<id> -> status
         if m:
             session_id = m.group(1)
             channel = self.sessions.get(session_id)
-            if channel is None:
+            # 404 (not 403) for missing OR not-owned: don't reveal that a session
+            # you don't own exists (IDOR/enumeration).
+            if channel is None or self.session_owners.get(session_id) != principal:
                 self._send_json(404, {"error": "no such session", "session_id": session_id})
                 return
             self._send_json(200, {"session_id": session_id, **channel.status()})
@@ -135,6 +220,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(413, {"error": "request body too large"})
             return
         body = self.rfile.read(length) if length else b""
+        principal = self._authenticate()
+        if principal is None:
+            return
         try:
             payload = json.loads(body or b"{}")
         except json.JSONDecodeError as exc:
@@ -146,6 +234,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.sessions[session_id] = AgentChannel(
                 self.suite_loader, audit_log=self.audit_log
             )
+            self.session_owners[session_id] = principal
             self._send_json(201, {"session_id": session_id})
             return
 
@@ -153,10 +242,20 @@ class _Handler(BaseHTTPRequestHandler):
         if m:
             session_id = m.group(1)
             channel = self.sessions.get(session_id)
-            if channel is None:
+            if channel is not None:
+                # Existing in-memory session: only its owner may drive it.
+                if self.session_owners.get(session_id) != principal:
+                    self._send_json(403, {"error": "session belongs to another principal"})
+                    return
+            else:
                 # Restore a persisted session after a restart (B1); otherwise
-                # create implicitly (the first message under a client-supplied
-                # id creates it -- what the Claude Code hooks rely on).
+                # create implicitly (first message under a client-supplied id).
+                # Either way the session is bound to THIS principal; a persisted
+                # session owned by someone else is refused.
+                owner = self._owner_of(session_id)
+                if owner is not None and owner != principal:
+                    self._send_json(403, {"error": "session belongs to another principal"})
+                    return
                 if self.session_store is not None:
                     channel = restore_channel(
                         self.suite_loader, self.session_store, session_id,
@@ -165,15 +264,21 @@ class _Handler(BaseHTTPRequestHandler):
                 if channel is None:
                     channel = AgentChannel(self.suite_loader, audit_log=self.audit_log)
                 self.sessions[session_id] = channel
+                self.session_owners[session_id] = principal
             response = channel.receive_json(payload)
-            # Persist an accepted prompt so it survives a restart.
+            # Persist an accepted prompt (with its owner) so it survives a restart.
             if (
                 self.session_store is not None
                 and payload.get("kind") == "prompt"
                 and response.get("accepted")
             ):
-                config = {k: v for k, v in payload.items() if k not in ("kind", "prompt")}
-                self.session_store.record(session_id, payload.get("prompt", ""), config)
+                config = {
+                    k: v for k, v in payload.items()
+                    if k not in ("kind", "prompt", "cache_dir")
+                }
+                self.session_store.record(
+                    session_id, payload.get("prompt", ""), config, owner=principal
+                )
             self._send_json(200, response)
             return
 
@@ -187,10 +292,19 @@ class _Handler(BaseHTTPRequestHandler):
         if not m:
             self._send_json(404, {"error": f"no route for DELETE {self.path}"})
             return
+        principal = self._authenticate()
+        if principal is None:
+            return
         session_id = m.group(1)
+        # 404 for missing OR not-owned (never delete or reveal another's session).
+        if self._owner_of(session_id) != principal:
+            self._send_json(404, {"deleted": False})
+            return
         existed = self.sessions.pop(session_id, None) is not None
+        self.session_owners.pop(session_id, None)
         if self.session_store is not None:
             self.session_store.remove(session_id)
+            existed = True
         self._send_json(200 if existed else 404, {"deleted": existed})
 
     # ------------------------------------------------------------------
@@ -221,7 +335,26 @@ def main() -> int:
         "--audit-log", default=os.environ.get("AUDIT_LOG_PATH", ""),
         help="JSONL file to append operator-facing audit events to; empty = in-memory only",
     )
+    parser.add_argument(
+        "--auth-token", default=os.environ.get("GATEWAY_AUTH_TOKEN", ""),
+        help="shared Bearer token required on every request (principal 'operator'); empty = open mode",
+    )
+    parser.add_argument(
+        "--auth-tokens", default=os.environ.get("GATEWAY_AUTH_TOKENS", ""),
+        help="path to a JSON {principal: token} map for per-principal Bearer auth",
+    )
     args = parser.parse_args()
+
+    _Handler.auth = TokenAuth.from_config(args.auth_token, args.auth_tokens)
+    if _Handler.auth is None:
+        print(
+            "WARNING: no auth configured (--auth-token/--auth-tokens). The gateway "
+            "is UNAUTHENTICATED -- bind it to loopback only. Any client that can "
+            "reach the socket controls it.",
+            file=sys.stderr,
+        )
+    else:
+        print("auth: Bearer token required on all routes; sessions bound to principal", file=sys.stderr)
 
     if args.session_store:
         _Handler.session_store = SessionStore(args.session_store)

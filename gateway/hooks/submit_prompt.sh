@@ -51,10 +51,14 @@ if os.environ.get("PAUTH_PLANNER_ENABLE_JUDGE"):
 print(json.dumps(body))
 ' "$prompt")
 
+AUTH_HEADER=()
+[[ -n "${GATEWAY_AUTH_TOKEN:-}" ]] && AUTH_HEADER=(-H "Authorization: Bearer ${GATEWAY_AUTH_TOKEN}")
+
 response=$(curl --silent --show-error --fail-with-body \
   --max-time 30 \
   -X POST \
   -H "Content-Type: application/json" \
+  "${AUTH_HEADER[@]}" \
   -d "$body" \
   "$GATEWAY_URL/sessions/$session_id/messages" 2>&1) || {
   echo "[gateway-hook] gateway HTTP error: $response" >&2

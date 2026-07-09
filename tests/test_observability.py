@@ -119,8 +119,10 @@ def test_agentchannel_status_tracks_prompt_and_plan():
 def _start_server():
     http_server._Handler.suite_loader = staticmethod(_loader)
     http_server._Handler.sessions = {}
+    http_server._Handler.session_owners = {}
     http_server._Handler.session_store = None
     http_server._Handler.audit_log = None
+    http_server._Handler.auth = None
     srv = HTTPServer(("127.0.0.1", 0), http_server._Handler)
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
     thread.start()

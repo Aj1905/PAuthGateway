@@ -33,9 +33,23 @@ class SessionStore:
             except (json.JSONDecodeError, OSError):
                 self._data = {}
 
-    def record(self, session_id: str, prompt: str, config: dict[str, Any] | None = None) -> None:
-        """Persist the inputs needed to reconstruct a session."""
-        self._data[session_id] = {"prompt": prompt, "config": dict(config or {})}
+    def record(
+        self,
+        session_id: str,
+        prompt: str,
+        config: dict[str, Any] | None = None,
+        owner: str | None = None,
+    ) -> None:
+        """Persist the inputs needed to reconstruct a session.
+
+        ``owner`` is the authenticated principal that created the session; it is
+        stored so ownership survives a restart (the HTTP layer refuses a restore
+        for a different principal).
+        """
+        entry: dict[str, Any] = {"prompt": prompt, "config": dict(config or {})}
+        if owner is not None:
+            entry["owner"] = owner
+        self._data[session_id] = entry
         self._flush()
 
     def remove(self, session_id: str) -> None:
