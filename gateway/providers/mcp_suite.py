@@ -40,6 +40,7 @@ from typing import Any, Callable, Protocol
 
 from pauth.codegen import ToolDoc
 from pauth.suites.base import SuiteSpec, ToolSpec
+from gateway.providers.openapi_suite import _MAX_RESPONSE_BYTES, _SAFE_OPENER, _require_http_url
 
 
 class MCPError(RuntimeError):
@@ -65,6 +66,9 @@ class HTTPTransport:
     """JSON-RPC over a single HTTP endpoint (POST)."""
 
     def __init__(self, url: str) -> None:
+        # Gate the endpoint scheme/host (config is operator-set, but a bad value
+        # or a redirect must not turn this into a file:// read or metadata SSRF).
+        _require_http_url(url, "mcp url")
         self._url = url
         self._ids = itertools.count(1)
 
@@ -78,8 +82,11 @@ class HTTPTransport:
             headers={"Content-Type": "application/json", "Accept": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = resp.read().decode("utf-8")
+        with _SAFE_OPENER.open(req, timeout=30) as resp:  # re-validates redirects
+            body = resp.read(_MAX_RESPONSE_BYTES + 1)
+            if len(body) > _MAX_RESPONSE_BYTES:
+                raise MCPError(f"response from {self._url} exceeds size cap")
+            raw = body.decode("utf-8")
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError as exc:

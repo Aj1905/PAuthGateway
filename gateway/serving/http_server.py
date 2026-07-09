@@ -123,8 +123,17 @@ class _Handler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------
     # POST
     # ------------------------------------------------------------------
+    max_body_bytes: int = 1 * 1024 * 1024  # cap request body to blunt memory DoS
+
     def do_POST(self) -> None:  # noqa: N802 -- BaseHTTPRequestHandler API
-        length = int(self.headers.get("Content-Length", "0") or "0")
+        try:
+            length = int(self.headers.get("Content-Length", "0") or "0")
+        except ValueError:
+            self._send_json(400, {"error": "invalid Content-Length"})
+            return
+        if length > self.max_body_bytes:
+            self._send_json(413, {"error": "request body too large"})
+            return
         body = self.rfile.read(length) if length else b""
         try:
             payload = json.loads(body or b"{}")
