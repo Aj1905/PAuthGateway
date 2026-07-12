@@ -67,8 +67,7 @@ from gateway.runtime.audit import AuditLog
 from gateway.runtime.confirmation import (
     PendingConfirmation,
     SourceTrust,
-    control_operands,
-    static_taint_map,
+    taint_map,
 )
 from gateway.runtime.feedback import (
     ReasonCode,
@@ -375,7 +374,7 @@ class Gateway:
         # folded in, so their provenance is lost here -- fan-out over an
         # untrusted list can under-gate (documented limitation; fan-out is not
         # on the live path yet).
-        state.gated_sources = static_taint_map(
+        state.gated_sources = taint_map(
             code, state.docs_by_name, state.source_trust, state.precheck_policy
         )
         state.gated_operands = set(state.gated_sources)
@@ -479,9 +478,17 @@ class Gateway:
         The actual value is stored for the human side channel; the returned
         reason is value-free (the agent-facing feedback is built from it, S16).
         """
-        for i, name in control_operands(tool, state.docs_by_name, state.precheck_policy):
-            if (tool, i) not in state.gated_operands or i >= len(args):
+        # Drive the gate from the gated-operand set directly, so it covers both
+        # the narrow (recipient/amount) and broad ("trust the human": any
+        # untrusted-derived operand of a side-effecting call) taint modes.
+        doc = state.docs_by_name.get(tool)
+        for i in sorted(pi for (t, pi) in state.gated_operands if t == tool):
+            if i >= len(args):
                 continue
+            name = (
+                doc.parameters[i]["name"]
+                if doc is not None and i < len(doc.parameters) else str(i)
+            )
             key = _confirm_key(args[i])
             if (tool, key) in state.confirmed:
                 continue
@@ -621,7 +628,7 @@ class Gateway:
         runner = suite.runner_factory(env)
 
         docs_by_name = {t.name: t for t in suite.tool_docs()}
-        _gsrc = static_taint_map(
+        _gsrc = taint_map(
             draft.code, docs_by_name, self._source_trust, self._precheck_policy
         )
         self._session = _Session(

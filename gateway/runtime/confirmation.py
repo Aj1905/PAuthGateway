@@ -47,6 +47,12 @@ class SourceTrust:
     untrusted_tools: frozenset[str] = frozenset()
     trusted_tools: frozenset[str] = frozenset()
     default_untrusted: bool = False
+    # "Trust the human" policy: gate a side-effecting call when ANY operand
+    # (not only recipient/amount) derives from an untrusted source. This covers
+    # DECISION operands -- e.g. book_table(best.id) where best was selected from
+    # untrusted web-extracted data -- so a human confirms actions taken on data
+    # whose truth the gateway cannot verify. Off by default (narrow S15 gate).
+    confirm_untrusted_decisions: bool = False
 
     def is_untrusted(self, tool: str) -> bool:
         if tool in self.trusted_tools:
@@ -201,3 +207,74 @@ def static_taint(
 ) -> set[tuple[str, int]]:
     """Return ``{(tool, param_index)}`` for untrusted-derived control operands."""
     return set(static_taint_map(code, docs_by_name, source_trust, policy))
+
+
+# ---------------------------------------------------------------------------
+# Broad taint ("trust the human", S15+): gate EVERY untrusted-derived operand
+# of a side-effecting call, not just recipient/amount. This is what makes a
+# human the truth oracle for decisions taken on structured-but-untrusted data
+# (e.g. picking the "best" item from an extracted web page).
+# ---------------------------------------------------------------------------
+
+# A tool is treated as a pure read (never gated) only if its name marks it one;
+# everything else is assumed side-effecting, so a mislabel over-gates (safe)
+# rather than under-gates. Mirrors eval.schema_scope's getter prefixes.
+_READ_PREFIXES = (
+    "get_", "list_", "read_", "search_", "find_", "retrieve_", "show_",
+    "lookup_", "fetch_", "check_", "view_",
+)
+
+
+def is_side_effecting(tool: str) -> bool:
+    """True unless the tool's name marks it a pure read (fail-safe: unknown -> gated)."""
+    return not tool.startswith(_READ_PREFIXES)
+
+
+def broad_taint_map(
+    code: str,
+    docs_by_name: dict[str, ToolDoc],
+    source_trust: SourceTrust,
+    policy: PrecheckPolicy | None = None,
+) -> dict[tuple[str, int], tuple[str, ...]]:
+    """Like :func:`static_taint_map`, but gate ANY untrusted-derived operand of a
+    side-effecting call (decision operands included), reusing the same provenance
+    tracking so a transformation cannot launder taint."""
+    func = _run_function(code)
+    if func is None:
+        return {}
+    tool_names = set(docs_by_name)
+    var_sources: dict[str, set] = {}
+    gated: dict[tuple[str, int], tuple[str, ...]] = {}
+
+    for stmt in _ordered_statements(func):
+        if (
+            isinstance(stmt, ast.Assign)
+            and len(stmt.targets) == 1
+            and isinstance(stmt.targets[0], ast.Name)
+        ):
+            var_sources[stmt.targets[0].id] = _expr_sources(
+                stmt.value, var_sources, tool_names
+            )
+        for call in _tool_calls(stmt, tool_names):
+            tool = call.func.id  # type: ignore[union-attr]
+            if not is_side_effecting(tool):
+                continue
+            for i, arg in enumerate(call.args):
+                src = _expr_sources(arg, var_sources, tool_names)
+                untrusted = tuple(sorted(t for t in src if source_trust.is_untrusted(t)))
+                if untrusted:
+                    gated[(tool, i)] = untrusted
+    return gated
+
+
+def taint_map(
+    code: str,
+    docs_by_name: dict[str, ToolDoc],
+    source_trust: SourceTrust,
+    policy: PrecheckPolicy | None = None,
+) -> dict[tuple[str, int], tuple[str, ...]]:
+    """Dispatch to the broad ("trust the human") or narrow (recipient/amount) gate
+    per ``source_trust.confirm_untrusted_decisions``."""
+    if source_trust.confirm_untrusted_decisions:
+        return broad_taint_map(code, docs_by_name, source_trust, policy)
+    return static_taint_map(code, docs_by_name, source_trust, policy)
