@@ -117,7 +117,10 @@ def _reference_code(actions, param_order) -> str:
     return "\n".join(lines) + "\n"
 
 
-def build_suite() -> SuiteSpec:
+def build_suite(reference: bool = True) -> SuiteSpec:
+    """``reference=True`` ships the ground-truth plan (offline sanity). With
+    ``reference=False`` tasks carry NO plan, so A1 must GENERATE one from the
+    instruction -- the real availability measure (needs an API key)."""
     env = _env()
     tools = _tools(env)
     param_order = {n: s.params for n, s in tools.items()}
@@ -149,7 +152,7 @@ def build_suite() -> SuiteSpec:
         tasks.append(TaskSpec(
             id=f"tau_retail_{i}",
             prompt=t.instruction,
-            reference_code=_reference_code(acts, param_order),
+            reference_code=_reference_code(acts, param_order) if reference else None,
             forced_injections=injections or [Call("modify_user_address", [])],
         ))
 
@@ -157,3 +160,8 @@ def build_suite() -> SuiteSpec:
         name="tau_retail", tools=tools, make_env=make_env,
         runner_factory=runner_factory, tasks=tasks,
     )
+
+
+def build_suite_a1() -> SuiteSpec:
+    """A1-generation variant: no reference plan, so A1 plans from the instruction."""
+    return build_suite(reference=False)

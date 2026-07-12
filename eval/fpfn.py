@@ -43,13 +43,17 @@ from pauth.suites.shopping import build_suite as build_shopping_suite
 from pauth.suites.dining import build_suite as build_dining_suite
 from benchmarks.injecagent_adapter import build_suite as build_injecagent_suite
 from benchmarks.tau_bench_adapter import build_suite as build_tau_retail_suite
+from benchmarks.tau_bench_adapter import build_suite_a1 as build_tau_retail_a1_suite
 
 # Offline suites ship reference A1 code, so they run with no API key.
+# tau_retail_a1 has NO reference plan -> A1 generates from the instruction
+# (needs an API key; this is the real availability measure for tau-bench).
 _OFFLINE_SUITES = {
     "shopping": build_shopping_suite,
     "dining": build_dining_suite,
     "injecagent": build_injecagent_suite,
     "tau_retail": build_tau_retail_suite,
+    "tau_retail_a1": build_tau_retail_a1_suite,
 }
 
 from gateway.planning.agentic_a1 import generate_code_with_self_repair
