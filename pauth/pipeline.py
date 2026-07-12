@@ -11,6 +11,7 @@ import ast
 import dataclasses
 
 from .grammar import parse_and_validate, strip_dead_code, validate_semantics
+from .normalize import normalize_run
 from .rules import Rule, compile_rules
 from .slicing import Slice, derive_slices
 
@@ -40,6 +41,10 @@ def prepare(
     """
     func = parse_and_validate(code)
     func = strip_dead_code(func, tool_names)
+    # Tier-1 semantics-preserving normalization: rewrite reject-but-safe forms
+    # (call-as-argument, straight-line reassignment) into the slicer's canonical
+    # form. Does not change behavior, so the deterministic core is untouched.
+    func = normalize_run(func)
     validate_semantics(func, tool_names)
     slices = derive_slices(func, tool_names)
     rules = compile_rules(slices, tool_service)
