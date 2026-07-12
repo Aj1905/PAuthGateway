@@ -54,6 +54,7 @@ _ALLOWED: tuple[type, ...] = (
     ast.Subscript,
     ast.Lambda,
     ast.List,
+    ast.For,   # bounded for over a gateway-observed collection (see _check_bounded_for)
     # operators
     ast.Add,
     ast.Sub,
@@ -79,7 +80,6 @@ _ALLOWED: tuple[type, ...] = (
 
 # Explicitly forbidden constructs, mapped to a human-readable reason.
 _FORBIDDEN = {
-    ast.For: "for-loops are forbidden (rule 2a)",
     ast.While: "while-loops are forbidden (rule 2a)",
     ast.Return: "return statements are forbidden (rule 1)",
     ast.Import: "imports are forbidden (rule 1)",
@@ -143,6 +143,7 @@ def parse_and_validate(code: str) -> ast.FunctionDef:
             )
 
     _check_no_nested_if(func)
+    _check_bounded_for(func)
     _check_lambdas(func)
     return func
 
@@ -165,6 +166,40 @@ def _check_no_nested_if(func: ast.FunctionDef) -> None:
             for inner in list(stmt.body) + list(stmt.orelse):
                 if isinstance(inner, ast.If):
                     raise RestrictedGrammarError("nested if statements are forbidden (rule 10)")
+
+
+def _check_bounded_for(func: ast.FunctionDef) -> None:
+    """Bounded for: ``for <var> in <collection-var>: <tool calls only>``.
+
+    Only this shape is sliceable soundly (the slicer emits a quantified rule over
+    the observed collection): the loop var is a single fresh identifier, the
+    iterable is a bound variable (a tool result the gateway observed), the body is
+    straight-line tool calls, and no loop/if nests inside. Anything else (index
+    loops, ``range``, nested bodies, in-body assignments) stays rejected."""
+    assigned = {t.id for n in ast.walk(func) if isinstance(n, ast.Assign)
+                for t in n.targets if isinstance(t, ast.Name)}
+    for stmt in func.body:
+        if not isinstance(stmt, ast.For):
+            continue
+        if not isinstance(stmt.target, ast.Name):
+            raise RestrictedGrammarError("for-loop target must be a single variable (rule 2a)")
+        if stmt.target.id in assigned:
+            raise RestrictedGrammarError(f"for-loop variable '{stmt.target.id}' shadows an assignment")
+        if not isinstance(stmt.iter, ast.Name):
+            raise RestrictedGrammarError(
+                "for-loop must iterate a bound collection variable, e.g. "
+                "`items = get_items(); for x in items:` (rule 2a)"
+            )
+        if stmt.orelse:
+            raise RestrictedGrammarError("for-else is forbidden")
+        for inner in stmt.body:
+            if isinstance(inner, ast.Pass):
+                continue
+            if not (isinstance(inner, ast.Expr) and isinstance(inner.value, ast.Call)):
+                raise RestrictedGrammarError(
+                    "a for-body may contain only tool-call statements (no assignments, "
+                    "loops, or ifs)"
+                )
 
 
 def _check_lambdas(func: ast.FunctionDef) -> None:
@@ -225,9 +260,16 @@ def validate_semantics(func: ast.FunctionDef, tool_names: set[str]) -> None:
     * a tool call appears only as a statement or as the right-hand side of an
       assignment -- never nested inside another expression (rules 2b3, 16).
     """
-    # Tool calls that the slicer can see: statement-level and let-RHS.
+    # Tool calls that the slicer can see: statement-level (incl. if / else / for
+    # bodies) and let-RHS.
     sliceable: set[int] = set()
-    bodies = [func.body] + [s.body for s in func.body if isinstance(s, ast.If)]
+    bodies = [func.body]
+    for s in func.body:
+        if isinstance(s, ast.If):
+            bodies.append(s.body)
+            bodies.append(s.orelse)
+        elif isinstance(s, ast.For):
+            bodies.append(s.body)
     for body in bodies:
         for stmt in body:
             call: ast.expr | None = None

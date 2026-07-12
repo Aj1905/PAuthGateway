@@ -29,6 +29,11 @@ class Slice:
     arg_exprs: list[ast.expr]     # positional operand expressions
     guards: list[ast.expr]        # path conditions (asserts), unsplit
     lets: dict[str, ast.expr]     # let-bindings referenced by the closure
+    # Bounded for: the call runs once per element of ``loop_iter``, with ``loop_var``
+    # bound to the element. The rule is quantified -- an operand is authorized iff
+    # it matches the expression for SOME element of the (gateway-observed) collection.
+    loop_var: str | None = None
+    loop_iter: ast.expr | None = None
 
     @property
     def key(self) -> str:
@@ -55,17 +60,21 @@ def _statements_with_guards(
     (if-body), or its negation (else-body). Nesting stays forbidden, so a guard is
     at most one predicate; else-body statements carry ``not C``.
     """
-    out: list[tuple[ast.stmt, list[ast.expr]]] = []
+    out: list[tuple[ast.stmt, list[ast.expr], tuple[str | None, ast.expr] | None]] = []
     for stmt in func.body:
         if isinstance(stmt, ast.If):
             for inner in stmt.body:
-                out.append((inner, [stmt.test]))
+                out.append((inner, [stmt.test], None))
             if stmt.orelse:
                 neg = ast.copy_location(ast.UnaryOp(op=ast.Not(), operand=stmt.test), stmt.test)
                 for inner in stmt.orelse:
-                    out.append((inner, [neg]))
+                    out.append((inner, [neg], None))
+        elif isinstance(stmt, ast.For):
+            loop_var = stmt.target.id if isinstance(stmt.target, ast.Name) else None
+            for inner in stmt.body:
+                out.append((inner, [], (loop_var, stmt.iter)))
         else:
-            out.append((stmt, []))
+            out.append((stmt, [], None))
     return out
 
 
@@ -84,7 +93,7 @@ def derive_slices(func: ast.FunctionDef, tool_names: set[str]) -> list[Slice]:
 
     # Record every assignment: name -> [(value expression, guard, order), ...].
     assigns: dict[str, list[tuple[ast.expr, list[ast.expr], int]]] = {}
-    for order, (stmt, guard) in enumerate(stmts):
+    for order, (stmt, guard, _loop) in enumerate(stmts):
         if isinstance(stmt, ast.Assign):
             for target in stmt.targets:
                 if isinstance(target, ast.Name):
@@ -92,14 +101,14 @@ def derive_slices(func: ast.FunctionDef, tool_names: set[str]) -> list[Slice]:
 
     slices: list[Slice] = []
     counts: dict[str, int] = {}
-    for stmt, guard in stmts:
+    for stmt, guard, loop in stmts:
         call = _tool_call_of(stmt, tool_names)
         if call is None:
             continue
         tool = call_name(call)
         idx = counts.get(tool, 0)
         counts[tool] = idx + 1
-        slices.extend(_build_slices(call, tool, idx, guard, assigns))
+        slices.extend(_build_slices(call, tool, idx, guard, assigns, loop))
     return slices
 
 
@@ -121,6 +130,7 @@ def _build_slices(
     idx: int,
     guard: list[ast.expr],
     assigns: dict[str, list[tuple[ast.expr, list[ast.expr], int]]],
+    loop: tuple[str | None, ast.expr] | None = None,
 ) -> list[Slice]:
     """Dependency-closure the call, forking on any disjunctive variable.
 
@@ -129,6 +139,8 @@ def _build_slices(
     definitions this collapses to exactly the old single-slice behaviour.
     """
     arg_exprs = list(call.args)
+    loop_var = loop[0] if loop else None
+    loop_iter = loop[1] if loop else None
 
     def _init():
         gnodes: dict[str, tuple[ast.expr, int]] = {}
@@ -140,7 +152,10 @@ def _build_slices(
                 frontier.extend(names_in(cond))
         for expr in arg_exprs:
             frontier.extend(names_in(expr))
-        return ({}, gnodes, frontier)
+        if loop_iter is not None:  # resolve the collection var into the closure
+            frontier.extend(names_in(loop_iter))
+        # loop_var is bound per-element at enforcement time, not resolved here.
+        return ({}, gnodes, [n for n in frontier if n != loop_var])
 
     # Worklist of partial resolutions; forks on disjunctive names.
     partials: list[tuple[dict, dict, list[str]]] = [_init()]
@@ -179,5 +194,6 @@ def _build_slices(
         out.append(Slice(
             tool=tool, call_index=idx, call_node=call,
             arg_exprs=arg_exprs, guards=ordered_guards, lets=ordered_lets,
+            loop_var=loop_var, loop_iter=loop_iter,
         ))
     return out
