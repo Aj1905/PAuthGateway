@@ -51,14 +51,19 @@ def _statements_with_guards(
 ) -> list[tuple[ast.stmt, list[ast.expr]]]:
     """Flatten the body into (statement, path-conditions) pairs.
 
-    The grammar forbids nested ifs, so a statement's path condition is either
-    empty (top level) or the single enclosing ``if`` test.
+    A statement's path condition is empty (top level), the enclosing ``if`` test
+    (if-body), or its negation (else-body). Nesting stays forbidden, so a guard is
+    at most one predicate; else-body statements carry ``not C``.
     """
     out: list[tuple[ast.stmt, list[ast.expr]]] = []
     for stmt in func.body:
         if isinstance(stmt, ast.If):
             for inner in stmt.body:
                 out.append((inner, [stmt.test]))
+            if stmt.orelse:
+                neg = ast.copy_location(ast.UnaryOp(op=ast.Not(), operand=stmt.test), stmt.test)
+                for inner in stmt.orelse:
+                    out.append((inner, [neg]))
         else:
             out.append((stmt, []))
     return out

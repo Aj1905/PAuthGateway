@@ -46,6 +46,37 @@ def test_both_branches_authorized_offbranch_denied():
     assert not ok("GB99WATTACKER99999999")  # off-branch injected value -> FN=0
 
 
+_IFELSE = '''def run():
+    m = read_message()
+    if m.amount > 0.0:
+        r = m.iban
+    else:
+        r = "GB33BUKB20201555555555"
+    send_money(r, 10.0, "x", "2024-01-01")
+'''
+
+
+def test_if_else_merge_is_accepted_and_forks():
+    suite = _loader("msg")
+    prepared = prepare(_IFELSE, suite.tool_names(), suite.tool_signer())
+    assert sum(1 for r in prepared.rules if r.tool == "send_money") == 2
+
+
+def test_if_else_branches_guarded_offbranch_denied():
+    suite = _loader("msg")
+    prepared = prepare(_IFELSE, suite.tool_names(), suite.tool_signer())
+    enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
+    execute_generated_code(
+        prepared.source, enf, suite.tool_params(), suite.runner_factory(suite.make_env())
+    )
+    ok = lambda v: check_injection(enf, "send_money", [v, 10.0, "x", "2024-01-01"]).permit
+    # msg env: m.amount = 10 > 0, so the C-branch (m.iban) is on-path; the else
+    # constant is off-path (guard not C is false); an attacker value matches none.
+    assert ok(ATTACKER_IBAN)                    # C-branch value
+    assert not ok("GB33BUKB20201555555555")     # else branch, off-path here
+    assert not ok("GB99XATTACK99999999")        # off-branch injection -> FN=0
+
+
 def test_unsound_reassignment_shapes_still_rejected():
     suite = _loader("msg")
     tools, signer = suite.tool_names(), suite.tool_signer()

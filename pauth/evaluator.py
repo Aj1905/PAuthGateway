@@ -177,6 +177,10 @@ class Evaluator:
             raise NotConcretizable(f"type error in arithmetic: {exc}") from exc
 
     def _e_UnaryOp(self, node: ast.UnaryOp) -> Any:
+        # ``not`` is not in the A1 grammar, but the slicer SYNTHESISES it for the
+        # else-branch guard of an if/else merge (guard = not C). Support it here.
+        if isinstance(node.op, ast.Not):
+            return not self.eval(node.operand)
         val = self.eval(node.operand)
         try:
             if isinstance(node.op, ast.USub):

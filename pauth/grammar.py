@@ -156,12 +156,13 @@ def _is_docstring(stmt: ast.stmt) -> bool:
 
 
 def _check_no_nested_if(func: ast.FunctionDef) -> None:
-    """Rule 10: 'NO nested if statements'."""
+    """Rule 10: no nested if, no elif. A PLAIN else is allowed (its statements
+    slice under ``not C``); elif (``orelse == [If]``) and nested ifs stay banned."""
     for stmt in func.body:
         if isinstance(stmt, ast.If):
-            if stmt.orelse:
-                raise RestrictedGrammarError("else / elif blocks are forbidden (rule 10)")
-            for inner in stmt.body:
+            if len(stmt.orelse) == 1 and isinstance(stmt.orelse[0], ast.If):
+                raise RestrictedGrammarError("elif blocks are forbidden (rule 10)")
+            for inner in list(stmt.body) + list(stmt.orelse):
                 if isinstance(inner, ast.If):
                     raise RestrictedGrammarError("nested if statements are forbidden (rule 10)")
 
@@ -237,42 +238,44 @@ def validate_semantics(func: ast.FunctionDef, tool_names: set[str]) -> None:
             if isinstance(call, ast.Call) and call_name(call) in tool_names:
                 sliceable.add(id(call))
 
-    # Each variable has a single definition, with ONE exception the slicer models
-    # soundly: the "default then conditionally set" merge -- a top-level CONSTANT
-    # default plus one assignment inside an if-body (``x = ""``; ``if C: x = e``).
-    # The slicer forks such a variable into two branch-slices (const under no
-    # guard, e under C); the enforcer's match-any turns that into a sound
-    # disjunction (an off-branch value matches neither -> still default-deny).
-    # Any other re-assignment (non-constant default, >1 conditional set, 3+ defs)
-    # would need path-merge logic we do not have, so it stays rejected.
-    top_const: dict[str, int] = {}
-    top_other: dict[str, int] = {}
-    conditional: dict[str, int] = {}
+    # Each variable has a single definition, with TWO merge exceptions the slicer
+    # models soundly by forking into mutually-exclusive branch-slices (the
+    # enforcer's match-any turns those into a sound disjunction; an off-branch
+    # value matches none -> still default-deny):
+    #   (1) default-then-conditional: a top-level CONSTANT default + one if-body
+    #       assign (``x = ""``; ``if C: x = e``)  -> const (no guard) / e (C).
+    #   (2) if/else merge: one if-body + one else-body assign of the SAME if
+    #       (``if C: x = a`` / ``else: x = b``)   -> a (C) / b (not C).
+    # Anything else (non-constant default, >1 conditional set, cross-if pairs,
+    # 3+ defs) needs path-merge logic we do not have, so it stays rejected.
+    sites: dict[str, list[tuple[str, int | None]]] = {}
     for stmt in func.body:
         if isinstance(stmt, ast.Assign):
             for t in stmt.targets:
                 if isinstance(t, ast.Name):
-                    bucket = top_const if isinstance(stmt.value, ast.Constant) else top_other
-                    bucket[t.id] = bucket.get(t.id, 0) + 1
+                    kind = "top_const" if isinstance(stmt.value, ast.Constant) else "top_other"
+                    sites.setdefault(t.id, []).append((kind, None))
         elif isinstance(stmt, ast.If):
-            for inner in stmt.body:
-                if isinstance(inner, ast.Assign):
-                    for t in inner.targets:
-                        if isinstance(t, ast.Name):
-                            conditional[t.id] = conditional.get(t.id, 0) + 1
-    names = set(top_const) | set(top_other) | set(conditional)
+            for branch, tag in ((stmt.body, "if_body"), (stmt.orelse, "else_body")):
+                for inner in branch:
+                    if isinstance(inner, ast.Assign):
+                        for t in inner.targets:
+                            if isinstance(t, ast.Name):
+                                sites.setdefault(t.id, []).append((tag, id(stmt)))
+    names = set(sites)
     reassigned = []
-    for name in names:
-        count = top_const.get(name, 0) + top_other.get(name, 0) + conditional.get(name, 0)
-        if count <= 1:
+    for name, locs in sites.items():
+        if len(locs) <= 1:
             continue
-        allowed_merge = (
-            count == 2
-            and top_const.get(name, 0) == 1
-            and top_other.get(name, 0) == 0
-            and conditional.get(name, 0) == 1
+        kinds = sorted(k for k, _ in locs)
+        const_default = (
+            len(locs) == 2 and kinds == ["if_body", "top_const"]
         )
-        if not allowed_merge:
+        ifelse_merge = (
+            len(locs) == 2 and kinds == ["else_body", "if_body"]
+            and locs[0][1] == locs[1][1]  # both branches of the SAME if
+        )
+        if not (const_default or ifelse_merge):
             reassigned.append(name)
     if reassigned:
         raise RestrictedGrammarError(
