@@ -1,8 +1,9 @@
 """Suite-filter recall eval (D1): does the filter drop a needed suite?
 
-Metric: FILTER_DROP_COUNT (needed suite dropped by the filter) and FILTER_RECALL
-over the labelled corpus, swept across top_k. A small top_k shrinks A1's prompt
-but risks dropping the suite a task needs -- this quantifies that blind spot.
+Metric: DROPPED_NEEDED_SUITES (needed suite dropped by the filter) and
+SUITE_FILTER_RECALL over the labelled corpus, swept across top_k. A small top_k
+shrinks A1's prompt but risks dropping the suite a task needs -- this quantifies
+that blind spot.
 
 Run: .venv/bin/python -m eval.filter_recall
 """
@@ -12,6 +13,7 @@ import sys
 
 from gateway.providers.suite_filter import SuiteFilter
 from tests.fixtures.filter_cases import ALL_SUITES, CASES, build_universe
+from eval import metrics as M
 
 
 def run(top_k, universe):
@@ -30,7 +32,7 @@ def main() -> int:
     print("=" * 66)
     print(f"FILTER recall eval -- {total} prompts over {len(universe)} suites")
     print("=" * 66)
-    print(f"{'top_k':<8}{'FILTER_DROP_COUNT':<20}{'FILTER_RECALL':<16}dropped")
+    print(f"{'top_k':<8}{M.DROPPED_NEEDED_SUITES:<22}{M.SUITE_FILTER_RECALL:<20}dropped")
     print("-" * 66)
     worst = 0
     for top_k in (1, 2, 3, None):
@@ -38,9 +40,9 @@ def main() -> int:
         recall = (total - len(dropped)) / total
         worst = max(worst, len(dropped))
         label = str(top_k) if top_k is not None else "all"
-        print(f"{label:<8}{len(dropped):<20}{recall:<16.0%}{', '.join(dropped) or '-'}")
+        print(f"{label:<8}{len(dropped):<22}{recall:<20.0%}{', '.join(dropped) or '-'}")
     # A deployment picks top_k; the eval just exposes the recall/size tradeoff.
-    print("\nNote: FILTER_DROP_COUNT > 0 at small top_k means a needed suite was")
+    print("\nNote: DROPPED_NEEDED_SUITES > 0 at small top_k means a needed suite was")
     print("dropped -- the blind spot this metric exists to surface.")
     return 0
 

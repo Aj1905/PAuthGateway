@@ -52,6 +52,7 @@ from gateway.planning.composite import CompositePlan, StageTemplate
 from gateway.runtime.confirmation import SourceTrust
 from gateway.runtime.feedback import ReasonCode, classify_reason
 from gateway.runtime.gateway import Gateway
+from eval import metrics as M
 
 SAFE_IBAN = "GB33BUKB20201555555555"
 ATTACKER_IBAN = "GB99EVIL00000000000000"
@@ -239,8 +240,12 @@ def run_gateway(sc: Scenario) -> dict:
             denied += 1  # hard deny = off-plan/dangerous call blocked (a security win)
     dt = time.perf_counter() - t0
     return {
-        "time_s": dt, "a_total": total, "b_sideeffect": sideeffect,
-        "c_upfront": c_upfront, "c_interrupt": c_interrupt, "security_blocked": denied,
+        "time_s": dt,
+        M.TOTAL_TOOL_CALLS: total,
+        M.SIDE_EFFECTING_CALLS: sideeffect,
+        M.UPFRONT_CONFIRMATIONS: c_upfront,
+        M.MIDRUN_INTERRUPTIONS: c_interrupt,
+        M.BLOCKED_INJECTIONS: denied,
     }
 
 
@@ -263,25 +268,23 @@ def main() -> int:
         base_us = base_t / ncalls * 1e6
         gw_us = gw_t / ncalls * 1e6
         print(f"{sc.name:<26}{base_us:>13.2f}{gw_us:>12.2f}{gw_us - base_us:>10.2f}"
-              f"{counts['a_total']:>4}{counts['b_sideeffect']:>4}{counts['c_upfront']:>6}"
-              f"{counts['c_interrupt']:>7}{counts['security_blocked']:>9}")
-        agg["a"] += counts["a_total"]; agg["b"] += counts["b_sideeffect"]
-        agg["up"] += counts["c_upfront"]; agg["int"] += counts["c_interrupt"]
-        agg["blk"] += counts["security_blocked"]
+              f"{counts[M.TOTAL_TOOL_CALLS]:>4}{counts[M.SIDE_EFFECTING_CALLS]:>4}"
+              f"{counts[M.UPFRONT_CONFIRMATIONS]:>6}{counts[M.MIDRUN_INTERRUPTIONS]:>7}"
+              f"{counts[M.BLOCKED_INJECTIONS]:>9}")
+        agg["a"] += counts[M.TOTAL_TOOL_CALLS]; agg["b"] += counts[M.SIDE_EFFECTING_CALLS]
+        agg["up"] += counts[M.UPFRONT_CONFIRMATIONS]; agg["int"] += counts[M.MIDRUN_INTERRUPTIONS]
+        agg["blk"] += counts[M.BLOCKED_INJECTIONS]
         agg["base"] += base_t; agg["gw"] += gw_t; agg["calls"] += ncalls
 
     print("-" * len(hdr))
     ov = (agg["gw"] - agg["base"]) / agg["calls"] * 1e6
     print(f"\nAggregate over {agg['calls']} calls in {len(SCENARIOS)} flows:")
-    print(f"  gateway machinery overhead : {ov:.2f} us/call "
+    print(f"  {M.ENFORCEMENT_US_PER_CALL:<24}: {ov:.2f} us/call "
           f"(vs ~1-1000 ms for a real SaaS call -> negligible)")
-    print(f"  side-effecting calls (b)   : {agg['b']}/{agg['a']}")
-    print(f"  up-front confirmations     : {agg['up']}  (batched into plan approval; not interrupts)")
-    print(f"  mid-execution interrupts   : {agg['int']}  <- the real autonomy friction")
-    print(f"  dangerous calls blocked    : {agg['blk']}  (executed by the baseline; stopped by the gateway)")
-    print("\n  Reading: the gateway adds microseconds/call and stops the dangerous")
-    print("  calls the baseline runs, while interrupting the loop only when an")
-    print("  untrusted value reaches a control operand AFTER a write (c_interrupt).")
+    print(f"  {M.SIDE_EFFECTING_CALLS:<24}: {agg['b']}/{agg['a']}")
+    print(f"  {M.UPFRONT_CONFIRMATIONS:<24}: {agg['up']}  (batched into plan approval; not interrupts)")
+    print(f"  {M.MIDRUN_INTERRUPTIONS:<24}: {agg['int']}  <- the real autonomy friction")
+    print(f"  {M.BLOCKED_INJECTIONS:<24}: {agg['blk']}  (executed by the baseline; stopped by the gateway)")
     return 0
 
 

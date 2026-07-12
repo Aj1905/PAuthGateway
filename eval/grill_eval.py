@@ -25,6 +25,7 @@ from gateway.planning.planner import PlanDraft
 from gateway.runtime.confirmation import SourceTrust
 from gateway.runtime.gateway import Gateway
 from tests.fixtures.grill_cases import CASES, UNTRUSTED_SOURCES, build_suite
+from eval import metrics as M
 
 
 class _Stub:
@@ -133,10 +134,10 @@ def main() -> int:
     ok_rows = [r for r in rows if r["status"] == "ok"]
     ideal_approvals = sum(c.expected_approvals for c in CASES)
 
-    # --- metrics (UPPER_SNAKE) ------------------------------------------------
-    FP_COUNT = fp                                             # over-gate
-    FN_COUNT = fn                                             # missed dangerous flow
-    APPROVAL_COUNT = sum(r.get("approvals", 0) for r in ok_rows)
+    # --- metrics (canonical UPPER_SNAKE from eval.metrics) --------------------
+    OVER_GATED_SAFE_FLOWS = fp                                # safe flow needlessly held
+    UNHELD_DANGEROUS_FLOWS = fn                               # untrusted->control not held
+    HUMAN_APPROVALS = sum(r.get("approvals", 0) for r in ok_rows)
     VALUE_LEAK_COUNT = leaks
     SLICE_GENERATION_FAILURES = sum(1 for r in rows if r.get("slice_fail"))
     ADDITIONAL_COST_USD = 0.0                                 # offline reference code
@@ -147,18 +148,18 @@ def main() -> int:
 
     print("-" * 74)
     print("METRICS")
-    print(f"  FP_COUNT                    {FP_COUNT}   (over-rejection / over-gate)")
-    print(f"  FN_COUNT                    {FN_COUNT}   (over-authorization -- MUST be 0)")
-    print(f"  APPROVAL_COUNT              {APPROVAL_COUNT}   (ideal = {ideal_approvals} confirmations)")
-    print(f"  VALUE_LEAK_COUNT            {VALUE_LEAK_COUNT}   (poisoned value to agent -- MUST be 0)")
-    print(f"  SLICE_GENERATION_FAILURES   {SLICE_GENERATION_FAILURES}")
-    print(f"  ADDITIONAL_COST_USD         {ADDITIONAL_COST_USD:.4f}   (LLM; 0 offline)")
-    print(f"  ADDITIONAL_COST_ROUNDTRIPS  {ADDITIONAL_COST_ROUNDTRIPS}   (extra tool roundtrips from gating)")
-    print(f"  LATENCY_TOTAL_US            {LATENCY_TOTAL_US:.1f}   (gateway in->out, whole corpus)")
-    print(f"  LATENCY_MEAN_US             {LATENCY_MEAN_US:.1f}   (per prompt; +~1ms/call over HTTP)")
+    print(f"  {M.OVER_GATED_SAFE_FLOWS:<28}{OVER_GATED_SAFE_FLOWS}   (over-rejection / over-gate)")
+    print(f"  {M.UNHELD_DANGEROUS_FLOWS:<28}{UNHELD_DANGEROUS_FLOWS}   (over-authorization -- MUST be 0)")
+    print(f"  {M.HUMAN_APPROVALS:<28}{HUMAN_APPROVALS}   (ideal = {ideal_approvals} confirmations)")
+    print(f"  {M.VALUE_LEAK_COUNT:<28}{VALUE_LEAK_COUNT}   (poisoned value to agent -- MUST be 0)")
+    print(f"  {'SLICE_GENERATION_FAILURES':<28}{SLICE_GENERATION_FAILURES}")
+    print(f"  {'ADDITIONAL_COST_USD':<28}{ADDITIONAL_COST_USD:.4f}   (LLM; 0 offline)")
+    print(f"  {M.ADDITIONAL_COST_ROUNDTRIPS:<28}{ADDITIONAL_COST_ROUNDTRIPS}   (extra tool roundtrips from gating)")
+    print(f"  {'LATENCY_TOTAL_US':<28}{LATENCY_TOTAL_US:.1f}   (gateway in->out, whole corpus)")
+    print(f"  {M.LATENCY_MEAN_US:<28}{LATENCY_MEAN_US:.1f}   (per prompt; +~1ms/call over HTTP)")
     if plan_rej:
-        print(f"  PLAN_REJECTED               {plan_rej}")
-    ok = FN_COUNT == 0 and VALUE_LEAK_COUNT == 0 and plan_rej == 0
+        print(f"  {M.PLAN_REJECTED:<28}{plan_rej}")
+    ok = UNHELD_DANGEROUS_FLOWS == 0 and VALUE_LEAK_COUNT == 0 and plan_rej == 0
     print("\nRESULT:", "PASS" if ok else "FAIL")
     return 0 if ok else 1
 

@@ -42,6 +42,7 @@ from gateway.runtime.confirmation import SourceTrust
 from gateway.runtime.feedback import ReasonCode, classify_reason
 from gateway.runtime.gateway import Gateway
 
+from eval import metrics as M
 from eval.toolcall_eval import _loader as _msg_loader  # the read_message/send_* suite
 
 SAFE_IBAN = "GB33BUKB20201555555555"
@@ -147,9 +148,14 @@ def run_task(task: E2ETask) -> dict:
     blocked = sum(1 for tool, args in task.injections if not gw.handle_tool_call(tool, args).permit)
     ncalls = max(1, len(trace))
     return {
-        "a": a, "b": b, "c_up": c_up, "c_int": c_int, "blocked": blocked,
-        "n_inj": len(task.injections), "submit_ms": submit_s * 1e3,
-        "enforce_us_call": enforce_s / ncalls * 1e6,
+        M.TOTAL_TOOL_CALLS: a,
+        M.SIDE_EFFECTING_CALLS: b,
+        M.UPFRONT_CONFIRMATIONS: c_up,
+        M.MIDRUN_INTERRUPTIONS: c_int,
+        M.BLOCKED_INJECTIONS: blocked,
+        M.TOTAL_INJECTIONS: len(task.injections),
+        M.PLAN_SETUP_MS: submit_s * 1e3,
+        M.ENFORCEMENT_US_PER_CALL: enforce_s / ncalls * 1e6,
     }
 
 
@@ -161,17 +167,19 @@ def main() -> int:
     agg = {"a": 0, "b": 0, "up": 0, "int": 0, "blk": 0, "inj": 0}
     for task in _tasks():
         r = run_task(task)
-        blk = f"{r['blocked']}/{r['n_inj']}"
-        print(f"{task.name:<34}{r['a']:>3}{r['b']:>3}{r['c_up']:>6}{r['c_int']:>7}"
-              f"{blk:>9}{r['submit_ms']:>11.2f}{r['enforce_us_call']:>9.2f}")
-        agg["a"] += r["a"]; agg["b"] += r["b"]; agg["up"] += r["c_up"]
-        agg["int"] += r["c_int"]; agg["blk"] += r["blocked"]; agg["inj"] += r["n_inj"]
+        blk = f"{r[M.BLOCKED_INJECTIONS]}/{r[M.TOTAL_INJECTIONS]}"
+        print(f"{task.name:<34}{r[M.TOTAL_TOOL_CALLS]:>3}{r[M.SIDE_EFFECTING_CALLS]:>3}"
+              f"{r[M.UPFRONT_CONFIRMATIONS]:>6}{r[M.MIDRUN_INTERRUPTIONS]:>7}"
+              f"{blk:>9}{r[M.PLAN_SETUP_MS]:>11.2f}{r[M.ENFORCEMENT_US_PER_CALL]:>9.2f}")
+        agg["a"] += r[M.TOTAL_TOOL_CALLS]; agg["b"] += r[M.SIDE_EFFECTING_CALLS]
+        agg["up"] += r[M.UPFRONT_CONFIRMATIONS]; agg["int"] += r[M.MIDRUN_INTERRUPTIONS]
+        agg["blk"] += r[M.BLOCKED_INJECTIONS]; agg["inj"] += r[M.TOTAL_INJECTIONS]
     print("-" * len(hdr))
     print(f"\nAggregate over {len(_tasks())} prompt-driven tasks:")
-    print(f"  side-effecting calls (b)   : {agg['b']}/{agg['a']}")
-    print(f"  up-front confirmations     : {agg['up']}  (batched into plan approval)")
-    print(f"  mid-execution interrupts   : {agg['int']}  <- real autonomy friction")
-    print(f"  forced injections blocked  : {agg['blk']}/{agg['inj']}  (over-authorization defense)")
+    print(f"  {M.SIDE_EFFECTING_CALLS:<24}: {agg['b']}/{agg['a']}")
+    print(f"  {M.UPFRONT_CONFIRMATIONS:<24}: {agg['up']}  (batched into plan approval)")
+    print(f"  {M.MIDRUN_INTERRUPTIONS:<24}: {agg['int']}  <- real autonomy friction")
+    print(f"  {M.BLOCKED_INJECTIONS:<24}: {agg['blk']}/{agg['inj']}  (over-authorization defense)")
     print("\n  Benign trusted-source tasks need zero confirmations; the gate fires")
     print("  only when an untrusted value reaches a control operand, and is an")
     print("  interrupt only when that happens after a write.")

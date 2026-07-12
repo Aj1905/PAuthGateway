@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from eval import metrics as M
 from eval.toolcall_eval import (
     AUTHORIZED_WRITE,
     INJECTION_ATTACK,
@@ -15,32 +16,32 @@ from eval.toolcall_eval import (
 
 def test_read_only_loop_has_no_side_effects_or_confirmations():
     c = run_gateway(READ_ONLY)
-    assert c["b_sideeffect"] == 0
-    assert c["c_upfront"] == 0 and c["c_interrupt"] == 0
-    assert c["security_blocked"] == 0
+    assert c[M.SIDE_EFFECTING_CALLS] == 0
+    assert c[M.UPFRONT_CONFIRMATIONS] == 0 and c[M.MIDRUN_INTERRUPTIONS] == 0
+    assert c[M.BLOCKED_INJECTIONS] == 0
 
 
 def test_authorized_write_is_not_gated():
     c = run_gateway(AUTHORIZED_WRITE)
-    assert c["b_sideeffect"] == 1
-    assert c["c_upfront"] == 0 and c["c_interrupt"] == 0
+    assert c[M.SIDE_EFFECTING_CALLS] == 1
+    assert c[M.UPFRONT_CONFIRMATIONS] == 0 and c[M.MIDRUN_INTERRUPTIONS] == 0
 
 
 def test_untrusted_control_before_any_write_is_upfront():
     c = run_gateway(UNTRUSTED_UPFRONT)
-    assert c["c_upfront"] == 1
-    assert c["c_interrupt"] == 0  # hoistable: no write committed before the confirmation
+    assert c[M.UPFRONT_CONFIRMATIONS] == 1
+    assert c[M.MIDRUN_INTERRUPTIONS] == 0  # hoistable: no write committed before the confirmation
 
 
 def test_untrusted_control_after_a_write_is_a_mid_execution_interrupt():
     c = run_gateway(POST_WRITE_INTERRUPT)
-    assert c["c_interrupt"] == 1  # the send_note write already ran -> flow-breaking
-    assert c["c_upfront"] == 0
+    assert c[M.MIDRUN_INTERRUPTIONS] == 1  # the send_note write already ran -> flow-breaking
+    assert c[M.UPFRONT_CONFIRMATIONS] == 0
 
 
 def test_injection_call_is_blocked_as_a_security_win():
     c = run_gateway(INJECTION_ATTACK)
-    assert c["security_blocked"] == 1  # the off-plan spurious transfer is denied
+    assert c[M.BLOCKED_INJECTIONS] == 1  # the off-plan spurious transfer is denied
 
 
 def test_baseline_runs_without_a_gateway():

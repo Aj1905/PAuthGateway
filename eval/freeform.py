@@ -36,6 +36,7 @@ from pauth.suites.shopping import build_suite as build_shopping_suite
 
 from gateway.runtime.gateway import Gateway, SubmissionResult
 from tests.fixtures.l1_prompts import FREEFORM_CASES as CANONICAL_FREEFORM, PromptCase
+from eval import metrics as M
 
 try:
     from tests.fixtures.ai_generated.l1_prompts import AI_FREEFORM_CASES
@@ -240,8 +241,8 @@ def measure(args: argparse.Namespace) -> int:
     print(f"A1+A2/A3 accepted:              {len(accepted)} / {len(outcomes)}")
     print(f"rejected:                       {len(rejected)}")
     print(f"accepted but off-intent:        {len(intent_mismatches)}")
-    print(f"over-authorization accepts:     {len(over_auth_accepts)}   <- must be 0")
-    print(f"over-rejections:                {len(over_rejections)}   (recoverable via retry)")
+    print(f"{M.OVER_AUTHORIZATION_ACCEPTS:<32}{len(over_auth_accepts)}   <- must be 0")
+    print(f"{M.OVER_REJECTIONS:<32}{len(over_rejections)}   (recoverable via retry)")
     # OFF_INTENT_COUNT: of the accepted plans, how many had the imperative code
     # call the WRONG tools -- missing a required tool or making a forbidden one.
     # This is functional correctness of the generated code (did it do what was
@@ -256,7 +257,7 @@ def measure(args: argparse.Namespace) -> int:
           f"(usability = 1 - over-rejection; {len(should_accept)} prompts)")
     print(f"ACCEPTANCE_RATE (should-reject) {acc_shouldnt:.1%}   "
           f"(= over-authorization; MUST be 0%; {len(should_reject)} prompts)")
-    print(f"OFF_INTENT_COUNT               {len(intent_mismatches)}   "
+    print(f"{M.OFF_INTENT_COUNT:<32}{len(intent_mismatches)}   "
           f"(accepted but wrong tools: {off_intent_missing} missing, "
           f"{off_intent_spurious} spurious; imperative-code correctness)")
 
