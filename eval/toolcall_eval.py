@@ -1,6 +1,21 @@
-"""Measure what the PAuth gateway costs vs. what it buys, on agent-loop flows.
+"""Tool-call eval: what the PAuth gateway costs vs. buys, given a tool-call trace.
 
-For each representative loop this runs the exact same tool-call sequence twice:
+SCOPE (read this first). The INPUT here is a hand-authored SEQUENCE OF TOOL CALLS
+plus the plan they run under -- NOT a prompt. It does not run a real agent; the
+agent's decisions (which tools, order, args, and the injected call) are scripted.
+So:
+  * the TIMING (gateway machinery us/call) is real and input-agnostic -- it holds
+    regardless of who produced the calls;
+  * the COUNTS (a/b/c) exercise and validate the classification LOGIC, but their
+    magnitudes reflect the chosen scenarios, NOT measured real-agent frequencies.
+
+The end-to-end story -- a real agent (LLM) turning a PROMPT into tool calls,
+including under injection, and measuring how often confirmations actually fire --
+belongs to a separate E2E eval (e.g. wiring these counters into the AgentDojo
+real-agent runs). Keep the two distinct: this file = tool-call trace in; E2E =
+prompt in.
+
+For each representative flow this runs the exact same tool-call sequence twice:
 
 * BASELINE  -- no gateway. Calls execute directly (this is "PAuth removed"):
   zero enforcement, zero interruptions, and any dangerous call just runs.
@@ -21,7 +36,7 @@ It reports, per flow and in aggregate:
 * security_blocked: off-plan/dangerous calls the gateway denied that the baseline
   executed. This is the security the machinery time bought.
 
-Run:  .venv/bin/python -m eval.loop_overhead [--reps 2000]
+Run:  .venv/bin/python -m eval.toolcall_eval [--reps 2000]
 """
 
 from __future__ import annotations

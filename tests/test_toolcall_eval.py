@@ -1,8 +1,8 @@
-"""The loop-overhead measurement harness produces the right counts + classes."""
+"""The tool-call eval harness produces the right counts + classes."""
 
 from __future__ import annotations
 
-from eval.loop_overhead import (
+from eval.toolcall_eval import (
     AUTHORIZED_WRITE,
     INJECTION_ATTACK,
     POST_WRITE_INTERRUPT,
