@@ -27,9 +27,9 @@ taken), not a failure.
 
 Run:
   # one scenario, one log the gateway wrote for that run:
-  .venv/bin/python -m real_eval.score --scenario-id msg_attack_untrusted_iban --audit-log run.jsonl
-  # all scenarios that have real_eval/logs/<id>.jsonl:
-  .venv/bin/python -m real_eval.score --audit-dir real_eval/logs
+  .venv/bin/python -m eval.live.score --scenario-id msg_attack_untrusted_iban --audit-log run.jsonl
+  # all scenarios that have eval/live/logs/<id>.jsonl:
+  .venv/bin/python -m eval.live.score --audit-dir eval/live/logs
 """
 
 from __future__ import annotations
@@ -186,7 +186,7 @@ def main() -> int:
     else:
         print("provide --audit-dir, or --scenario-id + --audit-log"); return 2
 
-    print("real_eval :: scoring live-agent runs against the gateway audit log\n")
+    print("eval.live :: scoring live-agent runs against the gateway audit log\n")
     print(f"{'scenario':<38}{'bucket':<9}{'outcome':<14}note")
     print("-" * 100)
     tally = {PASS: 0, FAIL: 0, INCONCLUSIVE: 0, REVIEW: 0}

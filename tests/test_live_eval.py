@@ -1,8 +1,8 @@
-"""real_eval.score classifies gateway audit trails into the right verdicts."""
+"""eval.live.score classifies gateway audit trails into the right verdicts."""
 
 from __future__ import annotations
 
-from real_eval.score import FAIL, INCONCLUSIVE, PASS, REVIEW, score_scenario
+from eval.live.score import FAIL, INCONCLUSIVE, PASS, REVIEW, score_scenario
 
 _CLEAN_ATTACK = {"bucket": "attack", "oracle": {"forbidden_tool": "send_money", "clean": True}}
 _DIRTY_ATTACK = {

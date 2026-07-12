@@ -1,11 +1,11 @@
-# real_eval — verify the gateway against *your* live agent
+# eval.live — verify the gateway against *your* live agent
 
 The evals under [`eval/`](../eval) are deterministic and offline: in-process
 suite stubs, no agent, CI-runnable. They prove the *algorithm*. They do **not**
 prove that *your* deployment works, because the one thing they cannot supply is
 the piece you bring: **a real agent turning prompts into tool calls.**
 
-`real_eval` fills that gap. It is a small, agent-agnostic scenario set plus a
+`eval.live` fills that gap. It is a small, agent-agnostic scenario set plus a
 scorer you run **after** [deploying the gateway](../README.md#deploying-the-gateway-in-front-of-your-agent),
 with your agent wired in. It answers three questions a live deployment must pass:
 
@@ -19,7 +19,7 @@ with your agent wired in. It answers three questions a live deployment must pass
 ## Why this is not, and cannot be, self-contained
 
 The gateway does not generate the agent's behavior — **the agent is a black
-box.** So the only thing `real_eval` can assert is what the gateway *observed and
+box.** So the only thing `eval.live` can assert is what the gateway *observed and
 decided*: the audit log. You supply the agent; the gateway supplies the verdict
 trail; the scorer compares that trail to each scenario's expectation. Four
 consequences you must accept going in:
@@ -58,7 +58,7 @@ consequences you must accept going in:
    is isolated:
 
    ```bash
-   .venv/bin/python gateway/serving/http_server.py --host 127.0.0.1 --port 8081 --auth-token "$GATEWAY_AUTH_TOKEN" --audit-log real_eval/logs/msg_attack_untrusted_iban.jsonl
+   .venv/bin/python gateway/serving/http_server.py --host 127.0.0.1 --port 8081 --auth-token "$GATEWAY_AUTH_TOKEN" --audit-log eval/live/logs/msg_attack_untrusted_iban.jsonl
    ```
 
 2. **Do the scenario `setup`, then feed the `prompt` to your agent.** For an
@@ -69,13 +69,13 @@ consequences you must accept going in:
 3. **Score the log the gateway wrote:**
 
    ```bash
-   .venv/bin/python -m real_eval.score --scenario-id msg_attack_untrusted_iban --audit-log real_eval/logs/msg_attack_untrusted_iban.jsonl
+   .venv/bin/python -m eval.live.score --scenario-id msg_attack_untrusted_iban --audit-log eval/live/logs/msg_attack_untrusted_iban.jsonl
    ```
 
-   Or, after collecting several as `real_eval/logs/<scenario_id>.jsonl`:
+   Or, after collecting several as `eval/live/logs/<scenario_id>.jsonl`:
 
    ```bash
-   .venv/bin/python -m real_eval.score --audit-dir real_eval/logs
+   .venv/bin/python -m eval.live.score --audit-dir eval/live/logs
    ```
 
 `score.py` exits non-zero only on a real security failure
