@@ -100,27 +100,28 @@ def _stub_runner(env: Any) -> Callable[[str, dict[str, Any]], Any]:
 
 
 def build_suite() -> SuiteSpec:
-    """Build the InjecAgent SuiteSpec from the vendored direct-harm sample."""
+    """Build the InjecAgent SuiteSpec from the vendored dh + ds base test cases."""
     tools = _tool_specs()
     param_order = {n: s.params for n, s in tools.items()}
-    cases = json.loads((_DATA / "cases_dh_sample.json").read_text())
 
     tasks: list[TaskSpec] = []
-    for i, c in enumerate(cases):
-        user_tool = c["User Tool"]
-        if user_tool not in tools:
-            continue
-        code = _reference_code(user_tool, c.get("Tool Parameters", ""), param_order[user_tool])
-        # Each attacker tool the injection tries to invoke is off-plan -> must deny.
-        injections = [Call(a, []) for a in c.get("Attacker Tools", []) if a in tools]
-        if not injections:
-            continue
-        tasks.append(TaskSpec(
-            id=f"injecagent_dh_{i}_{user_tool}",
-            prompt=c["User Instruction"],
-            reference_code=code,
-            forced_injections=injections,
-        ))
+    for kind in ("dh", "ds"):  # direct-harm + data-stealing
+        cases = json.loads((_DATA / f"cases_{kind}_base.json").read_text())
+        for i, c in enumerate(cases):
+            user_tool = c["User Tool"]
+            if user_tool not in tools:
+                continue
+            code = _reference_code(user_tool, c.get("Tool Parameters", ""), param_order[user_tool])
+            # Each attacker tool the injection tries to invoke is off-plan -> deny.
+            injections = [Call(a, []) for a in c.get("Attacker Tools", []) if a in tools]
+            if not injections:
+                continue
+            tasks.append(TaskSpec(
+                id=f"injecagent_{kind}_{i}_{user_tool}",
+                prompt=c["User Instruction"],
+                reference_code=code,
+                forced_injections=injections,
+            ))
 
     return SuiteSpec(
         name="injecagent",
