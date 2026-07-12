@@ -63,6 +63,6 @@ def build_universe(names: list[str] | None = None) -> dict[str, SuiteSpec]:
         if n == "shopping":
             suites[n] = build_shopping()
         else:
-            from tests.experiment.agentdojo_adapter import load_suite
+            from benchmarks.agentdojo_adapter import load_suite
             suites[n] = load_suite(n)
     return suites

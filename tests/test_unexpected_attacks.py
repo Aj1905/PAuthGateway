@@ -17,7 +17,7 @@ from __future__ import annotations
 import textwrap
 from typing import Any
 
-from tests.experiment.agentdojo_adapter import load_suite
+from benchmarks.agentdojo_adapter import load_suite
 from pauth import (
     Enforcer,
     EnvelopeStore,

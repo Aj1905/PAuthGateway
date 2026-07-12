@@ -10,7 +10,7 @@ if str(ROOT) not in sys.path:
 
 from pauth import prepare
 from pauth.suites.shopping import build_suite as build_shopping_suite
-from tests.experiment.agentdojo_adapter import load_suite
+from benchmarks.agentdojo_adapter import load_suite
 
 from gateway.planning.core import (
     CaseResult,

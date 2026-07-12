@@ -35,7 +35,7 @@ from pauth.suites.shopping import build_suite as build_shopping_suite
 # but the demo scenarios live entirely on the self-contained shopping suite so
 # the experiment runs without AgentDojo or an API key.
 try:
-    from tests.experiment.agentdojo_adapter import load_suite as load_agentdojo_suite
+    from benchmarks.agentdojo_adapter import load_suite as load_agentdojo_suite
 except Exception:  # noqa: BLE001 -- AgentDojo is optional for this demo
     load_agentdojo_suite = None  # type: ignore[assignment]
 

@@ -40,6 +40,10 @@ from pauth import (
 from pauth.codegen import generate_code, has_api_key
 from pauth.suites.base import SuiteSpec
 from pauth.suites.shopping import build_suite as build_shopping_suite
+from pauth.suites.dining import build_suite as build_dining_suite
+
+# Offline suites ship reference A1 code, so they run with no API key.
+_OFFLINE_SUITES = {"shopping": build_shopping_suite, "dining": build_dining_suite}
 
 from gateway.planning.agentic_a1 import generate_code_with_self_repair
 from gateway.planning.prechecks import precheck_code
@@ -399,7 +403,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the PAuth precision experiment.")
     parser.add_argument(
         "--suites", default="all",
-        help="comma-separated: shopping,banking,slack,travel,workspace or 'all'",
+        help="comma-separated: shopping,dining (offline),banking,slack,travel,workspace or 'all'",
     )
     parser.add_argument("--model", default=os.environ.get("PAUTH_MODEL", "gpt-4.1"))
     parser.add_argument("--limit", type=int, default=None, help="max tasks per suite")
@@ -428,10 +432,10 @@ def main(argv: list[str] | None = None) -> int:
 
     suites: list[SuiteSpec] = []
     for name in requested:
-        if name == "shopping":
-            suites.append(build_shopping_suite())
+        if name in _OFFLINE_SUITES:
+            suites.append(_OFFLINE_SUITES[name]())
         else:
-            from tests.experiment.agentdojo_adapter import load_suite
+            from benchmarks.agentdojo_adapter import load_suite
             suites.append(load_suite(name))
 
     needs_api = any(

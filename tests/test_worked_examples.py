@@ -18,7 +18,7 @@ from __future__ import annotations
 import sys
 import textwrap
 
-from tests.experiment.agentdojo_adapter import load_suite
+from benchmarks.agentdojo_adapter import load_suite
 from eval.fpfn import run_task
 from pauth import prepare
 from pauth.suites.base import Call, TaskSpec

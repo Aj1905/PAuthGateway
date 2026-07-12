@@ -75,7 +75,7 @@ def _build_mcp(entry: dict[str, Any]) -> SuiteSpec:
 
 def _build_agentdojo(entry: dict[str, Any]) -> SuiteSpec:
     # Deferred import so the adapter is optional.
-    from tests.experiment.agentdojo_adapter import load_suite
+    from benchmarks.agentdojo_adapter import load_suite
     suite_name = entry.get("suite") or entry["name"]
     return load_suite(suite_name)
 

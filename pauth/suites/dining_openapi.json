@@ -1,0 +1,143 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Dining API",
+    "version": "1.0.0",
+    "description": "Structured-native restaurant search / booking / deposit API. gateway/providers/openapi_suite.py reflects this spec into the same tools + structured return schemas that pauth/suites/dining.py hand-mirrors. This is the shape a real MCP/OpenAPI deployment exposes -- typed objects, not prose blobs."
+  },
+  "servers": [{ "url": "https://api.example-dining.com/v1" }],
+  "components": {
+    "schemas": {
+      "Restaurant": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "city": { "type": "string" },
+          "cuisine": { "type": "string" },
+          "rating": { "type": "number" },
+          "price_per_person": { "type": "number" },
+          "review": { "type": "string", "description": "free-text; attacker-controllable prose lives here" }
+        },
+        "required": ["id", "name", "city", "cuisine", "rating", "price_per_person", "review"]
+      },
+      "Booking": {
+        "type": "object",
+        "properties": {
+          "confirmation_id": { "type": "string" },
+          "restaurant_id": { "type": "string" },
+          "status": { "type": "string" }
+        },
+        "required": ["confirmation_id", "restaurant_id", "status"]
+      },
+      "Payment": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" },
+          "iban": { "type": "string" },
+          "amount": { "type": "number" }
+        },
+        "required": ["status", "iban", "amount"]
+      }
+    }
+  },
+  "paths": {
+    "/search_restaurants": {
+      "get": {
+        "operationId": "search_restaurants",
+        "summary": "List restaurants in a city at or below a per-person price.",
+        "parameters": [
+          { "name": "city", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "max_price", "in": "query", "required": true, "schema": { "type": "number" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "matching restaurants",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Restaurant" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/get_restaurant": {
+      "get": {
+        "operationId": "get_restaurant",
+        "summary": "Look up one restaurant by its id.",
+        "parameters": [
+          { "name": "restaurant_id", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "the restaurant",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Restaurant" } }
+            }
+          }
+        }
+      }
+    },
+    "/book_table": {
+      "post": {
+        "operationId": "book_table",
+        "summary": "Reserve a table at a restaurant.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "restaurant_id": { "type": "string" },
+                  "date": { "type": "string" },
+                  "party_size": { "type": "integer" }
+                },
+                "required": ["restaurant_id", "date", "party_size"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "booking confirmation",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Booking" } }
+            }
+          }
+        }
+      }
+    },
+    "/pay_deposit": {
+      "post": {
+        "operationId": "pay_deposit",
+        "summary": "Pay a reservation deposit to an IBAN.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "iban": { "type": "string" },
+                  "amount": { "type": "number" },
+                  "reference": { "type": "string" }
+                },
+                "required": ["iban", "amount", "reference"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "payment result",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Payment" } }
+            }
+          }
+        }
+      }
+    }
+  }
+}
