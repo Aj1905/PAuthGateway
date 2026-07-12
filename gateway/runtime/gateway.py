@@ -485,10 +485,8 @@ class Gateway:
         for i in sorted(pi for (t, pi) in state.gated_operands if t == tool):
             if i >= len(args):
                 continue
-            name = (
-                doc.parameters[i]["name"]
-                if doc is not None and i < len(doc.parameters) else str(i)
-            )
+            param = doc.parameters[i] if (doc is not None and i < len(doc.parameters)) else {}
+            name = param.get("name", str(i))
             key = _confirm_key(args[i])
             if (tool, key) in state.confirmed:
                 continue
@@ -503,6 +501,7 @@ class Gateway:
                 state.pending[cid] = PendingConfirmation(
                     cid, tool, i, name, args[i],
                     source=state.gated_sources.get((tool, i), ()),
+                    param_type=param.get("type", ""),
                 )
             return CallResult(
                 permit=False,

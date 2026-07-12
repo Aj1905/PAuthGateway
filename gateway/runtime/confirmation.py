@@ -30,6 +30,7 @@ from typing import Iterator
 from pauth.codegen import ToolDoc
 
 from gateway.planning.prechecks import PrecheckPolicy, _classify_param
+from gateway.runtime.sanitize import describe_hidden, type_violation
 
 
 @dataclasses.dataclass(frozen=True)
@@ -85,21 +86,38 @@ class PendingConfirmation:
     param_name: str
     value: object
     source: tuple[str, ...] = ()
+    param_type: str = ""   # the operand's declared schema type (constrained extraction)
 
     def human_warning(self) -> str:
-        """Caution to show the human alongside the value. When the operand derives
-        from an untrusted source, an injection may have ALTERED it: the gateway can
-        prove the value's provenance but not its truth. This is the honest last line
-        for content/decision injection the enforcement layer cannot catch -- the
-        human must judge, and must be told the basis is untrusted."""
-        if not self.source:
+        """Caution to show the human alongside the value. Two parts, in order of how
+        much the gateway is really adding: (1) HIDDEN characters in the value that
+        the human cannot see -- the gateway's job, since the human physically cannot
+        catch these; (2) untrusted provenance -- the human should verify. Visible
+        content the human could judge for themselves is deliberately not second-
+        guessed here (that is the human's call, not the gateway's)."""
+        hidden = describe_hidden(self.value) if isinstance(self.value, str) else ""
+        bad_type = type_violation(self.value, self.param_type)
+        if not self.source and not hidden and not bad_type:
             return ""
-        src = ", ".join(self.source)
-        return (
-            f"WARNING: this {self.param_name} came from untrusted data ({src}) and "
-            "MAY HAVE BEEN ALTERED BY A PROMPT INJECTION. The gateway cannot verify "
-            "it is genuine -- check it against a trusted source before approving."
-        )
+        parts = []
+        if hidden:
+            parts.append(
+                f"this value contains {hidden} you CANNOT SEE -- almost certainly a "
+                "hidden prompt injection"
+            )
+        if bad_type:
+            parts.append(
+                f"this {self.param_name} is {bad_type} -- free text smuggled through a "
+                "numeric field (constrained extraction violated)"
+            )
+        if self.source:
+            src = ", ".join(self.source)
+            parts.append(
+                f"this {self.param_name} came from untrusted data ({src}) and may "
+                "have been altered"
+            )
+        return ("WARNING: " + "; ".join(parts) + ". The gateway cannot verify the "
+                "value is genuine -- check it against a trusted source before approving.")
 
 
 def control_operands(

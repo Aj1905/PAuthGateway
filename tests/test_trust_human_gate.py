@@ -79,7 +79,7 @@ def test_confirmation_warns_the_human_about_possible_injection():
     from gateway.runtime.confirmation import PendingConfirmation
     warned = PendingConfirmation("c0", "send_money", 0, "recipient", "GB99EVIL", ("read_email",))
     msg = warned.human_warning()
-    assert "ALTERED BY A PROMPT INJECTION" in msg
+    assert "untrusted data" in msg and "may have been altered" in msg
     assert "read_email" in msg          # names the untrusted provenance
     # A trusted (source-free) operand carries no warning.
     assert PendingConfirmation("c1", "send_money", 0, "recipient", "GB33OK").human_warning() == ""
