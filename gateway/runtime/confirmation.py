@@ -86,6 +86,21 @@ class PendingConfirmation:
     value: object
     source: tuple[str, ...] = ()
 
+    def human_warning(self) -> str:
+        """Caution to show the human alongside the value. When the operand derives
+        from an untrusted source, an injection may have ALTERED it: the gateway can
+        prove the value's provenance but not its truth. This is the honest last line
+        for content/decision injection the enforcement layer cannot catch -- the
+        human must judge, and must be told the basis is untrusted."""
+        if not self.source:
+            return ""
+        src = ", ".join(self.source)
+        return (
+            f"WARNING: this {self.param_name} came from untrusted data ({src}) and "
+            "MAY HAVE BEEN ALTERED BY A PROMPT INJECTION. The gateway cannot verify "
+            "it is genuine -- check it against a trusted source before approving."
+        )
+
 
 def control_operands(
     tool: str,

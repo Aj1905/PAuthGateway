@@ -73,3 +73,13 @@ def test_broad_gate_holds_the_untrusted_decision_for_confirmation():
 def test_narrow_gate_misses_the_decision_operand():
     # recipient/amount-only gate never asks about which restaurant was booked.
     assert _held_tools(confirm_untrusted_decisions=False) == []
+
+
+def test_confirmation_warns_the_human_about_possible_injection():
+    from gateway.runtime.confirmation import PendingConfirmation
+    warned = PendingConfirmation("c0", "send_money", 0, "recipient", "GB99EVIL", ("read_email",))
+    msg = warned.human_warning()
+    assert "ALTERED BY A PROMPT INJECTION" in msg
+    assert "read_email" in msg          # names the untrusted provenance
+    # A trusted (source-free) operand carries no warning.
+    assert PendingConfirmation("c1", "send_money", 0, "recipient", "GB33OK").human_warning() == ""
