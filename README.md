@@ -49,6 +49,175 @@ the defense scope and non-targets see
 
 ---
 
+## Deploying the gateway in front of your agent
+
+This section is for **operators** who want to actually put the gateway between an
+agent and the real tools it calls. (If you only want to reproduce the paper's
+measurements, skip to [Setup](#setup-reproducing-the-paper-experiments).)
+
+Deployment is the same four moves in every case:
+
+1. **Install the tools** — Python + this repo.
+2. **Deploy the gateway** — run the daemon as its own service.
+3. **Configure the network (needs admin)** — run the agent as a dedicated
+   non-admin user.
+4. **Restrict egress to the gateway** — pin that user's outbound traffic so the
+   gateway is the *only* place its tool calls can go.
+
+But **how you connect the agent to the gateway differs by where the agent runs.**
+Pick your case:
+
+| Your situation | How the agent reaches the gateway | Read |
+|---|---|---|
+| **A. Local agent** — Claude Code / Codex / a script running on your own machine | You own the agent's config, so you hand the prompt and tool calls to the gateway directly (edit hooks / your own code). No traffic sniffing needed. | [Case A](#case-a--local-agent-on-your-machine) |
+| **B. Cloud / API agent** — the agent runs on a provider and you drive it over an API | You do **not** own the agent process, so you cannot add a local firewall around it or edit its internals. The gateway becomes the **tool/credential boundary** instead. | [Case B](#case-b--cloud--api-agent) |
+
+### Prerequisites (both cases)
+
+- **Python 3.12+** (developed and verified on 3.14).
+- **This repository**, with the virtualenv installed:
+
+```bash
+git clone https://github.com/Aj1905/PAuthGateway.git && cd PAuthGateway && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+```
+
+- **A shared auth token** so only your client can drive the daemon. Generate one and keep it:
+
+```bash
+export GATEWAY_AUTH_TOKEN="$(.venv/bin/python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+```
+
+- For **Case A only**: admin/`sudo` on the machine (used *once*, for the network
+  step) and an OS with a supported firewall — Linux `nftables`/`iptables` or
+  macOS `pf`.
+
+### Deploy the gateway (both cases)
+
+Run the daemon. Bind it to loopback and require the token on every route:
+
+```bash
+.venv/bin/python gateway/serving/http_server.py --host 127.0.0.1 --port 8081 --auth-token "$GATEWAY_AUTH_TOKEN"
+```
+
+Keep it running (a `systemd` unit, `launchd` job, or `tmux` window is fine).
+Useful flags: `--session-store PATH` to survive restarts, `--audit-log PATH` to
+append permit/deny decisions as JSONL (place it where the agent user cannot read
+it — it can quote values). Check liveness (this one route needs no token):
+
+```bash
+curl http://127.0.0.1:8081/health
+```
+
+> **Run the gateway as a *different* OS user than the agent.** The gateway has to
+> reach the real SaaS; the egress rule in Case A deliberately does not apply to
+> it. If the agent and the gateway share a user, the lockdown either breaks the
+> gateway or is too loose to hold.
+
+---
+
+### Case A — local agent on your machine
+
+Because the agent runs as *your* process, you don't need to intercept the LLM's
+network traffic to recover the prompt. You **edit your own configuration** to
+hand the clean prompt and each tool call to the gateway. For Claude Code this is
+two hooks (no changes to Claude Code itself, no change to how you type prompts):
+
+1. **Connect the agent to the gateway.** Add the two hook scripts to
+   `~/.claude/settings.json` (or a project-local `.claude/settings.json`):
+
+   ```json
+   {
+     "hooks": {
+       "UserPromptSubmit": [
+         { "type": "command", "command": "/ABSOLUTE/PATH/PAuthGateway/gateway/hooks/submit_prompt.sh" }
+       ],
+       "PreToolUse": [
+         { "type": "command", "command": "/ABSOLUTE/PATH/PAuthGateway/gateway/hooks/pretool.sh" }
+       ]
+     }
+   }
+   ```
+
+   `submit_prompt.sh` forwards the prompt **before** the model sees it (so the
+   plan is built from the clean task); `pretool.sh` presents **every** tool call
+   for a permit/deny check. Point them at the daemon with the same token:
+   `export GATEWAY_URL=http://127.0.0.1:8081` and
+   `export GATEWAY_AUTH_TOKEN=…`. Full options (strict vs log mode, planner
+   choice) are in [`gateway/hooks/README.md`](gateway/hooks/README.md).
+
+   *Not Claude Code?* Any local agent works the same way: from your own code,
+   `POST` the prompt once, then `POST` each tool call, to
+   `/sessions/<id>/messages` (schema in
+   [`docs/self-hosting.md`](docs/self-hosting.md#prompt-capture-boundary)). You
+   are editing code you control — no traffic interception.
+
+2. **Create a dedicated non-admin agent user** (needs admin). This is the account
+   the agent runs under:
+
+   ```bash
+   sudo useradd -m -s /bin/bash pauth-agent   # macOS: sysadminctl -addUser pauth-agent
+   ```
+
+3. **Restrict that user's egress to the gateway only** (needs admin, run once):
+
+   ```bash
+   sudo AGENT_USER=pauth-agent GATEWAY_HOST=127.0.0.1 GATEWAY_PORT=8081 gateway/deploy/egress_lockdown.sh apply
+   ```
+
+   Now every outbound connection that user (or any process it spawns, including a
+   hand-typed `curl`) makes can reach **only** `127.0.0.1:8081`. Anything else is
+   dropped by the kernel — so a tool call that tries to skip the hook has nowhere
+   to go, and anything that does reach the gateway hits a default-deny check.
+   Verify and, when needed, undo:
+
+   ```bash
+   sudo AGENT_USER=pauth-agent gateway/deploy/egress_lockdown.sh status
+   sudo AGENT_USER=pauth-agent gateway/deploy/egress_lockdown.sh remove
+   ```
+
+4. **Run the agent as that user** (e.g. `sudo -u pauth-agent claude`).
+
+---
+
+### Case B — cloud / API agent
+
+Here the agent runs on a provider you don't control, and you drive it over an
+API. Two things change:
+
+- **You cannot use the OS egress lockdown of Step 4.** There is no local UID to
+  pin — the agent isn't a process on your machine. The equivalent control moves
+  into the environment the agent *does* run in: make the gateway the **only tool
+  endpoint the agent can reach**, and broker credentials so the real SaaS
+  tokens live only inside the gateway (the agent never holds a working
+  credential to call SaaS directly). On a cloud VM you own, that means the VM's
+  egress policy (security group / firewall) allows only the gateway.
+- **Prompt capture is different.** You usually can't edit the hosted agent's
+  internals, so instead of a hook you use a **gateway-owned entry point**: submit
+  the task to the gateway *first* (`POST /sessions/<id>/messages` with the clean
+  prompt), get back a session, then let the agent run — with its tool calls
+  routed to the gateway as its tool/MCP endpoint. If the provider exposes a
+  tool-call callback, forward each call to the same session.
+
+The honest caveat: if a cloud agent can call arbitrary URLs and you cannot
+constrain its egress or its credentials, a pure API relationship gives you
+**observation and per-destination allow/deny, not full PAuth enforcement**. Treat
+that as L1/L2, not L3. See
+[`docs/self-hosting.md`](docs/self-hosting.md#setup-boundary) for the level
+definitions and the reasoning.
+
+---
+
+### The one rule that voids everything: keep the agent non-admin
+
+The egress lockdown (Case A) and the credential/egress boundary (Case B) are only
+as strong as the agent's inability to remove them. **If the agent runs as
+root / an admin / a `sudo`-capable user, injected code can flush the firewall
+rule or reach SaaS directly and bypass the gateway entirely.** The lockdown
+script refuses to apply to a privileged account for exactly this reason. If you
+grant the agent admin, report the effective protection honestly as L1/L2.
+
+---
+
 ## Design validity (reproduction experiment)
 
 We demonstrate, in a measurable form, that the core algorithm holds with zero FP
@@ -116,7 +285,11 @@ deterministic without LLM").
 
 ---
 
-## Setup
+## Setup (reproducing the paper experiments)
+
+> To deploy the gateway in front of a real agent, see
+> [Deploying the gateway in front of your agent](#deploying-the-gateway-in-front-of-your-agent).
+> The steps below are only for running the reproduction experiments.
 
 ```bash
 python3 -m venv .venv

@@ -1,0 +1,2 @@
+{"seq": 0, "kind": "submit", "decision": "accept", "tool": null, "reason_code": "accepted", "reason": "plan accepted (shopping/fixed_product_checkout)", "args": null}
+{"seq": 1, "kind": "tool_call", "decision": "permit", "tool": "get_product_details", "reason_code": "authorized", "reason": "authorized by rule get_product_details#0", "args": ["Aurora Noise Cancelling Headphones"]}

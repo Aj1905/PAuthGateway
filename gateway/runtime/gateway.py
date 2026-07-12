@@ -696,13 +696,14 @@ class Gateway:
                     return_value=None,
                 ),
                 tool,
+                args,
             )
         if self._composite is not None:
             return self._finalize_agent_reason(
-                self._handle_tool_call_composite(tool, args), tool
+                self._handle_tool_call_composite(tool, args), tool, args
             )
         return self._finalize_agent_reason(
-            self._handle_tool_call_session(tool, args), tool
+            self._handle_tool_call_session(tool, args), tool, args
         )
 
     def protection_report(self) -> ProtectionReport:
@@ -756,7 +757,9 @@ class Gateway:
             "protection": self.protection_report().to_dict(),
         }
 
-    def _finalize_agent_reason(self, result: CallResult, tool: str) -> CallResult:
+    def _finalize_agent_reason(
+        self, result: CallResult, tool: str, args: list[Any] | None = None
+    ) -> CallResult:
         """Attach a value-free agent-facing reason to any denial, and audit."""
         if not result.permit and result.agent_reason is None:
             result.agent_reason = build_agent_feedback(
@@ -773,6 +776,7 @@ class Gateway:
             "tool_call", decision, tool=tool,
             reason_code=(code.value if not result.permit else "authorized"),
             reason=result.reason,
+            args=args,
         )
         return result
 

@@ -1,0 +1,5 @@
+{"seq": 0, "kind": "submit", "decision": "accept", "tool": null, "reason_code": "accepted", "reason": "plan accepted (shopping/fixed_product_checkout)", "args": null}
+{"seq": 1, "kind": "tool_call", "decision": "permit", "tool": "get_product_details", "reason_code": "authorized", "reason": "authorized by rule get_product_details#0", "args": ["Aurora Noise Cancelling Headphones"]}
+{"seq": 2, "kind": "tool_call", "decision": "permit", "tool": "add_to_cart", "reason_code": "authorized", "reason": "authorized by rule add_to_cart#0", "args": ["Aurora Noise Cancelling Headphones", 1]}
+{"seq": 3, "kind": "tool_call", "decision": "permit", "tool": "get_cart_summary", "reason_code": "authorized", "reason": "authorized by rule get_cart_summary#0", "args": []}
+{"seq": 4, "kind": "tool_call", "decision": "permit", "tool": "send_money", "reason_code": "authorized", "reason": "authorized by rule send_money#0", "args": ["GB33BUKB20201555555555", 120.0, "Order payment", "2024-06-11"]}

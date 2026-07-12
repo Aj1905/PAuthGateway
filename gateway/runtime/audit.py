@@ -24,6 +24,7 @@ class AuditEvent:
     tool: str | None         # tool name for tool_call events
     reason_code: str         # a feedback.ReasonCode value, or "accepted"/"rejected"
     reason: str              # the internal, human-readable reason (operator-facing)
+    args: list[Any] | None = None  # tool_call operands (operator-facing; may carry values)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -51,11 +52,12 @@ class AuditLog:
 
     def record(
         self, kind: str, decision: str, *, tool: str | None = None,
-        reason_code: str = "", reason: str = "",
+        reason_code: str = "", reason: str = "", args: list[Any] | None = None,
     ) -> AuditEvent:
         event = AuditEvent(
             seq=len(self._events), kind=kind, decision=decision,
             tool=tool, reason_code=reason_code, reason=reason,
+            args=list(args) if args is not None else None,
         )
         self._events.append(event)
         self._persist(event)
@@ -64,7 +66,9 @@ class AuditLog:
     def _persist(self, event: AuditEvent) -> None:
         if self._path is None:
             return
-        line = json.dumps(event.to_dict(), ensure_ascii=False)
+        # default=str coerces non-JSON operands (datetime, pydantic models) to a
+        # string rather than crashing the append; the trail is for humans/SIEM.
+        line = json.dumps(event.to_dict(), ensure_ascii=False, default=str)
         # Append-only; O_APPEND writes are atomic for a single line, so a crash
         # never tears an event and concurrent sessions never interleave one.
         with open(self._path, "a", encoding="utf-8") as f:
