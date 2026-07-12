@@ -41,9 +41,14 @@ from pauth.codegen import generate_code, has_api_key
 from pauth.suites.base import SuiteSpec
 from pauth.suites.shopping import build_suite as build_shopping_suite
 from pauth.suites.dining import build_suite as build_dining_suite
+from benchmarks.injecagent_adapter import build_suite as build_injecagent_suite
 
 # Offline suites ship reference A1 code, so they run with no API key.
-_OFFLINE_SUITES = {"shopping": build_shopping_suite, "dining": build_dining_suite}
+_OFFLINE_SUITES = {
+    "shopping": build_shopping_suite,
+    "dining": build_dining_suite,
+    "injecagent": build_injecagent_suite,
+}
 
 from gateway.planning.agentic_a1 import generate_code_with_self_repair
 from gateway.planning.prechecks import precheck_code
