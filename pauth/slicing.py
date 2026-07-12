@@ -65,16 +65,25 @@ def _statements_with_guards(
 
 
 def derive_slices(func: ast.FunctionDef, tool_names: set[str]) -> list[Slice]:
-    """Derive one :class:`Slice` per tool invocation in ``func``."""
+    """Derive slices per tool invocation in ``func``.
+
+    A variable normally has one definition. The one supported disjunction is the
+    "default then conditionally set" merge (``x = <const>``; ``if C: x = <expr>``):
+    such a variable holds a LIST of definitions, and a call using it forks into one
+    slice per branch (each with that branch's provenance + guard). The enforcer's
+    match-any-rule already turns those into a sound disjunction: a concrete call is
+    authorized iff it matches ONE branch exactly, so an off-branch (injected) value
+    matches none -- FN=0 is preserved.
+    """
     stmts = _statements_with_guards(func)
 
-    # Record every assignment: name -> (value expression, guard, order).
-    assigns: dict[str, tuple[ast.expr, list[ast.expr], int]] = {}
+    # Record every assignment: name -> [(value expression, guard, order), ...].
+    assigns: dict[str, list[tuple[ast.expr, list[ast.expr], int]]] = {}
     for order, (stmt, guard) in enumerate(stmts):
         if isinstance(stmt, ast.Assign):
             for target in stmt.targets:
                 if isinstance(target, ast.Name):
-                    assigns[target.id] = (stmt.value, guard, order)
+                    assigns.setdefault(target.id, []).append((stmt.value, guard, order))
 
     slices: list[Slice] = []
     counts: dict[str, int] = {}
@@ -85,7 +94,7 @@ def derive_slices(func: ast.FunctionDef, tool_names: set[str]) -> list[Slice]:
         tool = call_name(call)
         idx = counts.get(tool, 0)
         counts[tool] = idx + 1
-        slices.append(_build_slice(call, tool, idx, guard, assigns))
+        slices.extend(_build_slices(call, tool, idx, guard, assigns))
     return slices
 
 
@@ -101,53 +110,69 @@ def _tool_call_of(stmt: ast.stmt, tool_names: set[str]) -> ast.Call | None:
     return None
 
 
-def _build_slice(
+def _build_slices(
     call: ast.Call,
     tool: str,
     idx: int,
     guard: list[ast.expr],
-    assigns: dict[str, tuple[ast.expr, list[ast.expr], int]],
-) -> Slice:
+    assigns: dict[str, list[tuple[ast.expr, list[ast.expr], int]]],
+) -> list[Slice]:
+    """Dependency-closure the call, forking on any disjunctive variable.
+
+    A partial resolution is ``(lets, guard_nodes, frontier)``. Resolving a name
+    with N definitions forks the partial into N (one per branch). With single
+    definitions this collapses to exactly the old single-slice behaviour.
+    """
     arg_exprs = list(call.args)
 
-    # Breadth-first dependency closure over let-bindings.
-    lets: dict[str, tuple[ast.expr, int]] = {}
-    guard_nodes: dict[str, tuple[ast.expr, int]] = {}
-    frontier: list[str] = []
+    def _init():
+        gnodes: dict[str, tuple[ast.expr, int]] = {}
+        frontier: list[str] = []
+        for cond in guard:
+            k = canon(cond)
+            if k not in gnodes:
+                gnodes[k] = (cond, getattr(cond, "lineno", 0))
+                frontier.extend(names_in(cond))
+        for expr in arg_exprs:
+            frontier.extend(names_in(expr))
+        return ({}, gnodes, frontier)
 
-    def add_guard(cond: ast.expr) -> None:
-        key = canon(cond)
-        if key not in guard_nodes:
-            guard_nodes[key] = (cond, getattr(cond, "lineno", 0))
-            frontier.extend(names_in(cond))
-
-    for cond in guard:
-        add_guard(cond)
-    for expr in arg_exprs:
-        frontier.extend(names_in(expr))
-
-    while frontier:
+    # Worklist of partial resolutions; forks on disjunctive names.
+    partials: list[tuple[dict, dict, list[str]]] = [_init()]
+    complete: list[tuple[dict, dict]] = []
+    guard_ct = 0
+    while partials:
+        lets, gnodes, frontier = partials.pop()
+        if not frontier:
+            complete.append((lets, gnodes))
+            continue
         name = frontier.pop()
         if name in lets or name not in assigns:
+            partials.append((lets, gnodes, frontier))
             continue
-        value, value_guard, order = assigns[name]
-        lets[name] = (value, order)
-        frontier.extend(names_in(value))
-        for cond in value_guard:
-            add_guard(cond)
+        for value, value_guard, order in assigns[name]:
+            nl = dict(lets)
+            nl[name] = (value, order)
+            ng = dict(gnodes)
+            nf = list(frontier) + list(names_in(value))
+            for cond in value_guard:
+                k = canon(cond)
+                if k not in ng:
+                    ng[k] = (cond, getattr(cond, "lineno", 0))
+                    nf.extend(names_in(cond))
+            partials.append((nl, ng, nf))
+        guard_ct += 1
+        if guard_ct > 10_000:  # runaway guard (should never trigger on bounded code)
+            break
 
-    ordered_lets = {
-        name: value
-        for name, (value, _order) in sorted(lets.items(), key=lambda kv: kv[1][1])
-    }
-    ordered_guards = [
-        cond for cond, _line in sorted(guard_nodes.values(), key=lambda cl: cl[1])
-    ]
-    return Slice(
-        tool=tool,
-        call_index=idx,
-        call_node=call,
-        arg_exprs=arg_exprs,
-        guards=ordered_guards,
-        lets=ordered_lets,
-    )
+    out: list[Slice] = []
+    for lets, gnodes in complete:
+        ordered_lets = {
+            n: v for n, (v, _o) in sorted(lets.items(), key=lambda kv: kv[1][1])
+        }
+        ordered_guards = [c for c, _l in sorted(gnodes.values(), key=lambda cl: cl[1])]
+        out.append(Slice(
+            tool=tool, call_index=idx, call_node=call,
+            arg_exprs=arg_exprs, guards=ordered_guards, lets=ordered_lets,
+        ))
+    return out

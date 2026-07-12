@@ -237,21 +237,46 @@ def validate_semantics(func: ast.FunctionDef, tool_names: set[str]) -> None:
             if isinstance(call, ast.Call) and call_name(call) in tool_names:
                 sliceable.add(id(call))
 
-    # Each variable has a single definition.  The slicer -- and the paper's
-    # "no concept of scoped assignments" model (rules 14a / 14f) -- assumes one
-    # assignment per name.  Re-assignment, e.g. `content = ""` followed by a
-    # conditional `content = f.content`, is outside the model: a slice can bind
-    # a name to only one expression, so such code must be rejected at A1.
-    assigned: dict[str, int] = {}
-    for node in ast.walk(func):
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    assigned[target.id] = assigned.get(target.id, 0) + 1
-    reassigned = sorted(name for name, count in assigned.items() if count > 1)
+    # Each variable has a single definition, with ONE exception the slicer models
+    # soundly: the "default then conditionally set" merge -- a top-level CONSTANT
+    # default plus one assignment inside an if-body (``x = ""``; ``if C: x = e``).
+    # The slicer forks such a variable into two branch-slices (const under no
+    # guard, e under C); the enforcer's match-any turns that into a sound
+    # disjunction (an off-branch value matches neither -> still default-deny).
+    # Any other re-assignment (non-constant default, >1 conditional set, 3+ defs)
+    # would need path-merge logic we do not have, so it stays rejected.
+    top_const: dict[str, int] = {}
+    top_other: dict[str, int] = {}
+    conditional: dict[str, int] = {}
+    for stmt in func.body:
+        if isinstance(stmt, ast.Assign):
+            for t in stmt.targets:
+                if isinstance(t, ast.Name):
+                    bucket = top_const if isinstance(stmt.value, ast.Constant) else top_other
+                    bucket[t.id] = bucket.get(t.id, 0) + 1
+        elif isinstance(stmt, ast.If):
+            for inner in stmt.body:
+                if isinstance(inner, ast.Assign):
+                    for t in inner.targets:
+                        if isinstance(t, ast.Name):
+                            conditional[t.id] = conditional.get(t.id, 0) + 1
+    names = set(top_const) | set(top_other) | set(conditional)
+    reassigned = []
+    for name in names:
+        count = top_const.get(name, 0) + top_other.get(name, 0) + conditional.get(name, 0)
+        if count <= 1:
+            continue
+        allowed_merge = (
+            count == 2
+            and top_const.get(name, 0) == 1
+            and top_other.get(name, 0) == 0
+            and conditional.get(name, 0) == 1
+        )
+        if not allowed_merge:
+            reassigned.append(name)
     if reassigned:
         raise RestrictedGrammarError(
-            f"variable(s) {reassigned} assigned more than once; each variable "
+            f"variable(s) {sorted(reassigned)} assigned more than once; each variable "
             "must have a single definition (rules 14a/14f: no scoped assignments)"
         )
 
@@ -259,7 +284,7 @@ def validate_semantics(func: ast.FunctionDef, tool_names: set[str]) -> None:
     # assignment to shadow one (``send = something``) lets grammar-valid code call
     # an arbitrary callable through a name the call-target check accepts -- the
     # second half of the sandbox escape. Forbid shadowing outright.
-    shadowed = sorted(set(assigned) & (tool_names | HELPERS))
+    shadowed = sorted(names & (tool_names | HELPERS))
     if shadowed:
         raise RestrictedGrammarError(
             f"name(s) {shadowed} shadow a tool/helper; tool and helper names "
