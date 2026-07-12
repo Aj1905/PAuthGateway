@@ -2,3 +2,6 @@
 # Python 3.12+ recommended (developed and verified on 3.14).
 agentdojo==0.1.35
 openai>=2.0,<3.0
+
+# Benchmark: tau-bench (Sierra, MIT) -- structured retail/airline tasks for the availability axis
+tau_bench @ git+https://github.com/sierra-research/tau-bench.git

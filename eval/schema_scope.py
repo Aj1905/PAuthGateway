@@ -29,9 +29,14 @@ from __future__ import annotations
 from pauth.suites.dining import build_suite as build_dining_suite
 from pauth.suites.shopping import build_suite as build_shopping_suite
 from benchmarks.agentdojo_adapter import AGENTDOJO_SUITES, load_suite
+from benchmarks.tau_bench_adapter import build_suite as build_tau_retail_suite
 
 # Offline, structured-native suites (the product surface: MCP/OpenAPI shapes).
-_OFFLINE_SUITES = {"shopping": build_shopping_suite, "dining": build_dining_suite}
+_OFFLINE_SUITES = {
+    "shopping": build_shopping_suite,
+    "dining": build_dining_suite,
+    "tau_retail": build_tau_retail_suite,
+}
 
 STRUCTURED, TEXT_BLOB, STATUS = "STRUCTURED", "TEXT_BLOB", "STATUS"
 
