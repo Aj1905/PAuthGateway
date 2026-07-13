@@ -99,8 +99,36 @@ def _shopping_tasks() -> list[E2ETask]:
     return out
 
 
+_TAU_WRITES = frozenset({"cancel_pending_order", "exchange_delivered_order_items",
+                         "modify_pending_order_address", "modify_pending_order_items",
+                         "modify_pending_order_payment", "modify_user_address",
+                         "return_delivered_order_items"})
+
+
+def _tau_tasks(limit: int = 6) -> list[E2ETask]:
+    """tau-bench retail tasks through the full gateway (structured first-party API,
+    so no untrusted source -> the confirmation gate should stay silent)."""
+    try:
+        from benchmarks.tau_bench_adapter import build_suite as build_tau
+    except Exception:  # noqa: BLE001 -- tau_bench optional
+        return []
+    suite = build_tau()
+    loader = lambda n: build_tau() if n == "tau_retail" else (_ for _ in ()).throw(ValueError(n))
+    out: list[E2ETask] = []
+    for t in suite.tasks[:limit]:
+        if t.reference_code is None:
+            continue
+        out.append(E2ETask(
+            f"tau:{t.id}", loader, "tau_retail", t.prompt, t.reference_code,
+            [(c.tool, c.args) for c in t.forced_injections],
+            SourceTrust(),  # first-party retail DB: trusted
+            _TAU_WRITES,
+        ))
+    return out
+
+
 def _tasks() -> list[E2ETask]:
-    return _shopping_tasks() + [_MSG_UPFRONT, _MSG_INTERRUPT]
+    return _shopping_tasks() + [_MSG_UPFRONT, _MSG_INTERRUPT] + _tau_tasks()
 
 
 # --------------------------------------------------------------------------
