@@ -14,6 +14,7 @@ reproduced.
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import hashlib
 import hmac
@@ -82,7 +83,21 @@ class KeyRing:
 
 
 def make_envelope(concrete: Any, symbolic: str, signer: str, keyring: KeyRing) -> Envelope:
-    """Create a signed envelope (a server signing one of its results)."""
+    """Create a signed envelope (a server signing one of its results).
+
+    The envelope binds an immutable SNAPSHOT of the produced value: it certifies
+    what the server returned at this moment. If the underlying value is later
+    mutated in place -- e.g. a read returns a record by reference and a
+    subsequent write tool edits that same record inside a loop -- the signature,
+    computed over the snapshot, must stay valid. We deep-copy ``concrete`` so
+    downstream mutation cannot retroactively invalidate an earlier envelope (the
+    read-then-write-in-a-loop false positive). Values that cannot be deep-copied
+    fall back to the live reference.
+    """
+    try:
+        concrete = copy.deepcopy(concrete)
+    except Exception:  # noqa: BLE001 -- unpicklable value: keep the live reference
+        pass
     sig = hmac.new(keyring.key(signer), _digest(symbolic, concrete), hashlib.sha256).hexdigest()
     return Envelope(concrete=concrete, symbolic=symbolic, signer=signer, signature=sig)
 
