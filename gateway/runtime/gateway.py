@@ -149,6 +149,8 @@ class _Session:
     pending: dict[str, PendingConfirmation] = dataclasses.field(default_factory=dict)
     confirmed: set = dataclasses.field(default_factory=set)
     confirm_seq: int = 0
+    loop_counts: dict[str, int] = dataclasses.field(default_factory=dict)
+    bulk_confirmed: set[str] = dataclasses.field(default_factory=set)
 
 
 @dataclasses.dataclass
@@ -182,6 +184,8 @@ class _CompositeState:
     pending: dict[str, PendingConfirmation] = dataclasses.field(default_factory=dict)
     confirmed: set = dataclasses.field(default_factory=set)
     confirm_seq: int = 0
+    loop_counts: dict[str, int] = dataclasses.field(default_factory=dict)
+    bulk_confirmed: set[str] = dataclasses.field(default_factory=set)
 
 
 class Gateway:
@@ -431,7 +435,9 @@ class Gateway:
         if not decision.permit:
             return CallResult(False, decision.reason, None)
         assert decision.rule is not None
-        if decision.rule.key in state.consumed:
+        # A loop (quantified) rule authorises many calls; only NON-loop rules are
+        # one-shot in a composite stage.
+        if decision.rule.loop_var is None and decision.rule.key in state.consumed:
             return CallResult(
                 False,
                 f"rule {decision.rule.key} already consumed (composite one-shot)",
@@ -443,6 +449,9 @@ class Gateway:
         gate = self._confirmation_gate(state, tool, list(args))
         if gate is not None:
             return gate
+        bulk = self._bulk_gate(state, decision.rule, tool)
+        if bulk is not None:
+            return bulk
 
         params = state.tool_params.get(tool, [])
         if len(params) != len(args):
@@ -512,6 +521,36 @@ class Gateway:
                 return_value=None,
             )
         return None
+
+    def _bulk_gate(
+        self, state: "_Session | _CompositeState", rule: Any, tool: str
+    ) -> CallResult | None:
+        """Amplification cap: a plan-authorised loop that exceeds the configured
+        iteration cap is held ONCE for human confirmation. Off-plan bulk never
+        reaches here (default-denied), so the gate fires only for a genuine task
+        loop -- and only past the cap. Approving lets the rest of that loop run."""
+        cap = state.source_trust.bulk_max_iterations
+        if cap is None or rule is None or getattr(rule, "loop_var", None) is None:
+            return None
+        if rule.key in state.bulk_confirmed:
+            return None
+        count = state.loop_counts.get(rule.key, 0)
+        if count < cap:
+            state.loop_counts[rule.key] = count + 1
+            return None
+        # This call would exceed the cap -> hold the bulk operation once.
+        if not any(c.bulk_rule == rule.key for c in state.pending.values()):
+            cid = f"c{state.confirm_seq}"
+            state.confirm_seq += 1
+            state.pending[cid] = PendingConfirmation(
+                cid, tool, -1, f"loop {rule.key}", count, bulk_rule=rule.key
+            )
+        return CallResult(
+            permit=False,
+            reason=(f"pending confirmation: {tool} loop exceeds {cap} iterations "
+                    "(possible amplification -- confirm the bulk operation)"),
+            return_value=None,
+        )
 
     def _submit_with_planner(
         self,
@@ -812,6 +851,9 @@ class Gateway:
         gate = self._confirmation_gate(session, tool, list(args))
         if gate is not None:
             return gate
+        bulk = self._bulk_gate(session, decision.rule, tool)
+        if bulk is not None:
+            return bulk
 
         params = session.tool_params.get(tool, [])
         if len(params) != len(args):
@@ -876,7 +918,11 @@ class Gateway:
             return False
         pc = state.pending.pop(confirmation_id)
         if approved:
-            state.confirmed.add((pc.tool, _confirm_key(pc.value)))
+            if pc.bulk_rule is not None:
+                # Approving the bulk lets the rest of that loop run uncapped.
+                state.bulk_confirmed.add(pc.bulk_rule)
+            else:
+                state.confirmed.add((pc.tool, _confirm_key(pc.value)))
         return True
 
     def composite_status(self) -> dict[str, Any] | None:

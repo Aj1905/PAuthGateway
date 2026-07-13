@@ -54,6 +54,13 @@ class SourceTrust:
     # untrusted web-extracted data -- so a human confirms actions taken on data
     # whose truth the gateway cannot verify. Off by default (narrow S15 gate).
     confirm_untrusted_decisions: bool = False
+    # Amplification cap: a bounded-for loop (a plan-authorised bulk operation) that
+    # exceeds this many iterations is held ONCE for human confirmation -- the loop
+    # count is data-dependent, so an injected/oversized collection could blow it up
+    # even though every call is FN=0-valid. Off-plan bulk is default-denied, not
+    # gated, so the gate fires only when the excess is genuinely task-driven (in the
+    # plan). None disables the cap.
+    bulk_max_iterations: int | None = None
 
     def is_untrusted(self, tool: str) -> bool:
         if tool in self.trusted_tools:
@@ -87,6 +94,7 @@ class PendingConfirmation:
     value: object
     source: tuple[str, ...] = ()
     param_type: str = ""   # the operand's declared schema type (constrained extraction)
+    bulk_rule: str | None = None   # set for an amplification (loop-cap) confirmation
 
     def human_warning(self) -> str:
         """Caution to show the human alongside the value. Two parts, in order of how
