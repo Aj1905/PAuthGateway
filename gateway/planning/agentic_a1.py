@@ -142,12 +142,23 @@ def _rule_reminder(error_message: str) -> str:
     msg = error_message.lower()
     if "nested if" in msg or "elif" in msg or "rule 10" in msg:
         return (
-            "- Keep conditionals ONE level deep: never put an `if` inside another\n"
-            "  `if`/`else`/`for` body, and never use `elif`.\n"
-            "- A single flat `else` block IS allowed (`if C: ...` / `else: ...`).\n"
-            "- Combine multiple conditions with `and` / `or` inside one `if`.\n"
-            "- If the task seems to need nested checks, fold them into a single\n"
-            "  conjunction, use one flat if/else, or drop the inner check."
+            "- Keep conditionals ONE level deep: never nest an `if` inside another\n"
+            "  `if`/`else`/`for` body, and never use `elif`. A single flat `else`\n"
+            "  IS allowed (`if C: ...` / `else: ...`).\n"
+            "- FLATTEN nested guards into one `and`:\n"
+            "      if C1:\n"
+            "          if C2:\n"
+            "              act(x)\n"
+            "  becomes  `if C1 and C2: act(x)`.\n"
+            "- INLINE an intermediate used only by an inner guard: `d = t.amount - 6`\n"
+            "  then `if d > 0:` becomes `if t.amount - 6 > 0:`.\n"
+            "- HOIST reads whose arguments are valid regardless of the outer guard\n"
+            "  (tool reads, helper lookups) to the top level -- they are safe to run\n"
+            "  always -- then guard only the side-effecting call with the combined\n"
+            "  `and` condition.\n"
+            "- If the checks are genuinely sequential (an inner branch needs a tool\n"
+            "  you may call ONLY when the outer guard holds) and cannot be flattened,\n"
+            "  drop the un-expressible part or output `def run():\\n    pass`."
         )
     if "method call" in msg or "method calls are forbidden" in msg:
         return (
