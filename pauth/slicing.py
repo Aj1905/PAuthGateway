@@ -53,28 +53,35 @@ class Slice:
 
 def _statements_with_guards(
     func: ast.FunctionDef,
-) -> list[tuple[ast.stmt, list[ast.expr]]]:
-    """Flatten the body into (statement, path-conditions) pairs.
+) -> list[tuple[ast.stmt, list[ast.expr], tuple[str | None, ast.expr] | None]]:
+    """Flatten the body into (leaf-statement, path-conditions, loop) triples.
 
-    A statement's path condition is empty (top level), the enclosing ``if`` test
-    (if-body), or its negation (else-body). Nesting stays forbidden, so a guard is
-    at most one predicate; else-body statements carry ``not C``.
+    Nested if/else is supported: a statement's path condition is the CONJUNCTION
+    of every enclosing ``if`` test, each else-branch contributing ``not C``. The
+    enforcer already requires ALL guards to hold (``all(...)``), so a leaf under
+    ``if C1: if C2:`` compiles to a rule requiring ``C1 and C2`` -- authorized
+    only on its exact path, off-path (injected) values matching no rule (FN=0).
+    ``for`` stays top-level (grammar-enforced) and never nests with an ``if``.
     """
     out: list[tuple[ast.stmt, list[ast.expr], tuple[str | None, ast.expr] | None]] = []
-    for stmt in func.body:
-        if isinstance(stmt, ast.If):
-            for inner in stmt.body:
-                out.append((inner, [stmt.test], None))
-            if stmt.orelse:
-                neg = ast.copy_location(ast.UnaryOp(op=ast.Not(), operand=stmt.test), stmt.test)
-                for inner in stmt.orelse:
-                    out.append((inner, [neg], None))
-        elif isinstance(stmt, ast.For):
-            loop_var = stmt.target.id if isinstance(stmt.target, ast.Name) else None
-            for inner in stmt.body:
-                out.append((inner, [], (loop_var, stmt.iter)))
-        else:
-            out.append((stmt, [], None))
+
+    def walk(stmts: list[ast.stmt], guards: list[ast.expr],
+             loop: tuple[str | None, ast.expr] | None) -> None:
+        for stmt in stmts:
+            if isinstance(stmt, ast.If):
+                walk(stmt.body, guards + [stmt.test], loop)
+                if stmt.orelse:
+                    neg = ast.copy_location(
+                        ast.UnaryOp(op=ast.Not(), operand=stmt.test), stmt.test
+                    )
+                    walk(stmt.orelse, guards + [neg], loop)
+            elif isinstance(stmt, ast.For):
+                loop_var = stmt.target.id if isinstance(stmt.target, ast.Name) else None
+                walk(stmt.body, guards, (loop_var, stmt.iter))
+            else:
+                out.append((stmt, list(guards), loop))
+
+    walk(func.body, [], None)
     return out
 
 

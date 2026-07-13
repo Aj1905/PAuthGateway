@@ -156,16 +156,30 @@ def _is_docstring(stmt: ast.stmt) -> bool:
     )
 
 
+_MAX_IF_DEPTH = 3
+
+
 def _check_no_nested_if(func: ast.FunctionDef) -> None:
-    """Rule 10: no nested if, no elif. A PLAIN else is allowed (its statements
-    slice under ``not C``); elif (``orelse == [If]``) and nested ifs stay banned."""
-    for stmt in func.body:
-        if isinstance(stmt, ast.If):
-            if len(stmt.orelse) == 1 and isinstance(stmt.orelse[0], ast.If):
-                raise RestrictedGrammarError("elif blocks are forbidden (rule 10)")
-            for inner in list(stmt.body) + list(stmt.orelse):
-                if isinstance(inner, ast.If):
-                    raise RestrictedGrammarError("nested if statements are forbidden (rule 10)")
+    """Rule 10 (Tier-3): nested if/else IS allowed -- each enclosing test adds a
+    conjunct to the leaf's path condition, and the enforcer already requires ALL
+    guards to hold, so ``if C1: if C2: act()`` compiles to a rule demanding
+    ``C1 and C2`` (authorized only on that exact path; off-path values match no
+    rule -> FN=0). ``elif`` is the same shape (``else: if``) and is likewise
+    allowed. Depth is capped so slice forking stays bounded."""
+
+    def walk(stmts: list[ast.stmt], depth: int) -> None:
+        for stmt in stmts:
+            if isinstance(stmt, ast.If):
+                if depth + 1 > _MAX_IF_DEPTH:
+                    raise RestrictedGrammarError(
+                        f"if-nesting deeper than {_MAX_IF_DEPTH} is forbidden (rule 10)"
+                    )
+                walk(stmt.body, depth + 1)
+                walk(stmt.orelse, depth + 1)
+            elif isinstance(stmt, ast.For):
+                walk(stmt.body, depth)  # for-body shape is checked in _check_bounded_for
+
+    walk(func.body, 0)
 
 
 def _check_bounded_for(func: ast.FunctionDef) -> None:
@@ -176,6 +190,15 @@ def _check_bounded_for(func: ast.FunctionDef) -> None:
     iterable is a bound variable (a tool result the gateway observed), the body is
     straight-line tool calls, and no loop/if nests inside. Anything else (index
     loops, ``range``, nested bodies, in-body assignments) stays rejected."""
+    # A for-loop may appear ONLY at the top level. Nested inside an if/for it
+    # would escape the shape checks below (and mix quantified rules with path
+    # guards), so reject it outright -- keeps the loop machinery unchanged.
+    top_fors = {id(s) for s in func.body if isinstance(s, ast.For)}
+    for node in ast.walk(func):
+        if isinstance(node, ast.For) and id(node) not in top_fors:
+            raise RestrictedGrammarError(
+                "for-loops may appear only at the top level, not inside an if or for body"
+            )
     assigned = {t.id for n in ast.walk(func) if isinstance(n, ast.Assign)
                 for t in n.targets if isinstance(t, ast.Name)}
     for stmt in func.body:
@@ -238,10 +261,17 @@ def strip_dead_code(func: ast.FunctionDef, tool_names: set[str]) -> ast.Function
             and call_name(stmt.value) not in tool_names
         )
 
-    func.body = [s for s in func.body if not is_dead(s)] or [ast.Pass()]
-    for stmt in func.body:
-        if isinstance(stmt, ast.If):
-            stmt.body = [s for s in stmt.body if not is_dead(s)] or [ast.Pass()]
+    def clean(stmts: list[ast.stmt]) -> list[ast.stmt]:
+        kept = [s for s in stmts if not is_dead(s)] or [ast.Pass()]
+        for s in kept:
+            if isinstance(s, ast.If):
+                s.body = clean(s.body)
+                s.orelse = clean(s.orelse) if s.orelse else s.orelse
+            elif isinstance(s, ast.For):
+                s.body = clean(s.body)
+        return kept
+
+    func.body = clean(func.body)
     return func
 
 
@@ -263,13 +293,18 @@ def validate_semantics(func: ast.FunctionDef, tool_names: set[str]) -> None:
     # Tool calls that the slicer can see: statement-level (incl. if / else / for
     # bodies) and let-RHS.
     sliceable: set[int] = set()
-    bodies = [func.body]
-    for s in func.body:
-        if isinstance(s, ast.If):
-            bodies.append(s.body)
-            bodies.append(s.orelse)
-        elif isinstance(s, ast.For):
-            bodies.append(s.body)
+    bodies: list[list[ast.stmt]] = []
+
+    def _collect_bodies(stmts: list[ast.stmt]) -> None:
+        bodies.append(stmts)
+        for s in stmts:
+            if isinstance(s, ast.If):
+                _collect_bodies(s.body)
+                _collect_bodies(s.orelse)
+            elif isinstance(s, ast.For):
+                _collect_bodies(s.body)
+
+    _collect_bodies(func.body)
     for body in bodies:
         for stmt in body:
             call: ast.expr | None = None
@@ -291,19 +326,39 @@ def validate_semantics(func: ast.FunctionDef, tool_names: set[str]) -> None:
     # Anything else (non-constant default, >1 conditional set, cross-if pairs,
     # 3+ defs) needs path-merge logic we do not have, so it stays rejected.
     sites: dict[str, list[tuple[str, int | None]]] = {}
-    for stmt in func.body:
-        if isinstance(stmt, ast.Assign):
-            for t in stmt.targets:
-                if isinstance(t, ast.Name):
-                    kind = "top_const" if isinstance(stmt.value, ast.Constant) else "top_other"
-                    sites.setdefault(t.id, []).append((kind, None))
-        elif isinstance(stmt, ast.If):
-            for branch, tag in ((stmt.body, "if_body"), (stmt.orelse, "else_body")):
-                for inner in branch:
-                    if isinstance(inner, ast.Assign):
-                        for t in inner.targets:
-                            if isinstance(t, ast.Name):
-                                sites.setdefault(t.id, []).append((tag, id(stmt)))
+
+    def _add_site(assign: ast.Assign, tag: str, key: int | None) -> None:
+        for t in assign.targets:
+            if isinstance(t, ast.Name):
+                sites.setdefault(t.id, []).append((tag, key))
+
+    def _collect_sites(stmts: list[ast.stmt], context: object) -> None:
+        # context: "top", ("if_body", ifid), ("else_body", ifid), or "nested".
+        # Only a TOP-LEVEL if's DIRECT body/else earn the flat merge tags; anything
+        # deeper is "nested" and matches no allowed merge pattern, so a variable
+        # reassigned in a nested branch is rejected. This keeps the FN-safe
+        # single-definition rule for everything the nesting introduces -- the two
+        # blessed merges (const-default, if/else) stay flat-only.
+        for stmt in stmts:
+            if isinstance(stmt, ast.Assign):
+                if context == "top":
+                    tag = "top_const" if isinstance(stmt.value, ast.Constant) else "top_other"
+                    _add_site(stmt, tag, None)
+                elif isinstance(context, tuple):
+                    _add_site(stmt, context[0], context[1])
+                else:
+                    _add_site(stmt, "nested", id(stmt))
+            elif isinstance(stmt, ast.If):
+                if context == "top":
+                    _collect_sites(stmt.body, ("if_body", id(stmt)))
+                    _collect_sites(stmt.orelse, ("else_body", id(stmt)))
+                else:
+                    _collect_sites(stmt.body, "nested")
+                    _collect_sites(stmt.orelse, "nested")
+            elif isinstance(stmt, ast.For):
+                _collect_sites(stmt.body, "nested")
+
+    _collect_sites(func.body, "top")
     names = set(sites)
     reassigned = []
     for name, locs in sites.items():
