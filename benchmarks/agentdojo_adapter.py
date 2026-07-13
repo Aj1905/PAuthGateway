@@ -9,7 +9,6 @@ to each tool (paper sec. 4.1.1).
 
 from __future__ import annotations
 
-import dataclasses
 import types
 import typing
 from typing import Any, Callable
@@ -24,43 +23,6 @@ from .forced_injection import generate_for_task
 
 AGENTDOJO_SUITES = ("banking", "slack", "travel", "workspace")
 _BENCHMARK_VERSION = "v1"
-
-
-def _structure_names(prose: str) -> list[str]:
-    """Turn a prose listing into a structured ``list[str]`` of names.
-
-    AgentDojo's travel ``get_all_*_in_city`` tools return a single string like
-    ``"Hotel Names: A\\nB\\nC\\n"`` -- a human-readable blob. The very next tools
-    (``get_hotels_prices``, ``get_rating_reviews_for_*``) expect a ``list[str]``
-    of names, but the restricted grammar has no string methods, so generated code
-    cannot split the blob and instead subscripts or forwards it whole -> KeyError
-    at runtime. This normalises the blob into the list those tools actually want.
-    The first line carries a ``"<prefix>: <first name>"`` header; every other
-    non-empty line is a bare name.
-    """
-    if not isinstance(prose, str):
-        return prose  # already structured; leave untouched
-    names: list[str] = []
-    for i, raw in enumerate(prose.split("\n")):
-        line = raw.strip()
-        if i == 0 and ": " in line:
-            line = line.split(": ", 1)[1]
-        if line:
-            names.append(line)
-    return names
-
-
-# Per-suite adapter post-processors: tool name -> function applied to its return
-# so the value the enforcer sees matches the schema downstream tools consume.
-# This is the "adapter layer" -- faithful to PAuth's premise of structured tool
-# I/O, not a change to task semantics.
-_STRUCTURED_RETURNS: dict[str, dict[str, Callable[[Any], Any]]] = {
-    "travel": {
-        "get_all_hotels_in_city": _structure_names,
-        "get_all_restaurants_in_city": _structure_names,
-        "get_all_car_rental_companies_in_city": _structure_names,
-    },
-}
 
 
 def _type_str(annotation: Any) -> str:
@@ -112,18 +74,12 @@ def _tool_doc(tool: Any) -> ToolDoc:
 
 
 def _build_tools(agentdojo_suite: Any) -> dict[str, ToolSpec]:
-    structured = _STRUCTURED_RETURNS.get(agentdojo_suite.name, {})
     tools: dict[str, ToolSpec] = {}
     for tool in agentdojo_suite.tools:
-        doc = _tool_doc(tool)
-        if tool.name in structured:
-            # The adapter restructures this tool's prose return into a list, so
-            # advertise the schema the LLM should code against.
-            doc = dataclasses.replace(doc, returns="list of str")
         tools[tool.name] = ToolSpec(
             name=tool.name,
             params=list(tool.parameters.model_fields.keys()),
-            doc=doc,
+            doc=_tool_doc(tool),
             signer=agentdojo_suite.name,
         )
     return tools
@@ -140,16 +96,12 @@ def _make_env_factory(agentdojo_suite: Any) -> Callable[[], Any]:
 
 def _make_runner_factory(agentdojo_suite: Any) -> Callable[[Any], Callable[..., Any]]:
     runtime = FunctionsRuntime(agentdojo_suite.tools)
-    structured = _STRUCTURED_RETURNS.get(agentdojo_suite.name, {})
 
     def runner_factory(env: Any) -> Callable[[str, dict[str, Any]], Any]:
         def run(tool: str, kwargs: dict[str, Any]) -> Any:
             result, error = runtime.run_function(env, tool, kwargs, raise_on_error=False)
             if error:
                 raise RuntimeError(error)
-            post = structured.get(tool)
-            if post is not None:
-                result = post(result)
             return result
 
         return run
