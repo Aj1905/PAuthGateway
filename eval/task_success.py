@@ -27,6 +27,7 @@ Run:  .venv/bin/python -m eval.task_success
 
 from __future__ import annotations
 
+import argparse
 import copy
 import dataclasses
 from pathlib import Path
@@ -38,6 +39,8 @@ from pauth import prepare
 from pauth.enforcer import Enforcer, execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.grammar import RestrictedGrammarError
+
+from eval.fpfn import _runtime_probe, load_env_file
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = ROOT / "tests" / "experiment" / "cache"
@@ -51,19 +54,42 @@ class Outcome:
     detail: str = ""
 
 
-def _plan_for(suite_name: str, task_id: str) -> str | None:
+def _plan_cached(suite_name: str, task_id: str) -> str | None:
     p = CACHE_DIR / suite_name / f"{task_id}.py"
     return p.read_text() if p.exists() else None
 
 
-def measure_suite(suite_name: str) -> list[Outcome]:
+def _plan_agentic(suite_name: str, task_id: str, prompt: str, spec,
+                  model: str, judge_model: str, max_retries: int) -> str | None:
+    """Generate a plan through the agentic self-repair pipeline (grammar repair +
+    runtime-crash repair + intent judge), the path whose task-success we test."""
+    from gateway.planning.agentic_a1 import generate_code_with_self_repair
+    cache_path = (CACHE_DIR / suite_name / "agentic-ts"
+                  / f"{task_id}-{model}-r{max_retries}-j-{judge_model}.py")
+    try:
+        res = generate_code_with_self_repair(
+            prompt, spec.tool_docs(), model=model, max_retries=max_retries,
+            cache_path=cache_path, enable_judge=True, judge_model=judge_model,
+            executor=_runtime_probe(spec),
+        )
+    except Exception as exc:  # noqa: BLE001 -- API/key error: treat as no plan
+        return f"# gen-error: {type(exc).__name__}: {exc}"
+    return res.code
+
+
+def measure_suite(suite_name: str, planner: str = "cached", model: str = "gpt-4.1",
+                  judge_model: str = "gpt-4.1", max_retries: int = 3) -> list[Outcome]:
     adj = get_suites("v1")[suite_name]
     spec = load_suite(suite_name)
     tools, signer, params = spec.tool_names(), spec.tool_signer(), spec.tool_params()
     out: list[Outcome] = []
     for task_id in sorted(adj.user_tasks):
         ut = adj.user_tasks[task_id]
-        code = _plan_for(suite_name, task_id)
+        if planner == "agentic":
+            code = _plan_agentic(suite_name, task_id, ut.PROMPT, spec,
+                                 model, judge_model, max_retries)
+        else:
+            code = _plan_cached(suite_name, task_id)
         if code is None:
             out.append(Outcome(task_id, "skip", "no cached plan"))
             continue
@@ -93,12 +119,22 @@ def measure_suite(suite_name: str) -> list[Outcome]:
 
 
 def main() -> int:
-    print("Ground-truth task success (AgentDojo utility) -- cached A1 plans\n")
+    ap = argparse.ArgumentParser(description="Ground-truth task-success measurement.")
+    ap.add_argument("--planner", choices=["cached", "agentic"], default="cached",
+                    help="cached one-shot A1, or the agentic self-repair pipeline")
+    ap.add_argument("--model", default="gpt-4.1")
+    ap.add_argument("--judge-model", default="gpt-4.1", help="intent judge (OpenAI-family reuses the key)")
+    ap.add_argument("--max-retries", type=int, default=3)
+    args = ap.parse_args()
+    load_env_file()
+
+    print(f"Ground-truth task success (AgentDojo utility) -- {args.planner} plans\n")
     hdr = f"{'suite':<12}{'tasks':>6}{'accepted':>10}{'clean':>8}{'SUCCESS':>9}{'rate':>8}"
     print(hdr); print("-" * len(hdr))
     T = A = C = S = 0
     for name in _SUITES:
-        res = measure_suite(name)
+        res = measure_suite(name, planner=args.planner, model=args.model,
+                            judge_model=args.judge_model, max_retries=args.max_retries)
         n = len(res)
         accepted = sum(1 for r in res if r.level in ("crash", "fail", "success"))
         clean = sum(1 for r in res if r.level in ("fail", "success"))
