@@ -31,10 +31,14 @@ The code MUST conform to this grammar (Appendix A production rules):
 
   <Slice>        ::= def run(<Parameters>): <Body>
   <Body>         ::= <StmtList>                          (4-space indented)
-  <Stmt>         ::= <Assignment> | <ToolCall> | <Conditional> | pass
+  <Stmt>         ::= <Assignment> | <ToolCall> | <Conditional> | <ForLoop> | pass
   <Assignment>   ::= <Identifier> = <Expr>
   <ToolCall>     ::= <Identifier> ( <ArgList> )
   <Conditional>  ::= if <Condition> : <Stmt>...           (body indented 8)
+                   | if <Condition> : <Stmt>... else : <Stmt>...   (one flat else)
+  <ForLoop>      ::= for <Identifier> in <Identifier> :   (iterate a bound
+                       <ToolCall>...                         collection variable;
+                                                             body = tool calls only)
   <Condition>    ::= <ConditionTerm>
                    | <Condition> and <ConditionTerm>
                    | <Condition> or <ConditionTerm>
@@ -54,9 +58,12 @@ The code MUST conform to this grammar (Appendix A production rules):
   <ArithExpr>    ::= <Expr> <ArithOp> <Expr>
   <ArithOp>      ::= + | - | * | / | // | %
 
-There is NO production for: loops, comprehensions, generator/`any`/`all`,
+There is NO production for: while-loops, comprehensions, generator/`any`/`all`,
 ternary (`x if c else y`), `not`, method calls (e.g. `s.lower()`,
-`s.startswith(...)`), dict/set literals, multiple functions. Do not use them.
+`s.startswith(...)`), type casts (`float(...)`, `int(...)`, `str(...)`),
+dict/set literals, `elif`, if-inside-if (nested if), multiple functions. Do not
+use them. A `for` loop and a single `else` ARE allowed, but only in the exact
+shapes described in rules 2a and 10 below.
 The first argument of every helper MUST be a bare variable name -- never a
 tool call. A tool call may appear only as a statement or as the right-hand
 side of an assignment, never nested inside another expression.
@@ -67,8 +74,17 @@ STRICT RULES for the python function named 'run':
    docstrings.
 1a. ALWAYS use double quotes (") for all string literals.
 2. Only call the provided tools - no other functions or libraries.
-2a. NEVER use ANY loops - 'for' and 'while' are strictly forbidden. Use the
-    helper functions len(), min(), max(), first() and last() instead.
+2a. 'while' loops are strictly forbidden. A 'for' loop is allowed ONLY in this
+    exact shape -- iterate a variable that holds a prior tool result, with a body
+    of tool-call statements only:
+        items = list_items(None)
+        for it in items:
+            do_something(it.field, 1)
+    The loop variable must be a fresh name; the iterable must be a bare variable
+    naming an earlier tool result (NEVER range(), a literal, or an expression);
+    the body may contain ONLY tool calls (no assignments, no if, no nested loop).
+    When the task is find-the-best / aggregate rather than act-on-each, prefer the
+    helpers len(), min(), max(), first(), last() over a loop.
 2a1. FORBIDDEN: any(), all() and generator expressions. Use nested first()
      calls instead.
 2b. ALLOWED HELPER FUNCTIONS - you may use these five helpers:
@@ -97,8 +113,13 @@ STRICT RULES for the python function named 'run':
 8a. Never access the same field twice in one expression - store results in a
     variable first.
 9. Call ALL relevant tools, including those with no parameters.
-10. CONDITIONAL STATEMENTS: use ONLY ONE if-statement per action, combining all
-    conditions with and/or. No else blocks. NO nested if statements.
+10. CONDITIONAL STATEMENTS: combine conditions with and/or. A single flat 'else'
+    block IS allowed (`if C: ...` / `else: ...`). STILL FORBIDDEN: 'elif', and any
+    'if' nested inside another if/else/for body -- keep conditionals one level deep.
+10a. A variable may be assigned twice ONLY as (i) a constant default then one
+     conditional override (`x = ""` then `if C: x = expr`), or (ii) both branches
+     of the same if/else (`if C: x = a` / `else: x = b`). Otherwise assign each
+     variable exactly once.
 11. If the user provides specific values, use them as constants directly.
     Create function parameters only for values not specified in the request.
 12. Always use the exact field names from the tool schemas.

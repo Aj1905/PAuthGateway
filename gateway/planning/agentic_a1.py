@@ -140,13 +140,14 @@ def _rule_reminder(error_message: str) -> str:
     rule restatement so the LLM cannot claim it did not know.
     """
     msg = error_message.lower()
-    if "nested if" in msg or "rule 10" in msg:
+    if "nested if" in msg or "elif" in msg or "rule 10" in msg:
         return (
-            "- Use AT MOST ONE if-statement per action.\n"
-            "- Combine multiple conditions with `and` / `or` inside that ONE if.\n"
-            "- NEVER nest an if inside another if. NEVER use else.\n"
-            "- If the original task seems to need nested checks, fold them into a\n"
-            "  single conjunction or drop the inner check entirely."
+            "- Keep conditionals ONE level deep: never put an `if` inside another\n"
+            "  `if`/`else`/`for` body, and never use `elif`.\n"
+            "- A single flat `else` block IS allowed (`if C: ...` / `else: ...`).\n"
+            "- Combine multiple conditions with `and` / `or` inside one `if`.\n"
+            "- If the task seems to need nested checks, fold them into a single\n"
+            "  conjunction, use one flat if/else, or drop the inner check."
         )
     if "method call" in msg or "method calls are forbidden" in msg:
         return (
@@ -154,10 +155,33 @@ def _rule_reminder(error_message: str) -> str:
             "  `lst.append(...)` are all forbidden. Only the tools provided and\n"
             "  the helpers `len`, `min`, `max`, `first`, `last` may be called."
         )
-    if "for-loop" in msg or "while-loop" in msg or "comprehension" in msg or "rule 2a" in msg:
+    if "for-body" in msg:
         return (
-            "- NO `for`, `while`, or comprehensions.\n"
-            "- Use `len`, `min`, `max`, `first`, `last` over a variable instead.\n"
+            "- A `for` body may contain ONLY tool-call statements -- no assignment,\n"
+            "  no `if`, no nested loop inside the loop.\n"
+            "- Inline field access directly into the call:\n"
+            "  `for it in items: do_something(it.field, 1)`,\n"
+            "  NOT `for it in items: x = it.field` then a separate call.\n"
+            "- If you must compute a value per element, the grammar cannot express\n"
+            "  it in a loop -- use `min`/`max`/`first`/`last` over the variable instead."
+        )
+    if "for-loop must iterate" in msg or "for-loop target" in msg or (
+        "for-loop" in msg and "shadow" in msg
+    ):
+        return (
+            "- A `for` loop is allowed ONLY as `for <var> in <collection_var>:` where\n"
+            "  <collection_var> is a bare variable holding an EARLIER tool result.\n"
+            "- Never iterate `range(...)`, a literal, an index, or an expression.\n"
+            "- First assign the collection (`items = list_items(None)`), then\n"
+            "  `for it in items:` with a body of tool calls only.\n"
+            "- The loop variable must be a fresh name that shadows nothing."
+        )
+    if "while-loop" in msg or "comprehension" in msg or "rule 2a" in msg:
+        return (
+            "- NO `while` loops and NO comprehensions.\n"
+            "- To act on each element, use the bounded `for <var> in <collection_var>:`\n"
+            "  shape (body = tool calls only). To find/aggregate, use `len`, `min`,\n"
+            "  `max`, `first`, `last` over a variable.\n"
             "- Helper first argument MUST be a bare variable, not a call."
         )
     if "return" in msg or "rule 1" in msg:
@@ -206,14 +230,17 @@ Important constraints:
 
 - Be strict only about OBVIOUS mismatches. Stylistic differences (variable
   names, ordering of independent tool calls) are not deficiencies.
-- The code uses a restricted grammar (NO nested if, NO else, NO loops, NO
-  multiple assignment). A code that is grammar-valid and selects at
-  runtime via two independent if statements IS a faithful encoding of a
-  comparison; do NOT mark it as deficient just because it is not written
-  with else.
-- If the user's intent genuinely cannot be encoded within the restricted
-  grammar (truly requires else / nested if), and the code papers over the
-  gap by dropping the gate, that IS a deficiency -- mark false.
+- The code uses a restricted grammar. ALLOWED: a single flat `if`/`else`, a
+  bounded `for <var> in <collection_var>:` whose body is tool calls only, and
+  the helpers len/min/max/first/last. FORBIDDEN: nested `if`, `elif`, `while`,
+  comprehensions, method calls, and reassigning a variable except as a constant
+  default plus one override or the two arms of one if/else. A grammar-valid code
+  that selects at runtime via if/else OR via two independent if statements IS a
+  faithful encoding; do NOT mark it deficient merely for using -- or not using --
+  an else or a loop. Judge intent, not style.
+- If the user's intent genuinely cannot be encoded within this grammar (truly
+  requires nested conditionals or unbounded iteration), and the code papers over
+  the gap by dropping the gate, that IS a deficiency -- mark false.
 - Never trust comments or variable names that claim the intent is met.
   Judge only by what the statements actually do.
 
@@ -250,6 +277,32 @@ fences.
 """
 
 
+_RUNTIME_REPAIR_INSTRUCTION = """\
+Your previous attempt was grammar-valid but CRASHED when executed against the
+real tool environment.
+
+RUNTIME ERROR: {error}
+
+This means the code accessed a field, index, or type that the tool's ACTUAL
+return does not have. Common causes:
+- Treating a text/string return as if it were a list or dict (subscripting or
+  iterating a value that is really a plain string).
+- Comparing a typed field (e.g. a date/datetime) against a string literal.
+- Passing a whole tool result where the next tool expects one element or field.
+
+Re-emit the `run` function so it runs WITHOUT crashing: use only the fields and
+types the tool schemas actually declare (consult each tool's return/output
+schema). If the task genuinely cannot be done within the restricted grammar
+without such an access, output exactly:
+
+    def run():
+        pass
+
+Output ONLY the corrected `run` function, with no explanation and no markdown
+fences.
+"""
+
+
 _INTENT_REPAIR_INSTRUCTION = """\
 Your previous attempt was grammar-valid but DID NOT fully capture the user's
 intent.
@@ -259,7 +312,8 @@ INTENT ISSUES (from semantic review):
 
 You MUST address every issue in the next attempt. Re-emit the `run`
 function so it captures the missing intent within the restricted grammar
-(NO nested if, NO else, NO loops, NO comprehensions, NO method calls).
+(a single flat if/else and a bounded `for x in collection_var:` of tool calls
+are allowed; nested if, elif, while, comprehensions, and method calls are not).
 
 If a piece of intent genuinely cannot be expressed within the restricted
 grammar, output exactly:
@@ -436,6 +490,7 @@ def generate_code_with_self_repair(
     judge_model: str = DEFAULT_JUDGE_MODEL,
     judge_client: Any | None = None,
     precheck_policy: PrecheckPolicy | None = None,
+    executor: Any | None = None,
 ) -> AgenticCodegenResult:
     """Generate restricted-grammar code with grammar + semantic self-repair.
 
@@ -447,6 +502,13 @@ def generate_code_with_self_repair(
     (e.g. comparing acceptance rates with and without the semantic judge). ``judge_model``
     is the Anthropic model identifier; production should sweep this when
     comparing judges.
+
+    ``executor`` is an optional ``Callable[[str], str | None]`` that dry-runs the
+    candidate code and returns a crash string (or None if it runs clean). When
+    supplied, a grammar-valid candidate that crashes at runtime is fed back for
+    repair; if it still crashes after ``max_retries`` it is replaced with the
+    reject sentinel. Benchmark callers pass a mock-env probe; live deployments
+    that lack a safe sim env leave it None.
 
     The cache key (controlled by the caller via ``cache_path``) should
     reflect ``model``, ``max_retries``, ``enable_judge``, and ``judge_model``
@@ -534,6 +596,31 @@ def generate_code_with_self_repair(
             )
             continue
 
+        # Stage 1.75: runtime probe. Execute the grammar-valid code against a
+        # throwaway mock environment to catch crashes (bad field / index / type
+        # access) that static checks cannot see -- e.g. subscripting a text-blob
+        # return, or comparing a datetime field to a string. Runs only when the
+        # caller supplies an ``executor`` (the benchmark path, which has a mock
+        # env at plan time); a live deployment would need a sandboxed sim env, so
+        # production callers may leave it None. The probe never raises into A1.
+        if executor is not None:
+            try:
+                runtime_error = executor(code)
+            except Exception:  # noqa: BLE001 -- a probe failure must not crash A1
+                runtime_error = None
+            if runtime_error:
+                failure_history.append(f"runtime: {runtime_error}")
+                if attempt > max_retries:
+                    break
+                messages.append({"role": "assistant", "content": code})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": _RUNTIME_REPAIR_INSTRUCTION.format(error=runtime_error),
+                    }
+                )
+                continue
+
         # Stage 2: semantic intent. Skipped only when explicitly disabled.
         if enable_judge:
             try:
@@ -601,7 +688,7 @@ def generate_code_with_self_repair(
     # over-authorization accept where the gateway took a plan the validators
     # never passed.
     final_code = last_code
-    if failure_history and failure_history[-1].startswith(("intent:", "precheck:")):
+    if failure_history and failure_history[-1].startswith(("intent:", "precheck:", "runtime:")):
         final_code = "def run():\n    pass\n"
     cost = _cost(model, total_prompt_tokens, total_completion_tokens)
     if cache_path is not None:

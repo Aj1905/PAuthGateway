@@ -113,6 +113,43 @@ class TaskResult:
         return len(self.fn_calls)
 
 
+def _runtime_probe(suite: SuiteSpec):
+    """Build a dry-run executor for the agentic runtime-repair stage.
+
+    Executes grammar-valid code against a THROWAWAY mock env permissively (no
+    enforcer) and returns the crash string, or None if it runs clean. This
+    surfaces bad field / index / type access (e.g. subscripting a text-blob
+    return, or ``datetime <= str``) so the self-repair loop can fix it -- or
+    reject it -- before the plan is ever counted as accepted. Mirrors
+    ``execute_generated_code`` minus enforcement, since we only want the crash
+    signal here.
+    """
+    from pauth.evaluator import EXEC_HELPERS, wrap
+    tool_params = suite.tool_params()
+
+    def probe(code: str) -> str | None:
+        runner = suite.runner_factory(suite.make_env())
+
+        def make(name: str):
+            def call(*args: Any) -> Any:
+                return wrap(runner(name, dict(zip(tool_params.get(name, []), args))))
+            return call
+
+        ns: dict[str, Any] = {name: make(name) for name in tool_params}
+        ns.update(EXEC_HELPERS)
+        ns["__builtins__"] = {}
+        try:
+            exec(compile(code, "<pauth-probe>", "exec"), ns)  # noqa: S102
+            run = ns.get("run")
+            if callable(run):
+                run()
+        except Exception as exc:  # noqa: BLE001 -- runtime crash of generated code
+            return f"{type(exc).__name__}: {exc}"
+        return None
+
+    return probe
+
+
 def run_task(
     suite: SuiteSpec,
     task: Any,
@@ -152,6 +189,7 @@ def run_task(
                     task.prompt, suite.tool_docs(), model=model,
                     max_retries=max_retries, cache_path=cache_path, client=client,
                     enable_judge=enable_judge, judge_model=judge_model,
+                    executor=_runtime_probe(suite),
                 )
             else:
                 cache_path = CACHE_DIR / suite.name / f"{short_id}.py" if use_cache else None
