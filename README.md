@@ -306,9 +306,9 @@ design.*
 | envelope (signed, sec. 3.4 / Fig. 3) | `pauth/envelope.py` |
 | B1-B4: runtime enforcement (sec. 4.1.3, deterministic) | `pauth/enforcer.py` |
 | restricted grammar (BNF from Appendix A) | `pauth/grammar.py` |
-| implementation on AgentDojo (sec. 4.1) | `experiment/agentdojo_adapter.py` |
+| implementation on AgentDojo (sec. 4.1) | `benchmarks/agentdojo_adapter.py` |
 | Shopping suite (sec. 5.1) | `pauth/suites/shopping.py` |
-| forced injection (sec. 5.1) | `experiment/forced_injection.py` |
+| forced injection (sec. 5.1) | `benchmarks/forced_injection.py` |
 | FP/FN evaluation (sec. 5.2, Table 2) | `eval/fpfn.py` |
 
 As in the paper, **only A1 requires an LLM**; A2/A3/B1-B4 and the envelope are
@@ -487,17 +487,22 @@ gateway/
 docs/
   architecture.md       logical design (whole system)
   threat-model.md       defense boundary (in / out of scope)
+  glossary.md           precise definitions (gates, metrics, mechanism terms)
   self-hosting.md       design boundaries of the self-hosted / network-connected versions
   ingress-design.md     ingress two-mode (SDK / interception) design
   planning-strategies.md A1 strategy catalog (dialogue structuring / dedicated model / formal analysis)
   design-status.md      organization of current design / under discussion / impossible / bottlenecks
   business-operations.md organization of OSS free scope / commercial operation / billing boundary
-tests/experiment/
+benchmarks/
   agentdojo_adapter.py  normalizes the 4 AgentDojo suites to a common interface
   forced_injection.py   forced injection generation (sec. 5.1)
+  injecagent_adapter.py, tau_bench_adapter.py  additional framework adapters
 eval/
-  fpfn.py               FP/FN experiment runner (Table 2 / Fig. 10)
-  freeform.py           measurement runner for free-form A1
+  fpfn.py               FP/FN + acceptance experiment runner (Table 2 / Fig. 10)
+  check.py              one-command FN=0 control check across every framework
+  task_success.py       ground-truth task success (AgentDojo utility())
+  gates.py              per-gate attribution G1-G5 + security (see docs/glossary.md)
+tests/experiment/       cached A1 plans + results data (not code)
 tests/
   test_worked_examples.py  offline zero-FP/FN verification (no API key required)
 ```
