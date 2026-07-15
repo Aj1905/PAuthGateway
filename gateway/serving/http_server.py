@@ -38,6 +38,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import http.client
 import hmac
 import json
 import os
@@ -48,6 +49,15 @@ import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlsplit
+
+# Headers we never copy through the LLM proxy: hop-by-hop plus framing headers
+# (http.client re-derives Content-Length from the body and de-chunks the upstream,
+# and we re-frame the response by connection-close).
+_HOP_BY_HOP = frozenset({
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailers", "transfer-encoding", "upgrade", "host", "content-length",
+})
 
 
 class TokenAuth:
@@ -145,6 +155,13 @@ class _Handler(BaseHTTPRequestHandler):
     session_store: "SessionStore | None" = None  # B1: opt-in persistence (None = off)
     audit_log: "AuditLog | None" = None  # opt-in shared persistent audit trail
     auth: "TokenAuth | None" = None  # None = open mode (loopback only; warned)
+    # Optional LLM proxy: when set, /v1/* is forwarded to this upstream so the
+    # agent's LLM traffic and its tool calls share the gateway as their ONLY
+    # egress. The network rule then stays "destination = gateway", which never
+    # inspects TLS/SNI and so is immune to Encrypted Client Hello (ECH).
+    llm_upstream: "str | None" = None  # e.g. "https://api.anthropic.com"; None disables it
+    max_proxy_bytes: int = 32 * 1024 * 1024  # LLM prompts can be large
+    proxy_timeout: int = 600  # seconds; streaming completions run long
 
     def log_message(self, fmt: str, *args) -> None:  # noqa: D401 -- quieter logs
         sys.stderr.write("[gateway-http] " + (fmt % args) + "\n")
@@ -194,6 +211,9 @@ class _Handler(BaseHTTPRequestHandler):
     # GET -- health / status (value-free; safe on unauthenticated localhost)
     # ------------------------------------------------------------------
     def do_GET(self) -> None:  # noqa: N802 -- BaseHTTPRequestHandler API
+        if self.llm_upstream is not None and self.path.startswith("/v1/"):
+            self._proxy_llm("GET")
+            return
         if self.path == "/health":  # liveness only; value-free, no session data
             self._send_json(200, {
                 "status": "ok",
@@ -225,6 +245,9 @@ class _Handler(BaseHTTPRequestHandler):
     max_body_bytes: int = 1 * 1024 * 1024  # cap request body to blunt memory DoS
 
     def do_POST(self) -> None:  # noqa: N802 -- BaseHTTPRequestHandler API
+        if self.llm_upstream is not None and self.path.startswith("/v1/"):
+            self._proxy_llm("POST")
+            return
         try:
             length = int(self.headers.get("Content-Length", "0") or "0")
         except ValueError:
@@ -332,6 +355,62 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _proxy_llm(self, method: str) -> None:
+        """Forward a ``/v1/*`` LLM request to ``llm_upstream`` and stream the reply.
+
+        DELIBERATELY exempt from the gateway Bearer token: the client
+        authenticates to the *upstream* with its own API key, which we forward
+        verbatim. Making the gateway the agent's single egress -- LLM completions
+        AND tool-call authorization behind one destination -- lets the network
+        rule stay "destination = gateway only", so it never inspects TLS/SNI and
+        is unaffected by Encrypted Client Hello (ECH). The agent can reach nothing
+        but the gateway, so it cannot bypass it.
+        """
+        up = urlsplit(self.llm_upstream)
+        try:
+            length = int(self.headers.get("Content-Length", "0") or "0")
+        except ValueError:
+            self._send_json(400, {"error": "invalid Content-Length"})
+            return
+        if length > self.max_proxy_bytes:
+            self._send_json(413, {"error": "request body too large"})
+            return
+        raw = self.rfile.read(length) if length else b""
+        # Keep x-api-key / authorization / anthropic-* so the client authenticates
+        # to the upstream; drop hop-by-hop + framing headers (see _HOP_BY_HOP).
+        fwd = {k: v for k, v in self.headers.items() if k.lower() not in _HOP_BY_HOP}
+        fwd["Host"] = up.netloc
+        port = up.port or (443 if up.scheme == "https" else 80)
+        conn_cls = (http.client.HTTPSConnection if up.scheme == "https"
+                    else http.client.HTTPConnection)
+        try:
+            conn = conn_cls(up.hostname, port, timeout=self.proxy_timeout)
+            conn.request(method, self.path, body=raw, headers=fwd)
+            resp = conn.getresponse()
+        except Exception as exc:  # noqa: BLE001 -- upstream unreachable / TLS error
+            self._send_json(502, {"error": f"llm upstream error: {type(exc).__name__}: {exc}"})
+            return
+        try:
+            self.send_response(resp.status)
+            for key, value in resp.getheaders():
+                if key.lower() not in _HOP_BY_HOP:
+                    self.send_header(key, value)
+            # Frame by connection-close so streaming (SSE, no Content-Length) and
+            # buffered replies are handled uniformly; http.client already de-chunks
+            # the upstream, so we relay decoded bytes as they arrive.
+            self.send_header("Connection", "close")
+            self.end_headers()
+            while True:
+                chunk = resp.read(8192)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except Exception:  # noqa: BLE001 -- client hung up mid-stream
+            pass
+        finally:
+            conn.close()
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Minimal HTTP wrapper for AgentChannel.")
@@ -360,6 +439,13 @@ def main() -> int:
         "--auth-tokens", default=os.environ.get("GATEWAY_AUTH_TOKENS", ""),
         help="path to a JSON {principal: token} map for per-principal Bearer auth",
     )
+    parser.add_argument(
+        "--llm-upstream", default=os.environ.get("PAUTH_LLM_UPSTREAM", ""),
+        help="if set (e.g. https://api.anthropic.com), proxy /v1/* to this upstream "
+             "so the agent's LLM traffic and tool calls share the gateway as their "
+             "ONLY egress (network rule stays destination=gateway, ECH-immune); "
+             "empty = LLM proxy disabled",
+    )
     args = parser.parse_args()
 
     _Handler.auth = TokenAuth.from_config(args.auth_token, args.auth_tokens)
@@ -372,6 +458,15 @@ def main() -> int:
         )
     else:
         print("auth: Bearer token required on all routes; sessions bound to principal", file=sys.stderr)
+
+    _Handler.llm_upstream = args.llm_upstream or None
+    if _Handler.llm_upstream:
+        print(
+            f"llm proxy: /v1/* -> {_Handler.llm_upstream} (exempt from the gateway "
+            "token; the client's own API key is forwarded). Point the agent's "
+            "ANTHROPIC_BASE_URL here so LLM + tool calls share one egress.",
+            file=sys.stderr,
+        )
 
     if args.session_store:
         _Handler.session_store = SessionStore(args.session_store)
