@@ -97,7 +97,7 @@ Implemented integrations and providers:
 - Claude Code hooks are the first ingress adapter, not the product core.
 - The shopping suite is a local, deterministic demo suite.
 - AgentDojo is used for benchmark/mock environments via
-  `tests/experiment/agentdojo_adapter.py`.
+  `benchmarks/agentdojo_adapter.py`.
 - The MCP and OpenAPI providers can be adapted to `SuiteSpec`.
 - OpenAPI specs can be reflected into tool schemas, and their changes can be
   monitored.

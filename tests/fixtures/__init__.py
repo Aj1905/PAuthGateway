@@ -3,8 +3,8 @@
 The split matches what the system actually accepts/rejects at each layer:
 
 * **L1 (``l1_prompts``)** -- ``(prompt, expected_accept)`` and grading hints.
-  Used to measure the recognizer (gateway/core.py) and the LLM A1 path
-  (gateway/agentic_a1.py + gateway/freeform_experiment.py).
+  Used to measure the recognizer (gateway/planning/core.py) and the LLM A1 path
+  (gateway/planning/agentic_a1.py + eval/freeform.py).
 
 * **L2 (``l2_scenarios``)** -- ``(prompt, [(tool, args, expected_permit)])``.
   Used by the end-to-end gateway runner (eval/l2_replay.py): every

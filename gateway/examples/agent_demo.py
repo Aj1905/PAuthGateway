@@ -6,7 +6,7 @@ Two demos:
    replays the L2 canonical scenarios through it. Confirms that the new
    agent-facing shape preserves the gateway's verdicts.
 2. **HTTP round-trip** -- if ``--http`` is given, hits a running
-   ``gateway/http_server.py`` and replays the same scenarios over the
+   ``gateway/serving/http_server.py`` and replays the same scenarios over the
    wire. The runner prints the JSON request/response of the first
    benign attempt so the wire shape is visible.
 

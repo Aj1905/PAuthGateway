@@ -339,7 +339,10 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8081)
     parser.add_argument(
         "--config", default="",
-        help="path to a JSON config (see gateway/config.py); if omitted, the shopping-only default is used",
+        help=(
+            "path to a JSON config (see gateway/serving/config.py); "
+            "if omitted, the shopping-only default is used"
+        ),
     )
     parser.add_argument(
         "--session-store", default=os.environ.get("SESSION_STORE_PATH", ""),

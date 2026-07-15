@@ -444,26 +444,14 @@ class Gateway:
                 None,
             )
 
-        # primary dangerous-flow closure: hold the call if a CONTROL operand carries untrusted-derived
-        # data that the user has not yet confirmed.
-        gate = self._confirmation_gate(state, tool, list(args))
+        gate = self._pre_execution_gate(state, decision.rule, tool, args)
         if gate is not None:
             return gate
-        bulk = self._bulk_gate(state, decision.rule, tool)
-        if bulk is not None:
-            return bulk
 
-        params = state.tool_params.get(tool, [])
-        if len(params) != len(args):
-            return CallResult(
-                False,
-                f"arity mismatch for {tool}: expected {len(params)}, got {len(args)}",
-                None,
-            )
-        try:
-            raw = state.runner(tool, dict(zip(params, args)))
-        except Exception as exc:  # noqa: BLE001 -- tool-level failure is not a denial
-            return CallResult(False, f"tool execution error: {type(exc).__name__}: {exc}", None)
+        result = self._execute_authorized_tool(state, tool, args, decision.reason)
+        if not result.permit:
+            return result
+        raw = result.return_value
 
         state.enforcer.record(decision.rule, wrap(raw))
         state.consumed.add(decision.rule.key)
@@ -473,7 +461,48 @@ class Gateway:
             if var_tool == tool and var not in state.bindings:
                 state.bindings[var] = raw
         self._composite_advance(state)
-        return CallResult(True, decision.reason, raw)
+        return result
+
+    def _pre_execution_gate(
+        self,
+        state: "_Session | _CompositeState",
+        rule: Any,
+        tool: str,
+        args: list[Any],
+    ) -> CallResult | None:
+        """Apply every human gate shared by session and composite plans."""
+        confirmation = self._confirmation_gate(state, tool, args)
+        if confirmation is not None:
+            return confirmation
+        return self._bulk_gate(state, rule, tool)
+
+    @staticmethod
+    def _execute_authorized_tool(
+        state: "_Session | _CompositeState",
+        tool: str,
+        args: list[Any],
+        reason: str,
+    ) -> CallResult:
+        """Validate arguments and run a call that the enforcer authorized."""
+        params = state.tool_params.get(tool, [])
+        if len(params) != len(args):
+            return CallResult(
+                permit=False,
+                reason=f"arity mismatch for {tool}: expected {len(params)}, got {len(args)}",
+                return_value=None,
+            )
+
+        runner = state.runner
+        assert runner is not None
+        try:
+            raw = runner(tool, dict(zip(params, args)))
+        except Exception as exc:  # noqa: BLE001 -- tool-level failure is not a denial
+            return CallResult(
+                permit=False,
+                reason=f"tool execution error: {type(exc).__name__}: {exc}",
+                return_value=None,
+            )
+        return CallResult(permit=True, reason=reason, return_value=raw)
 
     def _confirmation_gate(
         self, state: "_Session | _CompositeState", tool: str, args: list[Any]
@@ -845,38 +874,16 @@ class Gateway:
         if not decision.permit:
             return CallResult(permit=False, reason=decision.reason, return_value=None)
 
-        # primary dangerous-flow closure on the LIVE path: hold the call if a CONTROL operand carries
-        # untrusted-derived data the user has not confirmed (same gate as the
-        # composite path; unified in S19).
-        gate = self._confirmation_gate(session, tool, list(args))
+        gate = self._pre_execution_gate(session, decision.rule, tool, args)
         if gate is not None:
             return gate
-        bulk = self._bulk_gate(session, decision.rule, tool)
-        if bulk is not None:
-            return bulk
 
-        params = session.tool_params.get(tool, [])
-        if len(params) != len(args):
-            return CallResult(
-                permit=False,
-                reason=f"arity mismatch for {tool}: expected {len(params)}, got {len(args)}",
-                return_value=None,
-            )
-
-        kwargs = dict(zip(params, args))
-        try:
-            raw = session.runner(tool, kwargs)
-        except Exception as exc:  # noqa: BLE001 -- tool-level failure is not a denial
-            return CallResult(
-                permit=False,
-                reason=f"tool execution error: {type(exc).__name__}: {exc}",
-                return_value=None,
-            )
-
-        wrapped = wrap(raw)
+        result = self._execute_authorized_tool(session, tool, args, decision.reason)
+        if not result.permit:
+            return result
         assert decision.rule is not None
-        session.enforcer.record(decision.rule, wrapped)
-        return CallResult(permit=True, reason=decision.reason, return_value=raw)
+        session.enforcer.record(decision.rule, wrap(result.return_value))
+        return result
 
     # ------------------------------------------------------------------
     # Introspection (for the experiment runner, not for the agent).

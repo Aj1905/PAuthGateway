@@ -3,11 +3,11 @@
 Two collections live here:
 
 * :data:`RECOGNIZER_CASES` -- inputs for the deterministic regex recognizer in
-  ``gateway/core.py``. ``expected_accept`` reflects whether the regex matches.
+  ``gateway/planning/core.py``. ``expected_accept`` reflects whether the regex matches.
   Used by ``tests/test_recognizer.py``.
 
 * :data:`FREEFORM_CASES` -- free-form natural-language prompts for measuring
-  the LLM A1 + A2/A3 pipeline (``gateway/agentic_a1.py``). ``expected_accept``
+  the LLM A1 + A2/A3 pipeline (``gateway/planning/agentic_a1.py``). ``expected_accept``
   reflects whether we expect the agentic A1 with grammar repair to succeed.
   ``must_call`` / ``must_not_call`` are surface-level intent hints used to
   detect "accepted but generated the wrong code".

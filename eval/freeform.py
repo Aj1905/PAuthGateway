@@ -14,9 +14,9 @@ generated code under ``gateway/cache/freeform/`` so repeat runs are free.
 
 Usage::
 
-    .venv/bin/python gateway/freeform_experiment.py
-    .venv/bin/python gateway/freeform_experiment.py --model gpt-4.1-mini
-    .venv/bin/python gateway/freeform_experiment.py --no-cache  # re-run A1
+    .venv/bin/python -m eval.freeform
+    .venv/bin/python -m eval.freeform --model gpt-4.1-mini
+    .venv/bin/python -m eval.freeform --no-cache  # re-run A1
 """
 
 from __future__ import annotations

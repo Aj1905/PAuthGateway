@@ -1,6 +1,6 @@
 """Minimal MCP-over-HTTP server wrapping the shopping suite.
 
-Used by ``gateway/mcp_suite.py`` integration tests so we can drive the
+Used by ``gateway/providers/mcp_suite.py`` integration tests so we can drive the
 ``MCPSuite`` end-to-end without depending on a real third-party MCP
 server. Only the two RPCs PAuth needs are implemented:
 

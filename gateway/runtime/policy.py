@@ -15,7 +15,7 @@ positions, it overrides the denial. Guard predicates and the other
 operands are still verified normally.
 
 The wildcards are configured at gateway-startup time (see
-``gateway/config.py``), not by the agent. The agent has no way to
+``gateway/serving/config.py``), not by the agent. The agent has no way to
 extend the free-operand set.
 """
 

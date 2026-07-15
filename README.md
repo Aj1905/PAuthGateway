@@ -410,7 +410,7 @@ OPENAI_API_KEY=sk-... .venv/bin/python -m eval.fpfn --suites all
 
 **Cost and time estimate**: about $0.002–0.04 per task (paper Fig. 10). Roughly
 $1–4 and about 10 minutes for all 97 tasks. Generated code is cached under
-`experiment/cache/`, so re-runs after the first are free.
+`tests/experiment/cache/`, so re-runs after the first are free.
 
 To try cheaply first:
 
@@ -438,7 +438,7 @@ Overall     0 (756)                   0 (97)                  0
 - **ANOMALIES** — details of tasks where an FP/FN or a crash of generated code
   occurred. If this is empty, zero FP / zero FN holds.
 
-Details are written to `experiment/results/results.json` (including per-task
+Details are written to `tests/experiment/results/results.json` (including per-task
 slice, rejection reason, and token cost).
 
 ---

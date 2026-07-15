@@ -107,7 +107,7 @@ flowchart LR
     subgraph ToolSourceBoundary["Tool source boundary (replaceable providers)"]
         SuiteSpec["SuiteSpec\nnames / schemas / runner"]
         Shopping["shopping demo suite"]
-        AgentDojo["AgentDojo adapter\ntests/experiment only"]
+        AgentDojo["AgentDojo adapter\nbenchmarks package"]
         MCP["MCP suite adapter"]
         OpenAPI["OpenAPI suite adapter\nspec reflection"]
         FutureSaaS["future SaaS adapters"]
@@ -434,7 +434,7 @@ Current pluggable backends:
 | Backend | File | Use |
 |---|---|---|
 | Self-contained shopping suite | `pauth/suites/shopping.py` | Demos, offline tests |
-| AgentDojo suites | `tests/experiment/agentdojo_adapter.py` | Paper reproduction, banking/slack/travel/workspace |
+| AgentDojo suites | `benchmarks/agentdojo_adapter.py` | Paper reproduction, banking/slack/travel/workspace |
 | MCP server (HTTP) | `gateway/providers/mcp_suite.py` ``build_mcp_suite`` | Localhost MCP shims, real MCP servers that expose HTTP |
 | MCP server (stdio) | `gateway/providers/mcp_suite.py` ``build_mcp_suite_stdio`` | Reference MCP servers (``@modelcontextprotocol/*``) and similar subprocess shapes |
 
@@ -660,7 +660,7 @@ operational substrate (state store, secret store, network) changes.
   family are in place (`tests/fixtures/l3_references.py` and
   `tests/fixtures/ai_generated/l3_references.py`); banking / slack / travel /
   workspace are still consumed via the existing AgentDojo adapter
-  (`tests/experiment/agentdojo_adapter.py`).
+  (`benchmarks/agentdojo_adapter.py`).
 * An embedding-based suite filter. The keyword filter in
   `gateway/providers/suite_filter.py` is a cheap default, sufficient for a small
   number of MCPs; once registration exceeds ~20 suites, a small embedding model
