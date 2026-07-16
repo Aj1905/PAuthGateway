@@ -67,6 +67,7 @@ from gateway.runtime.audit import AuditLog
 from gateway.runtime.confirmation import (
     PendingConfirmation,
     SourceTrust,
+    reduction_breakdown,
     taint_map,
 )
 from gateway.runtime.feedback import (
@@ -536,10 +537,20 @@ class Gateway:
             if existing is None:
                 cid = f"c{state.confirm_seq}"
                 state.confirm_seq += 1
+                # If the operand is a reduction over an untrusted collection,
+                # surface the summands so the human can verify a computed total.
+                breakdown = None
+                enf = state.enforcer
+                if enf is not None:
+                    for rule in enf.rules_by_tool.get(tool, []):
+                        breakdown = reduction_breakdown(rule, i, enf.store)
+                        if breakdown is not None:
+                            break
                 state.pending[cid] = PendingConfirmation(
                     cid, tool, i, name, args[i],
                     source=state.gated_sources.get((tool, i), ()),
                     param_type=param.get("type", ""),
+                    breakdown=breakdown,
                 )
             return CallResult(
                 permit=False,

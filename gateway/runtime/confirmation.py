@@ -28,9 +28,59 @@ import dataclasses
 from typing import Iterator
 
 from pauth.codegen import ToolDoc
+from pauth.evaluator import Evaluator
 
 from gateway.planning.prechecks import PrecheckPolicy, _classify_param
 from gateway.runtime.sanitize import describe_hidden, type_violation
+
+# Reduction helpers whose result is a computed scalar a human cannot verify by
+# eye -- for these, the confirmation surfaces the inputs (the summands).
+_REDUCERS = frozenset({"sum", "min", "max", "len"})
+
+
+def _fmt_element(value: object) -> str:
+    if isinstance(value, float):
+        return f"{value:g}"
+    return str(value)
+
+
+def reduction_breakdown(rule: object, param_index: int, store: object):
+    """If a gated operand derives (through the rule's lets) from a reduction over
+    a collection, return ``(op_name, (elements...))`` -- the concrete inputs the
+    value was computed from, resolved from the SAME signed envelopes the enforcer
+    used. Else ``None``. This lets the confirmation dialog show the summands so a
+    human can spot an injected line that a bare total would hide.
+    """
+    try:
+        expr = rule.arg_exprs[param_index]  # type: ignore[attr-defined]
+    except (AttributeError, IndexError, TypeError):
+        return None
+    lets = getattr(rule, "lets", {}) or {}
+    seen: set[str] = set()
+    while isinstance(expr, ast.Name) and expr.id in lets and expr.id not in seen:
+        seen.add(expr.id)
+        expr = lets[expr.id]
+    if not (
+        isinstance(expr, ast.Call)
+        and isinstance(expr.func, ast.Name)
+        and expr.func.id in _REDUCERS
+        and expr.args
+    ):
+        return None
+    ev = Evaluator(store, lets)
+    try:
+        elements = list(ev.eval(expr.args[0]))
+    except Exception:  # noqa: BLE001 -- a display aid must never break the gate
+        return None
+    kw = {k.arg: k.value for k in expr.keywords}
+    lam = kw.get("key")
+    if isinstance(lam, ast.Lambda):  # project each element (sum of a field)
+        try:
+            keyfn = ev._make_lambda(lam)  # same projection the enforcer applies
+            elements = [keyfn(x) for x in elements]
+        except Exception:  # noqa: BLE001
+            pass
+    return (expr.func.id, tuple(elements))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -95,17 +145,24 @@ class PendingConfirmation:
     source: tuple[str, ...] = ()
     param_type: str = ""   # the operand's declared schema type (constrained extraction)
     bulk_rule: str | None = None   # set for an amplification (loop-cap) confirmation
+    # For a COMPUTED operand (a reduction over an untrusted collection): the
+    # ``(op, [elements])`` the value was reduced from, so the human can inspect the
+    # summands instead of being asked to verify a total they cannot see. Populated
+    # from the SAME signed envelopes the enforcer re-derived the value from.
+    breakdown: tuple[str, tuple] | None = None
 
     def human_warning(self) -> str:
-        """Caution to show the human alongside the value. Two parts, in order of how
-        much the gateway is really adding: (1) HIDDEN characters in the value that
-        the human cannot see -- the gateway's job, since the human physically cannot
-        catch these; (2) untrusted provenance -- the human should verify. Visible
-        content the human could judge for themselves is deliberately not second-
-        guessed here (that is the human's call, not the gateway's)."""
+        """Caution to show the human alongside the value. Ordered by how much the
+        gateway is really adding: (1) HIDDEN characters in the value that the human
+        cannot see -- the gateway's job, since the human physically cannot catch
+        these; (2) a computed value's DECOMPOSITION -- a total is unverifiable by
+        eye, so the gateway surfaces the summands (asking a human to check a sum
+        they cannot see is asking the impossible); (3) untrusted provenance -- the
+        human should verify. Visible content the human could judge for themselves
+        is deliberately not second-guessed here (that is the human's call)."""
         hidden = describe_hidden(self.value) if isinstance(self.value, str) else ""
         bad_type = type_violation(self.value, self.param_type)
-        if not self.source and not hidden and not bad_type:
+        if not self.source and not hidden and not bad_type and not self.breakdown:
             return ""
         parts = []
         if hidden:
@@ -117,6 +174,13 @@ class PendingConfirmation:
             parts.append(
                 f"this {self.param_name} is {bad_type} -- free text smuggled through a "
                 "numeric field (constrained extraction violated)"
+            )
+        if self.breakdown:
+            op, elements = self.breakdown
+            shown = ", ".join(_fmt_element(e) for e in elements)
+            parts.append(
+                f"this {self.param_name} is {op} of [{shown}] -- check EACH input; an "
+                "injected line becomes a legitimate-looking summand the total hides"
             )
         if self.source:
             src = ", ".join(self.source)
