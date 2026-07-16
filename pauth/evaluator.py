@@ -107,6 +107,20 @@ def helper_last(iterable: Any, predicate: Any) -> Any:
     return match
 
 
+def helper_sum(iterable: Any, key: Any = None) -> Any:
+    """Deterministic reduction: sum ``key(item)`` (or ``item``) over the
+    iterable, starting from 0. A pure function of the (signed) collection, so
+    the enforcer re-derives it exactly -- a fabricated total is off-slice.
+
+    ``key`` is optional (unlike min/max): a list of already-scalar values
+    (e.g. a structured view's ``amounts``) sums directly with no projection.
+    """
+    total: Any = 0
+    for item in iterable:
+        total = total + (key(item) if key is not None else item)
+    return total
+
+
 # Execution-time helper table (used by the sandboxed runner in enforcer.py).
 EXEC_HELPERS: dict[str, Any] = {
     "len": helper_len,
@@ -114,6 +128,7 @@ EXEC_HELPERS: dict[str, Any] = {
     "max": lambda it, key: helper_max(it, key),
     "first": lambda it, predicate: helper_first(it, predicate),
     "last": lambda it, predicate: helper_last(it, predicate),
+    "sum": lambda it, key=None: helper_sum(it, key),
 }
 
 
@@ -255,6 +270,10 @@ class Evaluator:
                     raise NotConcretizable(f"{name}() requires a key= lambda")
                 keyfn = self._make_lambda(lam)
                 return (helper_min if name == "min" else helper_max)(iterable, keyfn)
+            if name == "sum":
+                lam = kw.get("key")  # optional projection
+                keyfn = self._make_lambda(lam) if isinstance(lam, ast.Lambda) else None
+                return helper_sum(iterable, keyfn)
             # first / last
             lam = kw.get("predicate")
             if not isinstance(lam, ast.Lambda):

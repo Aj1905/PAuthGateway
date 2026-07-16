@@ -11,8 +11,13 @@ from __future__ import annotations
 
 import ast
 
-# The five "standard function" tools the paper adds to AgentDojo (sec. 4.1.1).
-HELPERS = {"len", "min", "max", "first", "last"}
+# The "standard function" tools the paper adds to AgentDojo (sec. 4.1.1):
+# len/min/max/first/last, plus ``sum`` -- a deterministic reduction in the same
+# class (a signed collection projected to a scalar, re-derivable by the
+# enforcer, so a fabricated total is off-slice and denied). ``sum`` lets a plan
+# aggregate extracted values (e.g. total a list of bill amounts) inside the
+# grammar instead of handing the arithmetic to an untrusted LLM.
+HELPERS = {"len", "min", "max", "first", "last", "sum"}
 
 
 def canon(node: ast.AST) -> str:
