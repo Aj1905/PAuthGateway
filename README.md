@@ -3,6 +3,22 @@
 **A personal "task-scoped authorization firewall" that sits between an AI agent
 and the real tools/SaaS it calls.** (The first target is Claude Code.)
 
+## Purpose
+
+**The goal.** OAuth-style authorization cannot fully control an AI agent. An
+OAuth token grants the agent *standing* access to a whole scope ("can send
+email", "can transfer money") — so once the agent is hijacked by prompt
+injection, everything the token allows, the attacker now does too. The token
+answers "*who* may use this API," never "*is this specific call part of what the
+user actually asked for?*" This project raises that security bar: **how do you
+stop a compromised agent without trusting the agent itself?** The answer is an
+enforcement point *outside* the agent — a deterministic, default-deny gateway
+that derives a plan from the user's clean prompt exactly once, then checks every
+subsequent tool call against it. Authorization narrows from "everything the
+credential permits" to "only the task the user requested."
+
+---
+
 Before the agent starts acting, the natural-language prompt the user enters is
 converted exactly once into a "restricted plan," and every subsequent tool call
 is checked against that plan (default-deny). As a result, even if the agent is
