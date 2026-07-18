@@ -67,6 +67,7 @@ from gateway.runtime.audit import AuditLog
 from gateway.runtime.confirmation import (
     PendingConfirmation,
     SourceTrust,
+    provenance_reference,
     reduction_breakdown,
     taint_map,
 )
@@ -537,15 +538,20 @@ class Gateway:
             if existing is None:
                 cid = f"c{state.confirm_seq}"
                 state.confirm_seq += 1
-                # If the operand is a reduction over an untrusted collection,
-                # surface the summands so the human can verify a computed total.
-                breakdown = None
+                # A reduction -> the summand/candidate table; else a bare value ->
+                # the provenance (where it was read from) as 参照すべき情報.
+                breakdown = provenance = None
                 enf = state.enforcer
                 if enf is not None:
                     for rule in enf.rules_by_tool.get(tool, []):
                         breakdown = reduction_breakdown(rule, i, enf.store)
                         if breakdown is not None:
                             break
+                    if breakdown is None:
+                        for rule in enf.rules_by_tool.get(tool, []):
+                            provenance = provenance_reference(rule, i, enf.store)
+                            if provenance is not None:
+                                break
                 # If any source of this operand is an LLM extractor (non-re-derivable),
                 # flag the value unverifiable -> the warning says "not proven".
                 srcs = state.gated_sources.get((tool, i), ())
@@ -555,6 +561,7 @@ class Gateway:
                     source=srcs,
                     param_type=param.get("type", ""),
                     breakdown=breakdown,
+                    provenance=provenance,
                     unverifiable=unverifiable,
                 )
             return CallResult(

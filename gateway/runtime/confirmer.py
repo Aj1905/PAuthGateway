@@ -68,7 +68,9 @@ class CautiousConfirmer:
             return True                       # nothing flagged -> trivially fine
         if pending.unverifiable:
             return False                      # can't re-derive -> can't judge
-        return pending.breakdown is not None  # a decomposition gives a basis
+        # a decomposition table OR a surfaced provenance (source to research)
+        # gives the human a basis to judge; a bare value with neither does not.
+        return pending.breakdown is not None or pending.provenance is not None
 
     def confirm(self, pending: PendingConfirmation) -> bool:
         return self.judgeable(pending)

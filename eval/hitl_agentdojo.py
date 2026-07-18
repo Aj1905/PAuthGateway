@@ -32,6 +32,7 @@ from gateway.runtime.confirmation import (
     SourceTrust,
     broad_taint_map,
     is_side_effecting,
+    provenance_reference,
     reduction_breakdown,
     static_taint_map,
 )
@@ -85,15 +86,20 @@ def _analyse(suite_name: str, confirmer=None):
         n_calls_gated += len(gated_narrow)
 
         for e, i in gated_narrow:
-            bd = None
+            bd = prov = None
             for rule in enf.rules_by_tool.get(e.tool, []):
                 bd = reduction_breakdown(rule, i, enf.store)
                 if bd:
                     break
+            if bd is None:
+                for rule in enf.rules_by_tool.get(e.tool, []):
+                    prov = provenance_reference(rule, i, enf.store)
+                    if prov:
+                        break
             pname = docs[e.tool].parameters[i]["name"] if i < len(docs[e.tool].parameters) else str(i)
             pc = PendingConfirmation(
                 f"{task_id}", e.tool, i, pname, e.args[i],
-                source=narrow[(e.tool, i)], breakdown=bd,
+                source=narrow[(e.tool, i)], breakdown=bd, provenance=prov,
             )
             if CautiousConfirmer.judgeable(pc):
                 n_judgeable += 1

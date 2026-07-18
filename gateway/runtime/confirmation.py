@@ -30,6 +30,7 @@ from typing import Iterator
 from pauth.codegen import ToolDoc
 from pauth.envelope import flatten
 from pauth.evaluator import Evaluator, wrap
+from pauth.symbolic import canon
 
 from gateway.planning.prechecks import PrecheckPolicy, _classify_param
 from gateway.runtime.sanitize import describe_hidden, type_violation
@@ -142,6 +143,52 @@ def reduction_breakdown(rule: object, param_index: int, store: object):
     return (op, tuple(rows))
 
 
+def _fmt_result(v) -> str:
+    s = str(v).strip()
+    return s if len(s) <= 240 else s[:237] + "..."
+
+
+def provenance_reference(rule: object, param_index: int, store: object):
+    """For a BARE (non-reduction) gated operand, surface WHERE it came from: the
+    source tool call(s) it depends on and what each returned, resolved from the
+    signed envelope store. Returns ``[(source_call_str, result), ...]`` or None.
+
+    This is the 参照すべき情報 for a value with no breakdown table (e.g. a recipient
+    read from get_iban, an email read from get_webpage): it gives the human the
+    source to research -- itself UNTRUSTED, so verify via an independent channel.
+    """
+    try:
+        expr = rule.arg_exprs[param_index]  # type: ignore[attr-defined]
+    except (AttributeError, IndexError, TypeError):
+        return None
+    lets = getattr(rule, "lets", {}) or {}
+    calls: dict[str, ast.Call] = {}
+    seen: set[str] = set()
+
+    def walk(node):
+        if isinstance(node, ast.Call):
+            key = canon(node)
+            if store.has(key):  # a tool call with a recorded result
+                calls[key] = node
+        if isinstance(node, ast.Name) and node.id in lets and node.id not in seen:
+            seen.add(node.id)
+            walk(lets[node.id])
+        for child in ast.iter_child_nodes(node):
+            walk(child)
+
+    walk(expr)
+    if not calls:
+        return None
+    ev = Evaluator(store, lets)
+    out = []
+    for key, node in calls.items():
+        try:
+            out.append((key, _fmt_result(ev.eval(node))))
+        except Exception:  # noqa: BLE001 -- display aid must never break the gate
+            out.append((key, "(unresolved)"))
+    return out or None
+
+
 @dataclasses.dataclass(frozen=True)
 class SourceTrust:
     """Per-tool provenance labels: which tools return untrusted data.
@@ -222,6 +269,9 @@ class PendingConfirmation:
     # summands instead of being asked to verify a total they cannot see. Populated
     # from the SAME signed envelopes the enforcer re-derived the value from.
     breakdown: tuple[str, tuple] | None = None
+    # For a BARE (non-reduction) operand: [(source_call, result), ...] -- where the
+    # value was read from, so the human has a source to research. Untrusted.
+    provenance: tuple | None = None
     # True if the value came from a NON-re-derivable extraction (an LLM read the
     # source and produced it by understanding). Unlike a deterministic parse, the
     # gateway cannot recompute it and a hidden instruction could have steered the
@@ -239,7 +289,8 @@ class PendingConfirmation:
         is deliberately not second-guessed here (that is the human's call)."""
         hidden = describe_hidden(self.value) if isinstance(self.value, str) else ""
         bad_type = type_violation(self.value, self.param_type)
-        if not self.source and not hidden and not bad_type and not self.breakdown and not self.unverifiable:
+        if (not self.source and not hidden and not bad_type and not self.breakdown
+                and not self.provenance and not self.unverifiable):
             return ""
         parts = []
         if self.unverifiable:
@@ -261,6 +312,13 @@ class PendingConfirmation:
             )
         if self.breakdown:
             parts.append(_render_breakdown(self.param_name, self.breakdown))
+        if self.provenance and not self.breakdown:
+            lines = [f"this {self.param_name} -- 参照すべき情報 (source, from the UNTRUSTED "
+                     "source; may be false, verify via an INDEPENDENT channel):"]
+            for call, result in self.provenance:
+                lines.append(f"  read from: {call}")
+                lines.append(f"  that returned: {result}")
+            parts.append("\n".join(lines))
         if self.source:
             src = ", ".join(self.source)
             parts.append(

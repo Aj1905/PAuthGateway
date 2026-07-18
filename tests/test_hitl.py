@@ -82,6 +82,24 @@ def test_cautious_availability_tracks_ux_quality():
     assert _run(DINING, False, CautiousConfirmer())[0] is not None
 
 
+def test_provenance_makes_a_bare_control_value_judgeable():
+    # a bare value (no reduction) with its SOURCE surfaced as 参照すべき情報 gives a
+    # cautious human a basis to research -> judgeable (was 0/9 on AgentDojo).
+    from gateway.runtime.confirmation import PendingConfirmation
+    c = CautiousConfirmer()
+    bare = PendingConfirmation("c", "invite_user_to_slack", 0, "user_email",
+                               "x@y.com", source=("get_webpage",))
+    withprov = PendingConfirmation("c", "invite_user_to_slack", 0, "user_email",
+                                   "x@y.com", source=("get_webpage",),
+                                   provenance=(("get_webpage('www.site.com')",
+                                                "My e-mail is x@y.com."),))
+    assert c.confirm(bare) is False                    # no basis -> reject
+    assert c.confirm(withprov) is True                 # a source to research -> judgeable
+    w = withprov.human_warning()
+    assert "参照すべき情報 (source" in w and "get_webpage" in w
+    assert "INDEPENDENT channel" in w
+
+
 def test_dining_decision_poison_reroutes_the_booking():
     # the untrusted rating inflation makes max() pick the attacker's restaurant;
     # a rubber-stamp books it (FN), a rejection blocks it.
