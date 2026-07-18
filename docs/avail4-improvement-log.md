@@ -185,6 +185,14 @@ everything on this webpage") -- a STATIC plan cannot branch on unread content. N
 model (gpt-4.1, best-of-8, gpt-5.1) makes a plan with all required calls for these.
 FN=0 held on EVERY trial. Reaching 100% would require abandoning static planning
 (a different architecture) or GAMING the metric -- explicitly NOT done.
+
+**Even the gaming-adjacent option does not reach 100%.** Classifying gpt-5.1's 37
+hard tasks: only **5** are dynamic-content (a principled n/a candidate); **26** are
+static-prompt multi-step/conditional tasks the model simply cannot complete; **6**
+are control-value mismatches. n/a-ing the 5 dynamic ones gives AVAIL_4 47/83 = 57%,
+still far from 100%. The dominant wall (26 multi-step/conditional) is a genuine
+Planner-completeness limit that NO legitimate move (measurement, model, compute,
+judge) fixes. **There is no legitimate path to AVAIL_4=100% in this setup.**
 - **Progress made:** AVAIL_4 31% (baseline) -> **61%**, via ONE principled fix (T3:
   match on CONTROL operands, aligning AVAIL_4 with PAuth's mandate) plus best-of-N
   (raises the working-plan count). FN=0 held throughout; 269 tests pass.
