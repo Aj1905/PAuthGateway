@@ -142,10 +142,11 @@ def _rule_reminder(error_message: str) -> str:
     msg = error_message.lower()
     if "nested if" in msg or "elif" in msg or "rule 10" in msg:
         return (
-            "- Keep conditionals ONE level deep: never nest an `if` inside another\n"
-            "  `if`/`else`/`for` body, and never use `elif`. A single flat `else`\n"
-            "  IS allowed (`if C: ...` / `else: ...`).\n"
-            "- FLATTEN nested guards into one `and`:\n"
+            "- Nested `if`/`elif` IS allowed, but ONLY up to 3 levels deep. You went\n"
+            "  deeper -- reduce the nesting to 3 or fewer.\n"
+            "- A `for` may NOT appear inside an `if` body; move the loop to the top\n"
+            "  level or guard each call another way.\n"
+            "- FLATTEN nested guards into one `and` to cut depth:\n"
             "      if C1:\n"
             "          if C2:\n"
             "              act(x)\n"
@@ -168,13 +169,15 @@ def _rule_reminder(error_message: str) -> str:
         )
     if "for-body" in msg:
         return (
-            "- A `for` body may contain ONLY tool-call statements -- no assignment,\n"
-            "  no `if`, no nested loop inside the loop.\n"
+            "- A `for` body may contain ONLY tool-call statements and/or a NESTED\n"
+            "  `for` -- no assignment and no `if` inside the loop.\n"
             "- Inline field access directly into the call:\n"
             "  `for it in items: do_something(it.field, 1)`,\n"
             "  NOT `for it in items: x = it.field` then a separate call.\n"
-            "- If you must compute a value per element, the grammar cannot express\n"
-            "  it in a loop -- use `min`/`max`/`first`/`last` over the variable instead."
+            "- To act on a sub-collection, nest the loop:\n"
+            "  `for o in orders:\\n        for line in o.items:\\n            act(line.sku)`.\n"
+            "- If you must compute a scalar per element, the grammar cannot express\n"
+            "  it in a loop -- use `sum`/`min`/`max`/`first`/`last` over the variable."
         )
     if "for-loop must iterate" in msg or "for-loop target" in msg or (
         "for-loop" in msg and "shadow" in msg
@@ -189,10 +192,13 @@ def _rule_reminder(error_message: str) -> str:
         )
     if "while-loop" in msg or "comprehension" in msg or "rule 2a" in msg:
         return (
-            "- NO `while` loops and NO comprehensions.\n"
+            "- NO `while` loops, and NO dict/set comprehensions or generator\n"
+            "  expressions. A single-generator LIST comprehension IS allowed as a\n"
+            "  pure map/filter over a bound collection, e.g. `[u.email for u in users]`\n"
+            "  or `[u.email for u in users if u.vip]` (no tool call inside it).\n"
             "- To act on each element, use the bounded `for <var> in <collection_var>:`\n"
-            "  shape (body = tool calls only). To find/aggregate, use `len`, `min`,\n"
-            "  `max`, `first`, `last` over a variable.\n"
+            "  shape. To find/aggregate, use `len`, `sum`, `min`, `max`, `first`,\n"
+            "  `last` over a variable.\n"
             "- Helper first argument MUST be a bare variable, not a call."
         )
     if "return" in msg or "rule 1" in msg:

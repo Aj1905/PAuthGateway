@@ -30,3 +30,4 @@ docs/materials/
 
 # personal agent/advisory prefs — not project contributor guidance
 AGENTS.md
+tests/experiment/regen_scratch/

@@ -35,35 +35,53 @@ The code MUST conform to this grammar (Appendix A production rules):
   <Assignment>   ::= <Identifier> = <Expr>
   <ToolCall>     ::= <Identifier> ( <ArgList> )
   <Conditional>  ::= if <Condition> : <Stmt>...           (body indented 8)
-                   | if <Condition> : <Stmt>... else : <Stmt>...   (one flat else)
-  <ForLoop>      ::= for <Identifier> in <Identifier> :   (iterate a bound
-                       <ToolCall>...                         collection variable;
-                                                             body = tool calls only)
+                   | if <Condition> : <Stmt>... else : <Stmt>...   (one else)
+                   | if <Condition> : <Stmt>... elif <Condition> : <Stmt>...
+                   (if/elif/else and if-inside-if ARE allowed, nested up to 3 deep;
+                    each enclosing test just adds a conjunct to the inner guard)
+  <ForLoop>      ::= for <Identifier> in <Collection> :   (iterate a bound
+                       ( <ToolCall> | <ForLoop> )...         collection; body =
+                                                             tool calls and/or a
+                                                             NESTED for-loop)
+  <Collection>   ::= <Identifier>                         (a prior tool result)
+                   | <FieldAccess>                        (a sub-collection field,
+                                                             e.g. order.items)
   <Condition>    ::= <ConditionTerm>
                    | <Condition> and <ConditionTerm>
                    | <Condition> or <ConditionTerm>
   <ConditionTerm>::= <Expr> <RelOp> <Expr>
-  <RelOp>        ::= <= | >= | < | > | == | !=
+  <RelOp>        ::= <= | >= | < | > | == | != | in | not in
   <FieldAccess>  ::= <Identifier>.<Identifier>
                    | <FieldAccess>.<Identifier>
                    | <Identifier>[<number>].<Identifier>
   <HelperCall>   ::= len(<Identifier>)
+                   | sum(<Identifier>)
+                   | sum(<Identifier>, key=<Lambda>)
                    | min(<Identifier>, key=<Lambda>)
                    | max(<Identifier>, key=<Lambda>)
                    | first(<Identifier>, predicate=<Lambda>)
                    | last(<Identifier>, predicate=<Lambda>)
+  <ListComp>     ::= [ <Expr> for <Identifier> in <Collection> ]
+                   | [ <Expr> for <Identifier> in <Collection> if <Condition> ]
+                   (a pure map/filter projecting a bound collection; one
+                    generator, no nested comprehension, no tool call inside)
+  <DictLit>      ::= { <Expr> : <Expr> , ... }            (static construction
+                                                             of already-bound values)
   <Lambda>       ::= lambda <Identifier>: <Expr>
   <Expr>         ::= <Literal> | <Identifier> | <FieldAccess>
                    | <ToolCall> | <HelperCall> | <ArithExpr>
+                   | <ListComp> | <DictLit>
   <ArithExpr>    ::= <Expr> <ArithOp> <Expr>
   <ArithOp>      ::= + | - | * | / | // | %
 
-There is NO production for: while-loops, comprehensions, generator/`any`/`all`,
-ternary (`x if c else y`), `not`, method calls (e.g. `s.lower()`,
-`s.startswith(...)`), type casts (`float(...)`, `int(...)`, `str(...)`),
-dict/set literals, `elif`, if-inside-if (nested if), multiple functions. Do not
-use them. A `for` loop and a single `else` ARE allowed, but only in the exact
-shapes described in rules 2a and 10 below.
+There is NO production for: while-loops, dict/set comprehensions, generator
+expressions / `any` / `all`, ternary (`x if c else y`), `not`, method calls
+(e.g. `s.lower()`, `s.startswith(...)`), string slicing / indexing
+(`s[0:10]`, `s[i:]`), type casts (`float(...)`, `int(...)`, `str(...)`), set
+literals, dict mutation (`d[k] = v`), tuples, `.append(...)`, `sorted(...)`,
+multiple functions. Do not use them. Nested `if`/`elif`, a single `else`, a
+NESTED `for`, a list comprehension, and a dict literal ARE allowed, in the exact
+shapes described in rules 2a, 2d, 2e and 10 below.
 The first argument of every helper MUST be a bare variable name -- never a
 tool call. A tool call may appear only as a statement or as the right-hand
 side of an assignment, never nested inside another expression.
@@ -76,19 +94,38 @@ STRICT RULES for the python function named 'run':
 2. Only call the provided tools - no other functions or libraries.
 2a. 'while' loops are strictly forbidden. A 'for' loop is allowed ONLY in this
     exact shape -- iterate a variable that holds a prior tool result, with a body
-    of tool-call statements only:
+    of tool-call statements and/or a nested for-loop:
         items = list_items(None)
         for it in items:
             do_something(it.field, 1)
     The loop variable must be a fresh name; the iterable must be a bare variable
-    naming an earlier tool result (NEVER range(), a literal, or an expression);
-    the body may contain ONLY tool calls (no assignments, no if, no nested loop).
+    naming an earlier tool result OR a collection field of an outer loop variable
+    (e.g. `order.items`) -- NEVER range(), a literal, or an expression; the body
+    may contain ONLY tool calls and/or nested for-loops (no assignments, no if).
+    A `for` may NOT appear inside an `if` body.
     When the task is find-the-best / aggregate rather than act-on-each, prefer the
-    helpers len(), min(), max(), first(), last() over a loop.
-2a1. FORBIDDEN: any(), all() and generator expressions. Use nested first()
-     calls instead.
-2b. ALLOWED HELPER FUNCTIONS - you may use these five helpers:
+    helpers len(), sum(), min(), max(), first(), last() over a loop.
+2a1. FORBIDDEN: any(), all(), and generator expressions -- use nested first()
+     calls instead. (A list comprehension is DIFFERENT and IS allowed, rule 2e.)
+2d. NESTED for-loops ARE allowed: to act on each element of a sub-collection,
+    iterate the outer collection then the field naming the inner one --
+        orders = list_orders(None)
+        for order in orders:
+            for line in order.items:
+                do_something(line.sku, 1)
+    Each iterable must name a bound collection (outer result) or an outer loop
+    variable's collection field. Bodies remain tool-calls-and/or-nested-for only.
+2e. A LIST COMPREHENSION is allowed as a pure map/filter over a bound collection,
+    passed straight to a tool -- `notify([u.email for u in users])` or with a
+    filter `notify([u.email for u in users if u.vip])`. One generator only; the
+    iterable is a bound variable or a collection field; NO tool call inside the
+    comprehension; NO nested comprehension. A DICT LITERAL of already-bound values
+    is allowed as a tool argument -- `record({"id": u.id, "n": u.name})`. Dict
+    MUTATION (`d[k] = v`) and using a dict as a loop accumulator are NOT allowed.
+2b. ALLOWED HELPER FUNCTIONS - you may use these six helpers:
     - len(iterable): length of an iterable.
+    - sum(iterable): sum of a numeric iterable; sum(iterable, key=lambda item:
+      item.field) sums that field across the collection (e.g. a list of amounts).
     - min(iterable, key=lambda item: item.field): minimum element by key.
     - max(iterable, key=lambda item: item.field): maximum element by key.
     - first(iterable, predicate=lambda item: condition): first matching
@@ -113,13 +150,17 @@ STRICT RULES for the python function named 'run':
 8a. Never access the same field twice in one expression - store results in a
     variable first.
 9. Call ALL relevant tools, including those with no parameters.
-10. CONDITIONAL STATEMENTS: combine conditions with and/or. A single flat 'else'
-    block IS allowed (`if C: ...` / `else: ...`). STILL FORBIDDEN: 'elif', and any
-    'if' nested inside another if/else/for body -- keep conditionals one level deep.
+10. CONDITIONAL STATEMENTS: combine conditions with and/or. A single 'else'
+    block IS allowed (`if C: ...` / `else: ...`). 'elif' and an 'if' nested
+    inside another if/else body ARE allowed, nested UP TO 3 levels deep -- each
+    enclosing test adds a conjunct to the inner action's guard (`if C1: if C2:
+    act()` authorizes act only when C1 and C2 both hold). Do NOT nest deeper than
+    3, and do NOT place a `for` inside an `if` body.
 10a. A variable may be assigned twice ONLY as (i) a constant default then one
      conditional override (`x = ""` then `if C: x = expr`), or (ii) both branches
-     of the same if/else (`if C: x = a` / `else: x = b`). Otherwise assign each
-     variable exactly once.
+     of the same if/else (`if C: x = a` / `else: x = b`), and only at the TOP
+     level (not inside a nested branch or loop). Otherwise assign each variable
+     exactly once.
 11. If the user provides specific values, use them as constants directly.
     Create function parameters only for values not specified in the request.
 12. Always use the exact field names from the tool schemas.
