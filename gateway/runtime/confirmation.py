@@ -277,8 +277,12 @@ class PendingConfirmation:
     # gateway cannot recompute it and a hidden instruction could have steered the
     # extractor -- so it is gated with a stronger warning and never called proven.
     unverifiable: bool = False
-    # Human description of the tool, for the 何をするタスク line.
+    # Natural-language phrasing for a human-readable gate (not raw tool names):
+    #   task_desc   -- what the action IS ("送金するタスク")
+    #   source_desc -- where the value came from, in human terms ("Gmailのこのメール")
+    # When empty, fall back to the tool name / raw provenance call.
     task_desc: str = ""
+    source_desc: str = ""
 
     def structured_display(self, ground_truth: str = "") -> str:
         """The confirmation as a fixed 6-field template:
@@ -288,11 +292,12 @@ class PendingConfirmation:
 
         Everything except the last line is what a PRODUCTION gate shows; the
         ground-truth line is added only when a benchmark passes it in."""
-        task = self.tool + (f" — {self.task_desc}" if self.task_desc else "")
-        lines = [f"【何をするタスク】{task}",
+        lines = [f"【何をするタスク】{self.task_desc or self.tool}",
                  f"【どの情報が必要】{self.param_name} = {self.value!r}"]
 
-        if self.provenance:
+        if self.source_desc:
+            src = self.source_desc
+        elif self.provenance:
             src = "; ".join(call for call, _ in self.provenance)
         elif self.breakdown:
             src = f"{self.breakdown[0]}（集約）" + (
