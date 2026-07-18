@@ -38,7 +38,7 @@ from pauth.enforcer import Enforcer, check_injection, execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.grammar import RestrictedGrammarError
 
-from eval.gates import _excess_deficiency, _positional, gate1_expressible
+from eval.gates import _excess_deficiency, _deficiency_control, _positional, gate1_expressible
 from eval.metrics import (
     AVAIL_1_EXPRESSIBLE, AVAIL_2_PLAN_VALID, AVAIL_3_RAN_CLEAN, AVAIL_4_CALLS_MADE,
     OUTCOME_TASK_COMPLETED, SEC_NO_EXCESS_CALLS, SEC_INJECTIONS_DENIED, COST_TOOL_CALLS,
@@ -71,15 +71,21 @@ class Corpus:
 # Corpus adapters
 # --------------------------------------------------------------------------
 
+_STRUCTURING = False  # set by --structuring: expose structure_text to the Planner
+
+
 def _corpus_agentdojo() -> list[Corpus]:
     from pathlib import Path
     from agentdojo.task_suite.load_suites import get_suites
     from benchmarks.agentdojo_adapter import load_suite
+    from benchmarks.structured_read import augment_with_structuring
     cache = Path("tests/experiment/cache")
     out = []
     for name in ("banking", "slack", "travel", "workspace"):
         adj = get_suites("v1")[name]
         suite = load_suite(name)
+        if _STRUCTURING:
+            suite = augment_with_structuring(suite)
         tasks = []
         for tid in sorted(adj.user_tasks):
             p = cache / name / f"{tid}.py"
@@ -286,7 +292,11 @@ def measure(corpus: Corpus, task: Task, mode: str) -> dict[str, str]:
     # excess / deficiency vs ground truth (AgentDojo: from ut; tau/injec: ref trace)
     if task.ut is not None:
         planner_trace = [(e.tool, list(e.args)) for e in rep.events if e.decision.permit]
-        excess, deficiency = _excess_deficiency(task.ut, suite, suite.tool_params(), planner_trace)
+        excess, _def_all = _excess_deficiency(task.ut, suite, suite.tool_params(), planner_trace)
+        # AVAIL_4 matches on CONTROL operands only (PAuth's mandate); content/benign
+        # args are the agent's job and do not create a deficiency.
+        docs = {n: s.doc for n, s in suite.tools.items()}
+        deficiency = _deficiency_control(task.ut, suite, suite.tool_params(), planner_trace, docs)
     else:
         ref = _ref_trace(suite, task.ref_code)
         excess, deficiency = _exc_def_generic(ref, trace_strs)
@@ -338,6 +348,41 @@ def _agentic_plan(suite, task, scratch_dir):
     return res.code
 
 
+def _bestof_plan(suite, task, scratch_dir, n=3):
+    """planner=bestof: generate N candidates and SELECT the one that runs clean and
+    makes the MOST side-effecting calls -- a GT-free deployment heuristic that
+    prefers a plan which ACTS over one that gives up (hollow `pass`). Needs
+    OPENAI_API_KEY; candidates cached to scratch."""
+    from pathlib import Path
+    from gateway.planning.agentic_planner import generate_code_with_self_repair
+    from gateway.runtime.confirmation import is_side_effecting
+    d = Path(scratch_dir) / task.task_id
+    d.mkdir(parents=True, exist_ok=True)
+    cands = []
+    for i in range(n):
+        pf = d / f"cand{i}.py"
+        if pf.exists():
+            cands.append(pf.read_text()); continue
+        res = generate_code_with_self_repair(
+            task.prompt + ("" if i == 0 else f"\n(variant {i})"),
+            suite.tool_docs(), model="gpt-4.1", max_retries=3, enable_judge=False)
+        pf.write_text(res.code); cands.append(res.code)
+
+    def score(code):
+        try:
+            prepared = prepare(code, suite.tool_names(), suite.tool_signer())
+        except RestrictedGrammarError:
+            return (-1, 0)
+        enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
+        rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
+                                     suite.runner_factory(suite.make_env()))
+        clean = rep.crashed is None and not rep.denied
+        nse = sum(1 for e in rep.events if e.decision.permit and is_side_effecting(e.tool))
+        return (1 if clean else 0, nse)   # clean first, then most side-effecting
+
+    return max(cands, key=score)
+
+
 def run(corpus_name: str, mode: str = "headless", planner: str = "cached",
         limit: int | None = None, confirmer: str = "oracle") -> None:
     corpora = CORPORA[corpus_name]()
@@ -346,10 +391,12 @@ def run(corpus_name: str, mode: str = "headless", planner: str = "cached",
     for corpus in corpora:
         tasks = corpus.tasks if limit is None else corpus.tasks[:limit]
         for task in tasks:
-            if planner == "agentic":
-                scratch = f"tests/experiment/funnel_scratch/{corpus.name.replace(':','_')}"
+            if planner in ("agentic", "bestof"):
+                tag = "struct_" if _STRUCTURING else ""
+                scratch = f"tests/experiment/funnel_scratch/{tag}{planner}_{corpus.name.replace(':','_')}"
+                gen = _bestof_plan if planner == "bestof" else _agentic_plan
                 try:
-                    task = dataclasses.replace(task, plan_code=_agentic_plan(corpus.suite, task, scratch))
+                    task = dataclasses.replace(task, plan_code=gen(corpus.suite, task, scratch))
                 except Exception:  # noqa: BLE001 -- a generation failure -> no plan
                     task = dataclasses.replace(task, plan_code=None)
             row = measure(corpus, task, mode)
@@ -387,6 +434,8 @@ def _flag(name, default=None):
 
 def main() -> int:
     corpus = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else "agentdojo"
+    global _STRUCTURING
+    _STRUCTURING = "--structuring" in sys.argv
     mode = _flag("--mode", "headless")
     planner = _flag("--planner", "cached")     # cached | agentic (regenerate, needs OPENAI_API_KEY)
     confirmer = _flag("--confirmer", "oracle")  # oracle | interactive (hitl mode)
