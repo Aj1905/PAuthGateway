@@ -146,6 +146,15 @@ arg strictness.
 - **Verdict:** FAIL / counterproductive (-27pt). ROLLED BACK -- `--judge` stays off
   by default (`_JUDGE=False`), the mechanism is inert unless requested.
 
+### T9 — larger N (best-of-8 + structuring)
+- **Hypothesis:** more samples of gpt-4.1 might, by chance, produce a complete plan
+  for the multi-step/loop hard cases.
+- **Method:** `funnel(agentdojo, planner=bestof, --structuring, --n 8)`.
+- **Result:** AVAIL_4 **40/65 (62%)** vs best-of-3 (T7) 40/66 (61%). FLAT (+1pt =
+  noise) for 2.7x the compute. FN=0 (74/74).
+- **Verdict:** FAIL (no lift). Conclusive: the hard cases do not flip with more
+  samples -- gpt-4.1 fundamentally cannot produce complete plans for them.
+
 ## Conclusion — best achieved AVAIL_4 = 61%; 100% not reachable here
 **Best: AVAIL_4 31% -> 61%** (control-operand match + best-of-N + structure_text; T7).
 The completeness judge (T8) backfired. The residual ceiling is a Planner-capability

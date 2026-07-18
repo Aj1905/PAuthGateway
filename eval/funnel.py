@@ -73,6 +73,7 @@ class Corpus:
 
 _STRUCTURING = False  # set by --structuring: expose structure_text to the Planner
 _JUDGE = False        # set by --judge: run the OpenAI-backed completeness judge
+_BESTOF_N = 3         # set by --n: number of candidates for planner=bestof
 
 
 def _corpus_agentdojo() -> list[Corpus]:
@@ -349,7 +350,8 @@ def _agentic_plan(suite, task, scratch_dir):
     return res.code
 
 
-def _bestof_plan(suite, task, scratch_dir, n=3):
+def _bestof_plan(suite, task, scratch_dir, n=None):
+    n = n or _BESTOF_N
     """planner=bestof: generate N candidates and SELECT the one that runs clean and
     makes the MOST side-effecting calls -- a GT-free deployment heuristic that
     prefers a plan which ACTS over one that gives up (hollow `pass`). Needs
@@ -394,7 +396,8 @@ def run(corpus_name: str, mode: str = "headless", planner: str = "cached",
         tasks = corpus.tasks if limit is None else corpus.tasks[:limit]
         for task in tasks:
             if planner in ("agentic", "bestof"):
-                tag = ("struct_" if _STRUCTURING else "") + ("judge_" if _JUDGE else "")
+                tag = ("struct_" if _STRUCTURING else "") + ("judge_" if _JUDGE else "") + \
+                      (f"n{_BESTOF_N}_" if planner == "bestof" and _BESTOF_N != 3 else "")
                 scratch = f"tests/experiment/funnel_scratch/{tag}{planner}_{corpus.name.replace(':','_')}"
                 gen = _bestof_plan if planner == "bestof" else _agentic_plan
                 try:
@@ -436,9 +439,10 @@ def _flag(name, default=None):
 
 def main() -> int:
     corpus = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else "agentdojo"
-    global _STRUCTURING, _JUDGE
+    global _STRUCTURING, _JUDGE, _BESTOF_N
     _STRUCTURING = "--structuring" in sys.argv
     _JUDGE = "--judge" in sys.argv
+    _BESTOF_N = int(_flag("--n", "3"))
     mode = _flag("--mode", "headless")
     planner = _flag("--planner", "cached")     # cached | agentic (regenerate, needs OPENAI_API_KEY)
     confirmer = _flag("--confirmer", "oracle")  # oracle | interactive (hitl mode)
