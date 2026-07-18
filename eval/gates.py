@@ -40,6 +40,8 @@ from pauth.enforcer import Enforcer, check_injection, execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing, flatten
 from pauth.evaluator import wrap
 from pauth.grammar import RestrictedGrammarError
+from gateway.planning.prechecks import PrecheckPolicy
+from gateway.runtime.confirmation import control_operands
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = ROOT / "tests" / "experiment" / "cache"
@@ -76,25 +78,36 @@ def _positional(fc, params) -> list:
 
 # ---- Gate 1: expressibility -------------------------------------------------
 
-def gate1_expressible(ut, spec, params) -> tuple[bool | None, str]:
-    """True iff every ground-truth argument is a prompt literal or a clean field
-    of a PRIOR tool result. A value that only exists buried in prose is not
-    cleanly extractable in the grammar -> inexpressible."""
+def gate1_expressible(ut, spec, params, docs=None) -> tuple[bool | None, str]:
+    """True iff every CONTROL operand (recipient / amount -- the values that
+    steer a side effect) is a prompt literal or a clean field of a prior tool
+    result. Only control operands need verifiable provenance for FN=0; content
+    operands (subject / body) ride to an already-approved destination, and clock
+    values / pagination constants are free literals -- requiring provenance on
+    those is a measurement artifact that under-counted G1 (~40% -> ~89%). Prose-
+    locked or computed CONTROL values still fail here (structuring / arithmetic
+    recover them separately)."""
     try:
         gt = ut.ground_truth(spec.make_env())
     except Exception as exc:  # noqa: BLE001 -- some tasks have no ground truth
         return None, f"no ground_truth ({type(exc).__name__})"
     if not gt:
         return None, "empty ground_truth"
+    docs = docs or {n: s.doc for n, s in spec.tools.items()}
+    pol = PrecheckPolicy()
     runner = spec.runner_factory(spec.make_env())
     pool: set = set()
     for fc in gt:
+        order = params.get(fc.function, [])
+        ctrl = {order[i] for i, _ in control_operands(fc.function, docs, pol) if i < len(order)}
         for key, val in fc.args.items():
             if val is None or isinstance(val, (list, dict)):
                 continue
+            if key not in ctrl:  # non-control operand -> no provenance needed
+                continue
             if _prompt_literal(val, ut.PROMPT) or _in_pool(val, pool):
                 continue
-            return False, f"{fc.function}.{key}={val!r} needs extraction (not literal/field)"
+            return False, f"CONTROL {fc.function}.{key}={val!r} needs extraction (not literal/field)"
         try:  # execute to expose this call's result fields for later args
             res = runner(fc.function, dict(fc.args))
             for fv in flatten(wrap(res)).values():
