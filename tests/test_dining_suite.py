@@ -7,7 +7,7 @@ from pauth import prepare
 from pauth.enforcer import Enforcer, check_injection, execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.suites.dining import build_suite
-from eval.schema_scope import STRUCTURED, TEXT_BLOB, classify_return
+from benchmarks.schema_scope import STRUCTURED, TEXT_BLOB, classify_return
 
 
 def _prepared(task, suite):

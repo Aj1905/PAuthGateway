@@ -13,7 +13,7 @@ from pauth.enforcer import Enforcer, check_injection, execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 
 from benchmarks.tau_bench_adapter import build_suite
-from eval.schema_scope import TEXT_BLOB, classify_return
+from benchmarks.schema_scope import TEXT_BLOB, classify_return
 
 
 def test_suite_loads_structured_tools_and_tasks():

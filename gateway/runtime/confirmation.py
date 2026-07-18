@@ -570,7 +570,7 @@ def static_taint(
 
 # A tool is treated as a pure read (never gated) only if its name marks it one;
 # everything else is assumed side-effecting, so a mislabel over-gates (safe)
-# rather than under-gates. Mirrors eval.schema_scope's getter prefixes.
+# rather than under-gates. Mirrors benchmarks.schema_scope's getter prefixes.
 _READ_PREFIXES = (
     "get_", "list_", "read_", "search_", "find_", "retrieve_", "show_",
     "lookup_", "fetch_", "check_", "view_",
