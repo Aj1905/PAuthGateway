@@ -131,8 +131,8 @@ _TOOLS: dict[str, ToolSpec] = {
 _INVOICE_TOTAL_CODE = f'''\
 def run():
     view = read_site("https://vendor.example/invoice")
-    amts = view.amounts
-    total = sum(amts)
+    items = view.line_items
+    total = sum(items, key=lambda it: it.amount)
     send_money("{VENDOR_IBAN}", total, "invoice", "2026-01-29")
 '''
 

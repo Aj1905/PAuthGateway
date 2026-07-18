@@ -28,14 +28,17 @@ import dataclasses
 from typing import Iterator
 
 from pauth.codegen import ToolDoc
-from pauth.evaluator import Evaluator
+from pauth.envelope import flatten
+from pauth.evaluator import Evaluator, wrap
 
 from gateway.planning.prechecks import PrecheckPolicy, _classify_param
 from gateway.runtime.sanitize import describe_hidden, type_violation
 
 # Reduction helpers whose result is a computed scalar a human cannot verify by
-# eye -- for these, the confirmation surfaces the inputs (the summands).
+# eye -- for these, the confirmation surfaces the inputs (the summands / candidates).
 _REDUCERS = frozenset({"sum", "min", "max", "len"})
+_LABEL_FIELDS = ("name", "title", "label", "subject", "description", "id")
+_LINK_FIELDS = ("url", "link", "website", "href", "page")
 
 
 def _fmt_element(value: object) -> str:
@@ -44,22 +47,62 @@ def _fmt_element(value: object) -> str:
     return str(value)
 
 
+@dataclasses.dataclass
+class BreakdownRow:
+    """One row of a breakdown table: WHAT the value is (label), its number, an
+    optional link, and whether it is the element the reducer selected."""
+
+    label: str
+    value: object
+    link: str = ""
+    selected: bool = False
+
+
+def _label_and_link(element) -> tuple[str, str]:
+    """Pull a human label and an optional link from a structured element, preferring
+    the most human-friendly field (name > title > ... > id), not field order."""
+    try:
+        fields = flatten(wrap(element))
+    except Exception:  # noqa: BLE001
+        return "", ""
+    by_key: dict[str, str] = {}
+    for path, val in fields.items():
+        if isinstance(val, str):
+            by_key.setdefault(path.split(".")[-1], val)
+    label = next((by_key[k] for k in _LABEL_FIELDS if k in by_key), "")
+    link = next((by_key[k] for k in _LINK_FIELDS if k in by_key), "")
+    return label, link
+
+
+def _base_name(expr):
+    """Strip trailing attribute/subscript access to the underlying variable, so
+    ``best.id`` (a decision operand) resolves to the reducer that produced best."""
+    while isinstance(expr, (ast.Attribute, ast.Subscript)):
+        expr = expr.value
+    return expr
+
+
 def reduction_breakdown(rule: object, param_index: int, store: object):
-    """If a gated operand derives (through the rule's lets) from a reduction over
-    a collection, return ``(op_name, (elements...))`` -- the concrete inputs the
-    value was computed from, resolved from the SAME signed envelopes the enforcer
-    used. Else ``None``. This lets the confirmation dialog show the summands so a
-    human can spot an injected line that a bare total would hide.
+    """If a gated operand derives (through the rule's lets) from a reduction over a
+    collection, return ``(op_name, (BreakdownRow, ...))`` -- a LABELLED table of the
+    inputs the value was computed/selected from, resolved from the SAME signed
+    envelopes the enforcer used. Else ``None``.
+
+    For ``sum`` every row contributes (all selected): the human reads item->amount.
+    For ``min``/``max`` one row is ``selected``: the human sees the candidates and
+    why this one won (and can flag an inflated-looking one). Handles a decision
+    operand like ``book(best.id)`` where ``best = max(options, key=...)``.
     """
     try:
         expr = rule.arg_exprs[param_index]  # type: ignore[attr-defined]
     except (AttributeError, IndexError, TypeError):
         return None
     lets = getattr(rule, "lets", {}) or {}
+    expr = _base_name(expr)
     seen: set[str] = set()
     while isinstance(expr, ast.Name) and expr.id in lets and expr.id not in seen:
         seen.add(expr.id)
-        expr = lets[expr.id]
+        expr = _base_name(lets[expr.id])
     if not (
         isinstance(expr, ast.Call)
         and isinstance(expr.func, ast.Name)
@@ -67,6 +110,7 @@ def reduction_breakdown(rule: object, param_index: int, store: object):
         and expr.args
     ):
         return None
+    op = expr.func.id
     ev = Evaluator(store, lets)
     try:
         elements = list(ev.eval(expr.args[0]))
@@ -74,13 +118,28 @@ def reduction_breakdown(rule: object, param_index: int, store: object):
         return None
     kw = {k.arg: k.value for k in expr.keywords}
     lam = kw.get("key")
-    if isinstance(lam, ast.Lambda):  # project each element (sum of a field)
+    keyfn = None
+    if isinstance(lam, ast.Lambda):
         try:
             keyfn = ev._make_lambda(lam)  # same projection the enforcer applies
-            elements = [keyfn(x) for x in elements]
         except Exception:  # noqa: BLE001
-            pass
-    return (expr.func.id, tuple(elements))
+            keyfn = None
+
+    rows: list[BreakdownRow] = []
+    values = []
+    for el in elements:
+        val = keyfn(el) if keyfn is not None else el
+        values.append(val)
+        label, link = _label_and_link(el)
+        rows.append(BreakdownRow(label or _fmt_element(val), val, link))
+    # mark the selected element for a selection reducer
+    if op in ("min", "max") and values:
+        pick = (min if op == "min" else max)(range(len(values)), key=lambda i: values[i])
+        rows[pick].selected = True
+    elif op == "sum":
+        for r in rows:
+            r.selected = True
+    return (op, tuple(rows))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -98,6 +157,13 @@ class SourceTrust:
     untrusted_tools: frozenset[str] = frozenset()
     trusted_tools: frozenset[str] = frozenset()
     default_untrusted: bool = False
+    # Tools whose output the enforcer CANNOT re-derive (an LLM extractor that read
+    # a file/page and produced a value by understanding, not by a pure function).
+    # Such a value is untrusted AND unverifiable: unlike a deterministic parse, a
+    # hidden instruction in the source could have steered it, and the gateway
+    # cannot recompute it. It must be gated with a stronger warning and never
+    # presented as proven. These are also untrusted (taint) by implication.
+    unverifiable_tools: frozenset[str] = frozenset()
     # "Trust the human" policy: gate a side-effecting call when ANY operand
     # (not only recipient/amount) derives from an untrusted source. This covers
     # DECISION operands -- e.g. book_table(best.id) where best was selected from
@@ -113,11 +179,17 @@ class SourceTrust:
     bulk_max_iterations: int | None = None
 
     def is_untrusted(self, tool: str) -> bool:
+        if tool in self.unverifiable_tools:
+            return True  # unverifiable implies untrusted
         if tool in self.trusted_tools:
             return False
         if tool in self.untrusted_tools:
             return True
         return self.default_untrusted
+
+    def is_unverifiable(self, tool: str) -> bool:
+        """True if this tool's output cannot be re-derived (an LLM extractor)."""
+        return tool in self.unverifiable_tools
 
     @classmethod
     def fail_closed(cls, trusted_tools: frozenset[str] | set[str] = frozenset()) -> "SourceTrust":
@@ -150,6 +222,11 @@ class PendingConfirmation:
     # summands instead of being asked to verify a total they cannot see. Populated
     # from the SAME signed envelopes the enforcer re-derived the value from.
     breakdown: tuple[str, tuple] | None = None
+    # True if the value came from a NON-re-derivable extraction (an LLM read the
+    # source and produced it by understanding). Unlike a deterministic parse, the
+    # gateway cannot recompute it and a hidden instruction could have steered the
+    # extractor -- so it is gated with a stronger warning and never called proven.
+    unverifiable: bool = False
 
     def human_warning(self) -> str:
         """Caution to show the human alongside the value. Ordered by how much the
@@ -162,9 +239,16 @@ class PendingConfirmation:
         is deliberately not second-guessed here (that is the human's call)."""
         hidden = describe_hidden(self.value) if isinstance(self.value, str) else ""
         bad_type = type_violation(self.value, self.param_type)
-        if not self.source and not hidden and not bad_type and not self.breakdown:
+        if not self.source and not hidden and not bad_type and not self.breakdown and not self.unverifiable:
             return ""
         parts = []
+        if self.unverifiable:
+            parts.append(
+                f"this {self.param_name} was read by an LLM extractor the gateway "
+                "CANNOT re-derive -- an instruction hidden in the source could have "
+                "steered it; this value is NOT proven, verify it directly against "
+                "the source"
+            )
         if hidden:
             parts.append(
                 f"this value contains {hidden} you CANNOT SEE -- almost certainly a "
@@ -176,12 +260,7 @@ class PendingConfirmation:
                 "numeric field (constrained extraction violated)"
             )
         if self.breakdown:
-            op, elements = self.breakdown
-            shown = ", ".join(_fmt_element(e) for e in elements)
-            parts.append(
-                f"this {self.param_name} is {op} of [{shown}] -- check EACH input; an "
-                "injected line becomes a legitimate-looking summand the total hides"
-            )
+            parts.append(_render_breakdown(self.param_name, self.breakdown))
         if self.source:
             src = ", ".join(self.source)
             parts.append(
@@ -190,6 +269,39 @@ class PendingConfirmation:
             )
         return ("WARNING: " + "; ".join(parts) + ". The gateway cannot verify the "
                 "value is genuine -- check it against a trusted source before approving.")
+
+
+def _render_breakdown(param_name: str, breakdown) -> str:
+    """Render a breakdown as the 参照すべき情報 (reference) block: the data table and
+    links the value came from, for the human to VERIFY THEMSELVES.
+
+    This material is from the UNTRUSTED source -- it may be correct or fabricated
+    (a fake rating, a poisoned link). The gateway does not vouch for it; it only
+    surfaces it so the human has a starting point to research (open a link, check a
+    row against what they actually know) before approving. Correctness of the
+    reference is the human's to establish, not the gateway's to assert.
+    """
+    op, raw = breakdown
+    rows = [r if isinstance(r, BreakdownRow) else BreakdownRow(_fmt_element(r), r)
+            for r in raw]  # tolerate bare values
+    verb = {"sum": "is the sum of", "max": "was chosen as MAX among",
+            "min": "was chosen as MIN among", "len": "counts"}.get(op, f"is {op} of")
+    lines = [f"this {param_name} {verb} -- 参照すべき情報 (reference, from the UNTRUSTED "
+             "source; may be false, verify it yourself):"]
+    wlabel = max((len(str(r.label)) for r in rows), default=0)
+    for r in rows:
+        mark = " > " if (r.selected and op in ("min", "max")) else "   "
+        row = f"{mark}{str(r.label):<{wlabel}}  {_fmt_element(r.value):>10}"
+        if r.link:
+            row += f"  {r.link}"
+        if r.selected and op in ("min", "max"):
+            row += "  <- selected"
+        lines.append(row)
+    tail = ("open the link / check the selected row -- an inflated candidate can win"
+            if op in ("min", "max") else
+            "check EACH row -- an injected/inflated line hides in the total")
+    lines.append(f"  -- the gateway does NOT vouch for any of this; {tail}")
+    return "\n".join(lines)
 
 
 def control_operands(

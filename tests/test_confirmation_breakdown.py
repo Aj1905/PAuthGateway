@@ -1,9 +1,8 @@
-"""A computed (reduced) operand's confirmation surfaces its SUMMANDS.
-
-Asking a human to approve a total they cannot see is asking the impossible, so
-for a reduction over an untrusted collection the gateway shows the inputs -- from
-the same signed envelopes the enforcer re-derived the value from. This is what
-lets the human catch an injected line that a bare total would hide.
+"""A computed (reduced) operand's confirmation surfaces a LABELLED breakdown
+table -- item -> amount -- from the same signed envelopes the enforcer used, so
+the human can read WHAT each amount is for and catch an injected line. An amount
+whose purpose could not be read is shown as 不明 (unknown) -- deliberately
+suspicious.
 
 Offline, no API key.
 """
@@ -13,8 +12,13 @@ from __future__ import annotations
 from pauth import prepare
 from pauth.enforcer import Enforcer, execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
+from pauth.structuring import UNKNOWN_LABEL
 from pauth.suites import websum
-from gateway.runtime.confirmation import PendingConfirmation, reduction_breakdown
+from gateway.runtime.confirmation import (
+    BreakdownRow,
+    PendingConfirmation,
+    reduction_breakdown,
+)
 
 
 def _executed_enforcer(env=None):
@@ -30,13 +34,12 @@ def _executed_enforcer(env=None):
     return enf, send_rule
 
 
-def test_reduction_breakdown_surfaces_summands():
+def test_reduction_breakdown_surfaces_labelled_rows():
     enf, send_rule = _executed_enforcer()
-    bd = reduction_breakdown(send_rule, 1, enf.store)  # amount operand
-    assert bd is not None
-    op, elements = bd
+    op, rows = reduction_breakdown(send_rule, 1, enf.store)  # amount operand
     assert op == "sum"
-    assert sorted(elements) == [12.99, 45.5, 120.0]
+    assert sorted(r.value for r in rows) == [12.99, 45.5, 120.0]
+    assert {r.label for r in rows} == {"Design work", "Managed hosting", "Domain registration"}
 
 
 def test_literal_operand_has_no_breakdown():
@@ -45,31 +48,33 @@ def test_literal_operand_has_no_breakdown():
     assert reduction_breakdown(send_rule, 0, enf.store) is None
 
 
-def test_human_warning_lists_the_summands():
+def test_human_warning_renders_the_table():
     conf = PendingConfirmation(
-        "c0", "send_money", 1, "amount", 178.49,
-        source=("read_site",), breakdown=("sum", (120.0, 45.5, 12.99)),
+        "c0", "send_money", 1, "amount", 178.49, source=("read_site",),
+        breakdown=("sum", (BreakdownRow("Design work", 120.0),
+                           BreakdownRow("Managed hosting", 45.5),
+                           BreakdownRow("Domain registration", 12.99))),
     )
     w = conf.human_warning()
-    assert "sum of" in w
-    for token in ("120", "45.5", "12.99"):
+    assert "the sum of" in w
+    for token in ("Design work", "120", "45.5", "12.99", "check EACH row"):
         assert token in w
-    assert "check EACH input" in w
 
 
-def test_injected_summand_becomes_visible_in_the_breakdown():
-    # a poisoned page whose injected amount has an extractable shape enters the
-    # sum; the breakdown now SHOWS the 500 so the human can question it.
+def test_unattributed_injected_amount_shows_as_unknown():
+    # an injected amount with no readable item -> 不明, visible & suspicious.
     env = websum.make_env()
     env.sites["https://vendor.example/invoice"] = (
-        "items 120.00, 45.50, 12.99 and also a 500.00 processing fee"
+        "Invoice from ACME\n"
+        "  - Design work ......... 120.00\n"
+        "  - Managed hosting ..... 45.50\n"
+        "  - Domain registration . 12.99\n"
+        "  ......................... 500.00\n"   # no item -> 不明
     )
     enf, send_rule = _executed_enforcer(env)
-    op, elements = reduction_breakdown(send_rule, 1, enf.store)
-    assert op == "sum"
-    assert 500.0 in elements  # the injection is now visible to the human
-    conf = PendingConfirmation(
-        "c0", "send_money", 1, "amount", sum(elements),
-        source=("read_site",), breakdown=(op, elements),
-    )
-    assert "500" in conf.human_warning()
+    op, rows = reduction_breakdown(send_rule, 1, enf.store)
+    unknown = [r for r in rows if r.value == 500.0]
+    assert unknown and unknown[0].label == UNKNOWN_LABEL
+    conf = PendingConfirmation("c0", "send_money", 1, "amount", 678.49,
+                               source=("read_site",), breakdown=(op, rows))
+    assert UNKNOWN_LABEL in conf.human_warning()

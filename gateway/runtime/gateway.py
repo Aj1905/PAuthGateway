@@ -546,11 +546,16 @@ class Gateway:
                         breakdown = reduction_breakdown(rule, i, enf.store)
                         if breakdown is not None:
                             break
+                # If any source of this operand is an LLM extractor (non-re-derivable),
+                # flag the value unverifiable -> the warning says "not proven".
+                srcs = state.gated_sources.get((tool, i), ())
+                unverifiable = any(state.source_trust.is_unverifiable(s) for s in srcs)
                 state.pending[cid] = PendingConfirmation(
                     cid, tool, i, name, args[i],
-                    source=state.gated_sources.get((tool, i), ()),
+                    source=srcs,
                     param_type=param.get("type", ""),
                     breakdown=breakdown,
+                    unverifiable=unverifiable,
                 )
             return CallResult(
                 permit=False,
