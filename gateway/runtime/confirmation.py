@@ -297,10 +297,13 @@ def _render_breakdown(param_name: str, breakdown) -> str:
         if r.selected and op in ("min", "max"):
             row += "  <- selected"
         lines.append(row)
-    tail = ("open the link / check the selected row -- an inflated candidate can win"
+    tail = ("check the selected row -- an inflated candidate can win"
             if op in ("min", "max") else
             "check EACH row -- an injected/inflated line hides in the total")
     lines.append(f"  -- the gateway does NOT vouch for any of this; {tail}")
+    if any(r.link for r in rows):
+        lines.append("  -- the links are ALSO from the untrusted source and may be "
+                     "spoofed; verify via an INDEPENDENT source, not by clicking these")
     return "\n".join(lines)
 
 
