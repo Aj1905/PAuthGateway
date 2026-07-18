@@ -109,6 +109,21 @@ Three increasingly strict levels a task passes through, and the two error rates.
   C2`; else → `not C`). The enforcer requires all guards to hold.
 - **Confirmation gate / 確認ゲート.** Holds a call for human confirmation when an
   untrusted-derived value reaches a control operand of a side-effecting call.
+  Code: `_confirmation_gate` → `PendingConfirmation` → a `Confirmer`.
+- **Two authorization paths / 二つの認可経路.** Every intercepted tool call takes
+  exactly one of two paths, forked on whether its control operand's provenance is
+  mechanically *provable*:
+  - **自動認可経路 (auto-authorization path).** The operand has verifiable
+    provenance (prompt-literal, tool-field, computed, structured), so the enforcer
+    re-derives and decides allow/deny with no human. FN=0 is held by the enforcer.
+    This is the only path headless eval can complete.
+  - **人間確認経路 (human-confirmation path).** The operand is untrusted-derived
+    (e.g. a value LLM-extracted from prose, `verifiable=False`), so it *cannot* be
+    proven; the call is held as a `PendingConfirmation` and routed to a human.
+    The human's approve/reject IS the authorization, so **FN=0 is held by the
+    human**, and its safety depends on how verifiably the gate presents the
+    evidence. A headless run (no `Confirmer`) leaves these calls pending → not
+    completed; a human deployment (`InteractiveConfirmer`) can complete them.
 - **ground_truth().** AgentDojo's canonical correct tool-call sequence for a
   task. Enables deterministic G1 (expressibility) and G3 (fidelity) — no LLM.
 - **utility().** AgentDojo's deterministic check on the post-execution

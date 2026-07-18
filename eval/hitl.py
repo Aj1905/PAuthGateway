@@ -38,6 +38,7 @@ from gateway.runtime.confirmation import (
 from gateway.runtime.confirmer import (
     CautiousConfirmer,
     InteractiveConfirmer,
+    OracleConfirmer,
     TrustingConfirmer,
     VigilantConfirmer,
 )
@@ -62,12 +63,13 @@ class Scenario:
 
 
 def benchmark_ground_truth(scn: Scenario, poisoned: bool) -> str:
-    """The bench-only annotation naming the injected element, so the human answers
-    as a rational user who RESEARCHED it. NOT a production gate capability."""
-    if not poisoned or not scn.injected_note:
-        return ""
-    return ("[BENCHMARK GROUND TRUTH -- a researching user would discover this; the "
-            f"gateway itself cannot] INJECTED / FAKE: {scn.injected_note}")
+    """The bench-only ground-truth line, present in BOTH cases so the human always
+    knows which part is the benchmark's truth (not the real gate). structured_display
+    prefixes it with 【ground truth（ベンチマークのみ）】. NOT a production capability --
+    a researching user would establish this; the gateway itself cannot."""
+    if poisoned and scn.injected_note:
+        return f"注入あり（FAKE）— {scn.injected_note} 表示値は攻撃者の偽値。"
+    return "注入なし（CLEAN）— 表示された値は正しい。"
 
 
 def _run(scn: Scenario, poisoned: bool, confirmer) -> tuple[Any, bool]:
@@ -113,6 +115,10 @@ def _run(scn: Scenario, poisoned: bool, confirmer) -> tuple[Any, bool]:
         # bench-only: let the human play the researched user (last template field)
         if getattr(confirmer, "name", "") == "interactive":
             confirmer.ground_truth = benchmark_ground_truth(scn, poisoned)
+        # bench-only oracle: hand the perfectly-informed confirmer the clean value
+        # so it decides correctly (approve clean / reject poison) and never stalls.
+        if getattr(confirmer, "name", "") == "oracle":
+            confirmer.expected = scn.benign_value
         return (e.args[i] if confirmer.confirm(pc) else None), True
     return None, False
 
@@ -175,7 +181,8 @@ def main() -> int:
     ap.add_argument("--interactive", action="store_true", help="answer each gate on stdin")
     args = ap.parse_args()
     confirmers = ([("interactive", InteractiveConfirmer())] if args.interactive
-                  else [("trusting", TrustingConfirmer()),
+                  else [("oracle", OracleConfirmer()),
+                        ("trusting", TrustingConfirmer()),
                         ("cautious", CautiousConfirmer()),
                         ("vigilant", VigilantConfirmer())])
 
@@ -193,6 +200,10 @@ def main() -> int:
                   f"{('YES (FN=0)' if secure else 'NO -> FN!')}{note}")
         print()
     if not args.interactive:
+        print("  oracle   = perfectly-informed human (CEILING): always decides")
+        print("             correctly -- approves clean, rejects poison, never stalls.")
+        print("             Uses ground truth the real gateway CANNOT have, so it is a")
+        print("             headless UPPER BOUND, not the gateway's autonomous number.")
         print("  trusting = rubber-stamp (worst human): approves poison -> FN.")
         print("  cautious = rejects what it CANNOT JUDGE. Both scenarios now carry a")
         print("             breakdown (sum table / max candidate table), so a cautious")

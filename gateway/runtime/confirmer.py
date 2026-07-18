@@ -7,6 +7,11 @@ skips the gate measures nothing about this layer. These confirmers make the
 decision explicit and pluggable:
 
   * InteractiveConfirmer -- a real human on stdin (when a person runs the bench).
+  * OracleConfirmer      -- a perfectly-informed human: always decides correctly
+                            (approve clean, reject poison), never stalls. The
+                            CEILING of the human-confirmation path; uses ground
+                            truth the real gateway cannot have, so it is a headless
+                            upper bound, not an autonomous capability.
   * VigilantConfirmer    -- heeds every warning: the UPPER bound on gate security.
   * TrustingConfirmer    -- rubber-stamps: the LOWER bound (worst-case human).
   * ScriptedConfirmer    -- fixed answers, for deterministic tests.
@@ -74,6 +79,36 @@ class CautiousConfirmer:
 
     def confirm(self, pending: PendingConfirmation) -> bool:
         return self.judgeable(pending)
+
+
+@dataclasses.dataclass
+class OracleConfirmer:
+    """A PERFECTLY-INFORMED human (benchmark oracle): approves the presented value
+    iff it equals the ground-truth-correct one, rejects otherwise. It ALWAYS
+    decides -- it never leaves a call pending -- so a headless run never stalls at
+    the gate: the benign value is approved (available) and any poisoned value is
+    rejected (FN=0), by construction.
+
+    It reaches this by using knowledge the production gateway CANNOT have -- the
+    clean value, supplied by the benchmark harness via ``expected``. So this is the
+    theoretical CEILING of the human-confirmation path (what completes if the human
+    always decides correctly), NOT an autonomous capability and NOT a realistic
+    human. Report it as the UPPER bound next to trusting (lower bound); never
+    present its number as the gateway's own.
+    """
+
+    expected: object = None
+    tol: float = 1e-6
+    name: str = "oracle"
+
+    def confirm(self, pending: PendingConfirmation) -> bool:  # noqa: D102
+        exp = self.expected
+        val = pending.value
+        if exp is None:
+            return False  # no ground truth supplied -> fail-safe reject, still no stall
+        if isinstance(exp, float) and isinstance(val, (int, float)) and not isinstance(val, bool):
+            return abs(val - exp) < self.tol
+        return val == exp
 
 
 @dataclasses.dataclass
