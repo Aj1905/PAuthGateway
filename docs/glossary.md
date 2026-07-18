@@ -22,22 +22,23 @@ correctly. Measured per task by `eval/gates.py`.
   Separates "grammar too weak" from "Planner too weak."
 - **G2 — Grammar conformance / 文法適合.** Did the Planner actually produce code that
   passes the restricted grammar? I.e. which tasks it *committed to* attempting.
-- **G3 — Fidelity / 忠実 (過不足).** Does the executed trace match the
+- **G3 — Runtime soundness / 実行健全.** Does the plan run without a crash or a
+  false denial? The **looser** of the two execution gates, so it comes first. See
+  *crash*, *denial*.
+- **G4 — Fidelity / 忠実 (過不足).** Does the executed trace match the
   ground-truth trace with **no excess call and no missing call** (args included)?
-  This is *the* 過不足 gate. Measured on the executed trace, so it **subsumes G4**:
-  a crash or a false denial drops the remaining calls → deficiency → G3 fails.
-- **G4 — Runtime soundness / 実行健全.** Does the plan run without a crash or a
-  false denial? Now folded into G3 (a trace-based fidelity gate captures it), and
-  kept only as a diagnostic sub-aspect. See *crash*, *denial*.
+  This is *the* 過不足 gate. **Stricter than and subsumes G3**: a crash or false
+  denial drops the remaining calls → deficiency → G4 fails too. (Numbering follows
+  strictness — a higher number is a stricter/later gate.)
 - **G5 — Outcome / 結果一致 (task success).** Did execution reach the goal state,
   by the task's own `utility()`? The **real success criterion** and final
-  arbiter. G3 (strict trace match) is *sufficient* for G5 but not *necessary* —
+  arbiter. G4 (strict trace match) is *sufficient* for G5 but not *necessary* —
   the goal can be reached via a non-canonical trace, so G5 stays independent.
 - **GS — Security / セキュリティ (orthogonal).** Are the task's forced injections
   denied? The FN=0 axis. Orthogonal to G1–G5 (about attacks, not benign intent).
 
-**Refined 4-gate model:** G1 可能 → G2 挑戦 → G3 忠実 (G4 内包) → G5 到達, plus
-GS orthogonal.
+**Gate model (strictness-ordered):** G1 可能 → G2 挑戦 → G3 実行 → G4 忠実 (G3 内包)
+→ G5 到達, plus GS orthogonal. Higher number = stricter/later.
 
 ---
 
@@ -125,7 +126,7 @@ Three increasingly strict levels a task passes through, and the two error rates.
     evidence. A headless run (no `Confirmer`) leaves these calls pending → not
     completed; a human deployment (`InteractiveConfirmer`) can complete them.
 - **ground_truth().** AgentDojo's canonical correct tool-call sequence for a
-  task. Enables deterministic G1 (expressibility) and G3 (fidelity) — no LLM.
+  task. Enables deterministic G1 (expressibility) and G4 (fidelity) — no LLM.
 - **utility().** AgentDojo's deterministic check on the post-execution
   environment: did the goal state get reached? The G5 success criterion.
 
@@ -150,7 +151,7 @@ Three increasingly strict levels a task passes through, and the two error rates.
   agentic pipeline falls back to. Safer than a silently-wrong plan (refuses
   instead of, e.g., sending money with `amount=None`).
 - **Framework coverage.** Each benchmark exercises only *part* of the gate chain.
-  Only AgentDojo ships `ground_truth`+`utility`, so only it tests G3/G5;
+  Only AgentDojo ships `ground_truth`+`utility`, so only it tests G4/G5;
   InjecAgent / adversarial probes / tau_retail cover mainly GS (security). "FN=0
   on nine frameworks" was six ways of testing one gate.
 - **Measurement noise.** Fresh `--no-cache` agentic acceptance carries ±5–7 pt
