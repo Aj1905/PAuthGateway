@@ -72,6 +72,7 @@ class Corpus:
 # --------------------------------------------------------------------------
 
 _STRUCTURING = False  # set by --structuring: expose structure_text to the Planner
+_JUDGE = False        # set by --judge: run the OpenAI-backed completeness judge
 
 
 def _corpus_agentdojo() -> list[Corpus]:
@@ -365,7 +366,8 @@ def _bestof_plan(suite, task, scratch_dir, n=3):
             cands.append(pf.read_text()); continue
         res = generate_code_with_self_repair(
             task.prompt + ("" if i == 0 else f"\n(variant {i})"),
-            suite.tool_docs(), model="gpt-4.1", max_retries=3, enable_judge=False)
+            suite.tool_docs(), model="gpt-4.1", max_retries=3,
+            enable_judge=_JUDGE, judge_model="gpt-4.1")   # OpenAI-backed completeness judge
         pf.write_text(res.code); cands.append(res.code)
 
     def score(code):
@@ -392,7 +394,7 @@ def run(corpus_name: str, mode: str = "headless", planner: str = "cached",
         tasks = corpus.tasks if limit is None else corpus.tasks[:limit]
         for task in tasks:
             if planner in ("agentic", "bestof"):
-                tag = "struct_" if _STRUCTURING else ""
+                tag = ("struct_" if _STRUCTURING else "") + ("judge_" if _JUDGE else "")
                 scratch = f"tests/experiment/funnel_scratch/{tag}{planner}_{corpus.name.replace(':','_')}"
                 gen = _bestof_plan if planner == "bestof" else _agentic_plan
                 try:
@@ -434,8 +436,9 @@ def _flag(name, default=None):
 
 def main() -> int:
     corpus = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else "agentdojo"
-    global _STRUCTURING
+    global _STRUCTURING, _JUDGE
     _STRUCTURING = "--structuring" in sys.argv
+    _JUDGE = "--judge" in sys.argv
     mode = _flag("--mode", "headless")
     planner = _flag("--planner", "cached")     # cached | agentic (regenerate, needs OPENAI_API_KEY)
     confirmer = _flag("--confirmer", "oracle")  # oracle | interactive (hitl mode)

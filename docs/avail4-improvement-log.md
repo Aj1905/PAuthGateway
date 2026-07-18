@@ -129,8 +129,31 @@ arg strictness.
 - **Verdict:** WINNER (+9pt, legitimate). Best combo = control-match + bestof +
   structuring = **61%**.
 
-## Conclusion — AVAIL_4 = 100% is NOT reachable with the current Planner + grammar
-**Best achieved: AVAIL_4 31% -> 61%** (control-operand match + best-of-N + structure_text).
+### T8 — best-of-N + structure_text + COMPLETENESS JUDGE (OpenAI-backed)
+- **Key discovery:** the semantic completeness judge (flags missing/excess calls
+  and repairs) is NOT Anthropic-only -- `_judge_intent` has an OpenAI branch, and
+  passing `judge_model="gpt-4.1"` runs it on the available OpenAI key. Earlier trials
+  ran with the judge OFF (default judge_model was Anthropic), which is exactly why
+  the missing-call deficiencies survived.
+- **Evidence:** banking_11 (previously missing send_money) -- with the judge, the
+  Planner now emits `send_money(...)`. The judge directly attacks the 26 hard cases.
+- **Method:** `funnel(agentdojo, planner=bestof, --structuring, --judge)`.
+- **Result:** AVAIL_4 **23/68 (34%)** -- WORSE than bestof+structuring (61%), COST
+  2.5->1.3 (fewer calls). The judge's fallback, when it cannot satisfy the intent,
+  is the reject sentinel `def run(): pass`, so tasks it CAN'T complete become hollow
+  -> MORE missing-call deficiencies, not fewer. It fixed a few (banking_11) but
+  hollowed out more than it helped.
+- **Verdict:** FAIL / counterproductive (-27pt). ROLLED BACK -- `--judge` stays off
+  by default (`_JUDGE=False`), the mechanism is inert unless requested.
+
+## Conclusion — best achieved AVAIL_4 = 61%; 100% not reachable here
+**Best: AVAIL_4 31% -> 61%** (control-operand match + best-of-N + structure_text; T7).
+The completeness judge (T8) backfired. The residual ceiling is a Planner-capability
+wall: multi-step/loop tasks, conditional writes, and un-extractable prose values
+where gpt-4.1 (best-of-N, structure_text, and even the judge) cannot produce a plan
+making ALL required calls. FN=0 held on EVERY trial. Reaching 100% needs a
+fundamentally stronger Planner or a judge that repairs (not rejects) incomplete
+plans -- neither available here without trading FN=0 or new capability.
 - **Progress made:** AVAIL_4 31% (baseline) -> **61%**, via ONE principled fix (T3:
   match on CONTROL operands, aligning AVAIL_4 with PAuth's mandate) plus best-of-N
   (raises the working-plan count). FN=0 held throughout; 269 tests pass.
