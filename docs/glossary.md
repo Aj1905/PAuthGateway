@@ -87,16 +87,14 @@ Three increasingly strict levels a task passes through, and the two error rates.
   emit (no method calls, no string ops, no `while`, bounded `for`, flat/nested-if
   ≤3). Narrow *so that* slicing is exact and FN=0 is guaranteed — the same
   restriction that caps expressibility (G1).
-- **Planner (paper: A1).** The one LLM step: prompt + tool schemas → a `run()`
-  function in the restricted grammar. The only non-deterministic stage, and the
-  quality bottleneck for task success once G1 is high. Named for its job (it plans
-  the tool-call code) rather than the paper's opaque "A1"; the codebase already
-  calls the choice of Planner `--planner oneshot|agentic`.
-- **Slicer (paper: A2).** Deterministic: derives **slices** from the Planner's
-  `run()`.
-- **Rule compiler (paper: A3).** Deterministic: compiles slices into **rules**.
-- **Enforcer (paper: B1–B4).** Runtime enforcement: intercept each tool call,
-  check it against the rules, execute if permitted, wrap the result in a signed
+- **Planner.** The one LLM step: prompt + tool schemas → a `run()` function in
+  the restricted grammar. The only non-deterministic stage, and the quality
+  bottleneck for task success once G1 is high. The `--planner oneshot|agentic`
+  flag selects it.
+- **Slicer.** Deterministic: derives **slices** from the Planner's `run()`.
+- **Rule compiler.** Deterministic: compiles slices into **rules**.
+- **Enforcer.** Runtime enforcement: intercept each tool call, check it against
+  the rules, execute if permitted, wrap the result in a signed
   envelope.
 - **Slice / スライス.** Per tool call, a symbolic spec: an expression for each
   operand + the path conditions (guards) to reach the call.
@@ -129,7 +127,7 @@ Three increasingly strict levels a task passes through, and the two error rates.
 - **exec-repair / 実行時修復.** Agentic-Planner stage: dry-run the grammar-valid
   candidate against a mock env; feed a crash back for repair; if still crashing
   after retries, replace with the reject sentinel `def run(): pass`. Eliminates
-  crashes but does not raise task success (a `pass` plan does nothing). A1=Planner throughout.
+  crashes but does not raise task success (a `pass` plan does nothing).
 - **Intent judge / 意図判定器.** A separate LLM that checks whether the code
   captures the prompt's intent (excess/deficiency) during agentic repair. Noisy
   (opinion-based); the ground-truth `utility()`/`ground_truth()` are preferred.
