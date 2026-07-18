@@ -40,8 +40,9 @@ from pauth.enforcer import Enforcer, check_injection, execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing, flatten
 from pauth.evaluator import wrap
 from pauth.grammar import RestrictedGrammarError
+from pauth.structuring import structure
 from gateway.planning.prechecks import PrecheckPolicy
-from gateway.runtime.confirmation import control_operands
+from gateway.runtime.confirmation import control_operands, is_side_effecting
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = ROOT / "tests" / "experiment" / "cache"
@@ -79,14 +80,21 @@ def _positional(fc, params) -> list:
 # ---- Gate 1: expressibility -------------------------------------------------
 
 def gate1_expressible(ut, spec, params, docs=None) -> tuple[bool | None, str]:
-    """True iff every CONTROL operand (recipient / amount -- the values that
-    steer a side effect) is a prompt literal or a clean field of a prior tool
-    result. Only control operands need verifiable provenance for FN=0; content
-    operands (subject / body) ride to an already-approved destination, and clock
-    values / pagination constants are free literals -- requiring provenance on
-    those is a measurement artifact that under-counted G1 (~40% -> ~89%). Prose-
-    locked or computed CONTROL values still fail here (structuring / arithmetic
-    recover them separately)."""
+    """True iff every CONTROL operand of a SIDE-EFFECTING call can be produced by
+    the grammar + its mechanisms. A control value is expressible when it is any of:
+      * a prompt literal / a clean field of a prior tool result;
+      * COMPUTED from available numbers (sum / diff / product / percentage -- the
+        grammar has BinOp: rent = old + rise, VAT = paid * 0.195 + fee);
+      * STRUCTURED out of an untrusted text return (structure_text -> field);
+      * LLM-EXTRACTABLE -- it appears in the reachable untrusted text, so an LLM
+        extractor can pull it (a plain name the shape-keyed structurer cannot type).
+    The last three carry taint, so the confirmation gate verifies them at runtime;
+    they are still EXPRESSIBLE (the whole point: push everything into the grammar,
+    using the gate). Non-control operands and reads need no provenance. This is a
+    generous, mechanism-aware ceiling -- it measures 'can be written & gated', not
+    'A1 will produce it' (that is G2) nor 'auto-completes' (gated ones need a human)."""
+    import re
+
     try:
         gt = ut.ground_truth(spec.make_env())
     except Exception as exc:  # noqa: BLE001 -- some tasks have no ground truth
@@ -96,10 +104,35 @@ def gate1_expressible(ut, spec, params, docs=None) -> tuple[bool | None, str]:
     docs = docs or {n: s.doc for n, s in spec.tools.items()}
     pol = PrecheckPolicy()
     runner = spec.runner_factory(spec.make_env())
-    pool: set = set()
+    pool: set = set()       # available scalar values (literal / field / structured)
+    base_nums: set = set()  # ORIGINAL numbers only -- arithmetic never feeds itself
+    text_blob = ut.PROMPT   # reachable untrusted text (prompt + tool returns)
+    for m in re.findall(r"-?\d+(?:\.\d+)?", ut.PROMPT):
+        try:
+            base_nums.add(_norm(float(m)))  # prompt numbers (percentages, fees)
+        except ValueError:
+            pass
+
+    def _arith() -> set:  # sum / diff / product / percentage, plus percentage+fee
+        nums = list(base_nums)
+        d: set = set()
+        for i, a in enumerate(nums):
+            for b in nums[i:]:
+                d.add(_norm(a + b))
+                d.add(_norm(abs(a - b)))
+                d.add(_norm(a * b))
+                d.add(_norm(a * b / 100.0))  # b percent of a
+        pcts = [a * b / 100.0 for a in nums for b in nums]
+        for p in pcts:              # (percent of a) + a fee
+            for c in nums:
+                d.add(_norm(p + c))
+        return d
+
     for fc in gt:
         order = params.get(fc.function, [])
-        ctrl = {order[i] for i, _ in control_operands(fc.function, docs, pol) if i < len(order)}
+        ctrl = ({order[i] for i, _ in control_operands(fc.function, docs, pol) if i < len(order)}
+                if is_side_effecting(fc.function) else set())  # reads need no provenance
+        arith = None
         for key, val in fc.args.items():
             if val is None or isinstance(val, (list, dict)):
                 continue
@@ -107,12 +140,27 @@ def gate1_expressible(ut, spec, params, docs=None) -> tuple[bool | None, str]:
                 continue
             if _prompt_literal(val, ut.PROMPT) or _in_pool(val, pool):
                 continue
-            return False, f"CONTROL {fc.function}.{key}={val!r} needs extraction (not literal/field)"
-        try:  # execute to expose this call's result fields for later args
+            if arith is None:
+                arith = _arith()
+            if _in_pool(val, arith):
+                continue
+            s = str(val).strip()
+            if s and s.lower() in text_blob.lower():  # LLM-extractable from the text
+                continue
+            return False, f"CONTROL {fc.function}.{key}={val!r} not literal/field/computed/extractable"
+        try:  # execute to expose this call's fields / structured values for later args
             res = runner(fc.function, dict(fc.args))
+            text_blob += "\n" + str(res)
+            sv = structure(str(res))
             for fv in flatten(wrap(res)).values():
                 if not isinstance(fv, (list, dict)):
                     pool.add(_norm(fv))
+                    if isinstance(fv, (int, float)) and not isinstance(fv, bool):
+                        base_nums.add(_norm(fv))
+            for c in (*sv.amounts, *sv.ibans, *sv.dates, *sv.emails):
+                pool.add(_norm(c))
+            for a in sv.amounts:
+                base_nums.add(_norm(a))
         except Exception:  # noqa: BLE001
             pass
     return True, ""
