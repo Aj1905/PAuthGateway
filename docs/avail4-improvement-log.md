@@ -193,6 +193,19 @@ are control-value mismatches. n/a-ing the 5 dynamic ones gives AVAIL_4 47/83 = 5
 still far from 100%. The dominant wall (26 multi-step/conditional) is a genuine
 Planner-completeness limit that NO legitimate move (measurement, model, compute,
 judge) fixes. **There is no legitimate path to AVAIL_4=100% in this setup.**
+
+### T11 — gpt-5.1 + completeness judge + best-of-N + structure_text
+- **Hypothesis:** gpt-5.1 (stronger) might let the judge REPAIR (add missing calls)
+  instead of falling to the reject sentinel, completing the 26 multi-step tasks.
+- **Result:** AVAIL_4 **23/95 (24%)**, COST **0.9 calls/task** -- the judge hollows
+  plans even on gpt-5.1 (0.9 calls = mostly `pass`). PLAN_VALID 95/97 means MORE
+  plans get judged and rejected -> MORE hollow. FN=0 (95/95).
+- **Verdict:** FAIL (worse). The judge is systematically counterproductive for
+  AVAIL_4 on BOTH models -- its reject-sentinel fallback dominates. Confirmed: not a
+  model issue. Rolled back (--judge off).
+
+**FINAL: 11 trials, 2 models. No legitimate lever reaches AVAIL_4=100%. Best = 61%
+(gpt-4.1 + control-match + best-of-N + structure_text). FN=0 held on all 11.**
 - **Progress made:** AVAIL_4 31% (baseline) -> **61%**, via ONE principled fix (T3:
   match on CONTROL operands, aligning AVAIL_4 with PAuth's mandate) plus best-of-N
   (raises the working-plan count). FN=0 held throughout; 269 tests pass.
