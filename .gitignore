@@ -31,3 +31,6 @@ docs/materials/
 # personal agent/advisory prefs — not project contributor guidance
 AGENTS.md
 tests/experiment/regen_scratch/
+tests/experiment/g5_scratch/
+tests/experiment/tau_scratch/
+tests/experiment/bestofn_scratch/
