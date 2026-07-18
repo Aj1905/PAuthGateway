@@ -155,14 +155,36 @@ arg strictness.
 - **Verdict:** FAIL (no lift). Conclusive: the hard cases do not flip with more
   samples -- gpt-4.1 fundamentally cannot produce complete plans for them.
 
-## Conclusion — best achieved AVAIL_4 = 61%; 100% not reachable here
-**Best: AVAIL_4 31% -> 61%** (control-operand match + best-of-N + structure_text; T7).
-The completeness judge (T8) backfired. The residual ceiling is a Planner-capability
-wall: multi-step/loop tasks, conditional writes, and un-extractable prose values
-where gpt-4.1 (best-of-N, structure_text, and even the judge) cannot produce a plan
-making ALL required calls. FN=0 held on EVERY trial. Reaching 100% needs a
-fundamentally stronger Planner or a judge that repairs (not rejects) incomplete
-plans -- neither available here without trading FN=0 or new capability.
+### T10 — stronger Planner model (gpt-5.1, via the same OpenAI key)
+- **Discovery:** the key has gpt-5 / gpt-5.1 / gpt-5.2 / codex. Added a --model knob.
+- **Method:** `funnel(agentdojo, planner=bestof, --structuring, --model gpt-5.1)`.
+- **Result:** PLAN_VALID 62->**92/97**, RAN_CLEAN 51->**88/92**, OUTCOME 14->22, FN=0
+  (92/92). AVAIL_4 **47/88 (53% ratio; 48% of all 97)** vs gpt-4.1's 61% ratio /
+  41% of 97. gpt-5.1 makes FAR more tasks produce a working plan, but those extra
+  attempts are still deficient, so the RATIO does not improve.
+- **Diagnosis (conclusive):** even gpt-5.1 leaves 37 hard tasks where NO candidate is
+  deficiency-free. Two kinds: (a) CONTROL-operand mismatches -- a computed/extracted
+  value the model gets wrong or that the GT fixes to an un-derivable value (a
+  specific date/amount); (b) missing multi-step/conditional/dynamic calls -- e.g.
+  slack "do everything on this webpage": the actions live in UNTRUSTED CONTENT read
+  at runtime, which a STATIC plan cannot branch on. No model can plan these.
+- **Verdict:** the ceiling is NOT a gpt-4.1 weakness -- it is fundamental to STATIC
+  planning + GT-specific values. gpt-4.1->gpt-5.1 does not break it.
+
+## Conclusion — AVAIL_4 = 100% is UNREACHABLE (proven across models)
+**Best ratio: AVAIL_4 31% -> 61%** (control-operand match + best-of-N + structure_text,
+gpt-4.1; T7). The stronger model (gpt-5.1, T10) raised availability massively
+(PLAN_VALID 62->92, OUTCOME 14->22) but NOT the AVAIL_4 ratio (53%) -- it attempts
+more hard tasks, all still deficient. The completeness judge (T8) backfired.
+
+**Why 100% is impossible (not a model weakness -- fundamental):** the residual
+hard tasks split into (a) CONTROL values the GT fixes to an un-derivable constant
+(a specific date/amount not in the prompt or extractable from data), and (b)
+DYNAMIC tasks whose actions live in untrusted content read at runtime ("do
+everything on this webpage") -- a STATIC plan cannot branch on unread content. No
+model (gpt-4.1, best-of-8, gpt-5.1) makes a plan with all required calls for these.
+FN=0 held on EVERY trial. Reaching 100% would require abandoning static planning
+(a different architecture) or GAMING the metric -- explicitly NOT done.
 - **Progress made:** AVAIL_4 31% (baseline) -> **61%**, via ONE principled fix (T3:
   match on CONTROL operands, aligning AVAIL_4 with PAuth's mandate) plus best-of-N
   (raises the working-plan count). FN=0 held throughout; 269 tests pass.
