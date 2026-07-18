@@ -53,6 +53,8 @@ _ALLOWED: tuple[type, ...] = (
     ast.Attribute,
     ast.Subscript,
     ast.Dict,
+    ast.ListComp,      # pure map/filter over a signed collection (see _check_comprehensions)
+    ast.comprehension,
     ast.Lambda,
     ast.List,
     ast.For,   # bounded for over a gateway-observed collection (see _check_bounded_for)
@@ -85,7 +87,6 @@ _FORBIDDEN = {
     ast.Return: "return statements are forbidden (rule 1)",
     ast.Import: "imports are forbidden (rule 1)",
     ast.ImportFrom: "imports are forbidden (rule 1)",
-    ast.ListComp: "comprehensions contain implicit loops (rule 2a1)",
     ast.SetComp: "comprehensions contain implicit loops (rule 2a1)",
     ast.DictComp: "comprehensions contain implicit loops (rule 2a1)",
     ast.GeneratorExp: "generator expressions contain implicit loops (rule 2a1)",
@@ -146,6 +147,7 @@ def parse_and_validate(code: str) -> ast.FunctionDef:
 
     _check_no_nested_if(func)
     _check_bounded_for(func)
+    _check_comprehensions(func)
     _check_lambdas(func)
     return func
 
@@ -237,6 +239,34 @@ def _check_bounded_for(func: ast.FunctionDef) -> None:
     for stmt in func.body:
         if isinstance(stmt, ast.For):
             _check_for(stmt)
+
+
+def _check_comprehensions(func: ast.FunctionDef) -> None:
+    """A list comprehension must be a PURE map/filter over a bound collection: a
+    single generator, a fresh Name target, an iterable that is a bound variable or
+    a field of one, and no nested comprehension. Then the enforcer re-derives it
+    deterministically (a tool call inside is rejected by validate_semantics as a
+    nested call), so an off-collection value is off-slice (FN=0)."""
+    for comp in ast.walk(func):
+        if not isinstance(comp, ast.ListComp):
+            continue
+        if len(comp.generators) != 1:
+            raise RestrictedGrammarError("only single-generator comprehensions are allowed")
+        gen = comp.generators[0]
+        if getattr(gen, "is_async", 0):
+            raise RestrictedGrammarError("async comprehensions are forbidden")
+        if not isinstance(gen.target, ast.Name):
+            raise RestrictedGrammarError("comprehension target must be a single variable")
+        it = gen.iter
+        while isinstance(it, (ast.Attribute, ast.Subscript)):
+            it = it.value
+        if not isinstance(it, ast.Name):
+            raise RestrictedGrammarError(
+                "comprehension must iterate a bound collection variable or a field of one"
+            )
+        for inner in ast.walk(comp.elt):
+            if isinstance(inner, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+                raise RestrictedGrammarError("nested comprehensions are forbidden")
 
 
 def _check_lambdas(func: ast.FunctionDef) -> None:

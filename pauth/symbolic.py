@@ -54,12 +54,25 @@ def names_in(node: ast.AST) -> set[str]:
     bound: set[str] = set()
 
     class _V(ast.NodeVisitor):
-        def visit_Lambda(self, n: ast.Lambda) -> None:
-            params = {a.arg for a in n.args.args}
+        def _scoped(self, n: ast.AST, params: set[str]) -> None:
             added = params - bound
             bound.update(added)
             self.generic_visit(n)
             bound.difference_update(added)
+
+        def visit_Lambda(self, n: ast.Lambda) -> None:
+            self._scoped(n, {a.arg for a in n.args.args})
+
+        def _comp(self, n) -> None:  # a comprehension's targets are locally bound
+            targets: set[str] = set()
+            for gen in n.generators:
+                targets |= {t.id for t in ast.walk(gen.target) if isinstance(t, ast.Name)}
+            self._scoped(n, targets)
+
+        visit_ListComp = _comp
+        visit_SetComp = _comp
+        visit_DictComp = _comp
+        visit_GeneratorExp = _comp
 
         def visit_Name(self, n: ast.Name) -> None:
             if isinstance(n.ctx, ast.Load) and n.id not in bound:

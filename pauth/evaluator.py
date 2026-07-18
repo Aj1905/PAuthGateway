@@ -179,6 +179,25 @@ class Evaluator:
     def _e_List(self, node: ast.List) -> Any:
         return [self.eval(e) for e in node.elts]
 
+    def _e_ListComp(self, node: ast.ListComp) -> Any:
+        # pure map/filter over a signed collection, re-derived deterministically.
+        if len(node.generators) != 1:
+            raise NotConcretizable("only single-generator comprehensions")
+        gen = node.generators[0]
+        if not isinstance(gen.target, ast.Name):
+            raise NotConcretizable("comprehension target must be a name")
+        var = gen.target.id
+        collection = self.eval(gen.iter)
+        if not isinstance(collection, (list, tuple)):
+            raise NotConcretizable("comprehension iterable is not a collection")
+        out = []
+        for element in collection:
+            child = Evaluator(self.store, self.lets, {**self.names, var: element})
+            child._let_cache = self._let_cache
+            if all(bool(child.eval(cond)) for cond in gen.ifs):
+                out.append(child.eval(node.elt))
+        return out
+
     def _e_Dict(self, node: ast.Dict) -> Any:
         # deterministic construction from traced keys/values; ** unpack (key None)
         # is not re-derivable operand-by-operand -> reject (default-deny).
