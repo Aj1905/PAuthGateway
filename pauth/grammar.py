@@ -52,6 +52,7 @@ _ALLOWED: tuple[type, ...] = (
     ast.Compare,
     ast.Attribute,
     ast.Subscript,
+    ast.Dict,
     ast.Lambda,
     ast.List,
     ast.For,   # bounded for over a gateway-observed collection (see _check_bounded_for)
@@ -93,13 +94,14 @@ _FORBIDDEN = {
     ast.With: "with-statements are forbidden",
     ast.ClassDef: "class definitions are forbidden",
     ast.JoinedStr: "f-strings are forbidden (rule 1)",
-    ast.Dict: "dict literals are not in the grammar",
     ast.Set: "set literals are not in the grammar",
     ast.Global: "global statements are forbidden",
     ast.Nonlocal: "nonlocal statements are forbidden",
     ast.Yield: "yield is forbidden",
     ast.Not: "the 'not' operator is not in the <Condition> grammar",
 }
+# ast.Dict is ALLOWED: a dict literal of traced values is a deterministic
+# construction the enforcer re-derives (like a list); taint propagates through it.
 
 
 def parse_and_validate(code: str) -> ast.FunctionDef:

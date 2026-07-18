@@ -179,6 +179,13 @@ class Evaluator:
     def _e_List(self, node: ast.List) -> Any:
         return [self.eval(e) for e in node.elts]
 
+    def _e_Dict(self, node: ast.Dict) -> Any:
+        # deterministic construction from traced keys/values; ** unpack (key None)
+        # is not re-derivable operand-by-operand -> reject (default-deny).
+        if any(k is None for k in node.keys):
+            raise NotConcretizable("dict ** unpacking is not supported")
+        return {self.eval(k): self.eval(v) for k, v in zip(node.keys, node.values)}
+
     # -- compound --------------------------------------------------------
     def _e_BinOp(self, node: ast.BinOp) -> Any:
         op = _BINOPS.get(type(node.op))
