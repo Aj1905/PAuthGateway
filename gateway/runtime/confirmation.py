@@ -277,6 +277,52 @@ class PendingConfirmation:
     # gateway cannot recompute it and a hidden instruction could have steered the
     # extractor -- so it is gated with a stronger warning and never called proven.
     unverifiable: bool = False
+    # Human description of the tool, for the 何をするタスク line.
+    task_desc: str = ""
+
+    def structured_display(self, ground_truth: str = "") -> str:
+        """The confirmation as a fixed 6-field template:
+
+          何をするタスク / どの情報が必要 / どこから取得した / 取得情報一覧 /
+          参照情報 / (ベンチマーク時のみ) ground truth
+
+        Everything except the last line is what a PRODUCTION gate shows; the
+        ground-truth line is added only when a benchmark passes it in."""
+        task = self.tool + (f" — {self.task_desc}" if self.task_desc else "")
+        lines = [f"【何をするタスク】{task}",
+                 f"【どの情報が必要】{self.param_name} = {self.value!r}"]
+
+        if self.provenance:
+            src = "; ".join(call for call, _ in self.provenance)
+        elif self.breakdown:
+            src = f"{self.breakdown[0]}（集約）" + (
+                "・" + ", ".join(self.source) if self.source else "")
+        else:
+            src = ", ".join(self.source) if self.source else "（不明）"
+        lines.append(f"【どこから取得した】{src}")
+
+        lines.append("【取得情報一覧】")
+        if self.breakdown:
+            lines += ["  " + r for r in _breakdown_rows(self.breakdown)]
+        elif self.provenance:
+            for _call, result in self.provenance:
+                lines.append(f"  {result}")
+        else:
+            lines.append(f"  {self.value!r}")
+
+        ref = ["未信頼ソース由来。正しいとは限らない—独立したソースで検証せよ。"]
+        if _has_link(self.breakdown):
+            ref.append("リンクも改ざんされうる。クリックでなく別チャネルで確認。")
+        if self.unverifiable:
+            ref.append("LLM抽出（再導出不能）—証明されていない。")
+        hidden = describe_hidden(self.value) if isinstance(self.value, str) else ""
+        if hidden:
+            ref.append(f"見えない文字 {hidden} あり—ほぼ確実に注入。")
+        lines.append("【参照情報】" + " ".join(ref))
+
+        if ground_truth:
+            lines.append(f"【ground truth（ベンチマークのみ）】{ground_truth}")
+        return "\n".join(lines)
 
     def human_warning(self) -> str:
         """Caution to show the human alongside the value. Ordered by how much the
@@ -327,6 +373,29 @@ class PendingConfirmation:
             )
         return ("WARNING: " + "; ".join(parts) + ". The gateway cannot verify the "
                 "value is genuine -- check it against a trusted source before approving.")
+
+
+def _breakdown_rows(breakdown) -> list[str]:
+    """Just the table rows (mark, label, value, link, selected) -- no framing."""
+    op, raw = breakdown
+    rows = [r if isinstance(r, BreakdownRow) else BreakdownRow(_fmt_element(r), r) for r in raw]
+    wlabel = max((len(str(r.label)) for r in rows), default=0)
+    out = []
+    for r in rows:
+        mark = " > " if (r.selected and op in ("min", "max")) else "   "
+        line = f"{mark}{str(r.label):<{wlabel}}  {_fmt_element(r.value):>10}"
+        if r.link:
+            line += f"  {r.link}"
+        if r.selected and op in ("min", "max"):
+            line += "  <- selected"
+        out.append(line)
+    return out
+
+
+def _has_link(breakdown) -> bool:
+    return breakdown is not None and any(
+        isinstance(r, BreakdownRow) and r.link for r in breakdown[1]
+    )
 
 
 def _render_breakdown(param_name: str, breakdown) -> str:

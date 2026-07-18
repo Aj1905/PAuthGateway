@@ -100,6 +100,7 @@ def _analyse(suite_name: str, confirmer=None):
             pc = PendingConfirmation(
                 f"{task_id}", e.tool, i, pname, e.args[i],
                 source=narrow[(e.tool, i)], breakdown=bd, provenance=prov,
+                task_desc=docs[e.tool].description,
             )
             if CautiousConfirmer.judgeable(pc):
                 n_judgeable += 1

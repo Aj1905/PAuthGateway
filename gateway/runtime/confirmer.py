@@ -91,19 +91,19 @@ class ScriptedConfirmer:
 
 
 class InteractiveConfirmer:
-    """Asks a real human on stdin -- used when a person runs the benchmark."""
+    """Asks a real human on stdin -- used when a person runs the benchmark.
+
+    ``ground_truth`` (set by a benchmark harness) is appended as the last field
+    of the structured display; production leaves it empty."""
 
     name = "interactive"
+    ground_truth: str = ""
 
     def confirm(self, pending: PendingConfirmation) -> bool:
-        print("\n----- CONFIRM REQUIRED -----")
-        print(f"  call : {pending.tool}")
-        print(f"  {pending.param_name} = {pending.value!r}")
-        warning = pending.human_warning()
-        if warning:
-            print(f"  {warning}")
+        print("\n----- 確認ゲート -----")
+        print(pending.structured_display(ground_truth=self.ground_truth))
         try:
-            ans = input("  approve this call? [y/N] ").strip().lower()
+            ans = input("承認しますか? [y/N] ").strip().lower()
         except EOFError:
             ans = ""
         return ans in ("y", "yes")

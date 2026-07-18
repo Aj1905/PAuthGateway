@@ -32,6 +32,7 @@ from gateway.runtime.confirmation import (
     PendingConfirmation,
     SourceTrust,
     broad_taint_map,
+    provenance_reference,
     reduction_breakdown,
 )
 from gateway.runtime.confirmer import (
@@ -93,15 +94,22 @@ def _run(scn: Scenario, poisoned: bool, confirmer) -> tuple[Any, bool]:
             bd = reduction_breakdown(rule, i, enf.store)
             if bd:
                 break
+        prov = None
+        if bd is None:
+            for rule in enf.rules_by_tool.get(scn.watch_tool, []):
+                prov = provenance_reference(rule, i, enf.store)
+                if prov:
+                    break
         srcs = taint[(scn.watch_tool, i)]
         pc = PendingConfirmation(
             "c0", scn.watch_tool, i, docs[scn.watch_tool].parameters[i]["name"],
-            e.args[i], source=srcs, breakdown=bd,
+            e.args[i], source=srcs, breakdown=bd, provenance=prov,
+            task_desc=docs[scn.watch_tool].description,
             unverifiable=any(scn.source_trust.is_unverifiable(s) for s in srcs),
         )
-        note = benchmark_ground_truth(scn, poisoned)
-        if note and getattr(confirmer, "name", "") == "interactive":
-            print(f"  {note}")   # bench-only: let the human play the researched user
+        # bench-only: let the human play the researched user (last template field)
+        if getattr(confirmer, "name", "") == "interactive":
+            confirmer.ground_truth = benchmark_ground_truth(scn, poisoned)
         return (e.args[i] if confirmer.confirm(pc) else None), True
     return None, False
 

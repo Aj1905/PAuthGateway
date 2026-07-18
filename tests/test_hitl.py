@@ -82,6 +82,25 @@ def test_cautious_availability_tracks_ux_quality():
     assert _run(DINING, False, CautiousConfirmer())[0] is not None
 
 
+def test_structured_display_has_the_six_fields():
+    from gateway.runtime.confirmation import BreakdownRow, PendingConfirmation
+    pc = PendingConfirmation(
+        "c", "send_money", 1, "amount", 678.49, source=("read_site",),
+        task_desc="Send money to a recipient account.",
+        breakdown=("sum", (BreakdownRow("Design work", 120.0),
+                           BreakdownRow("不明 (unknown)", 500.0))),
+    )
+    prod = pc.structured_display()
+    for field in ("【何をするタスク】", "【どの情報が必要】", "【どこから取得した】",
+                  "【取得情報一覧】", "【参照情報】"):
+        assert field in prod
+    assert "Send money" in prod and "不明 (unknown)" in prod
+    assert "【ground truth" not in prod          # production omits it
+    # benchmark mode appends the ground-truth line last
+    bench = pc.structured_display(ground_truth="INJECTED: the 500 line is fake")
+    assert "【ground truth（ベンチマークのみ）】" in bench and "INJECTED" in bench
+
+
 def test_provenance_makes_a_bare_control_value_judgeable():
     # a bare value (no reduction) with its SOURCE surfaced as 参照すべき情報 gives a
     # cautious human a basis to research -> judgeable (was 0/9 on AgentDojo).
