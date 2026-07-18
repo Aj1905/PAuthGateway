@@ -2,7 +2,7 @@
 
 For each ``ReferenceCase`` in :data:`AI_REFERENCES`:
 
-  1. ``pauth.prepare(reference_code)`` -- A2/A3, rule derivation.
+  1. ``pauth.prepare(reference_code)`` -- Slicer/Rule-compiler, rule derivation.
   2. Execute the reference code through the enforcer (benign run). Any
      denial here is a *false positive* (FP).
   3. Replay every ``forced_injections`` entry through the enforcer with the

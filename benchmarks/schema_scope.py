@@ -1,6 +1,6 @@
 """Classify each tool's RETURN by whether it is schema-structured.
 
-The product connects tools via MCP / OpenAPI, whose response schemas give A1 a
+The product connects tools via MCP / OpenAPI, whose response schemas give the Planner a
 structured, field-typed return (``object {name: string, rating: number}`` /
 ``list of object {...}``). AgentDojo, by contrast, has many tools that return a
 bare ``str`` -- a human-readable, newline-joined blob. The restricted grammar
@@ -9,7 +9,7 @@ must destructure such a blob is *outside the surface the product targets*, not a
 real limitation of it.
 
 This module makes that objective and measurable. It classifies every tool's
-return type -- independent of whether A1 happened to pass -- so a scope decision
+return type -- independent of whether the Planner happened to pass -- so a scope decision
 keys on the tool schema, never on our own success (which would be cherry-picking).
 
 Categories:

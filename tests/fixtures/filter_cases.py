@@ -1,6 +1,6 @@
 """Labelled corpus for the suite-filter recall eval (D1).
 
-The suite_filter keeps a subset of registered suites so A1's prompt does not
+The suite_filter keeps a subset of registered suites so the Planner's prompt does not
 grow linearly with the tool universe. Its blind spot: it may DROP a suite that
 holds a tool the task actually needs. This corpus labels, per prompt, which
 suite is required, so the eval can measure the drop rate over a multi-suite

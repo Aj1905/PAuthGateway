@@ -107,7 +107,7 @@ def gate1_expressible(ut, spec, params, docs=None) -> tuple[bool | None, str]:
     they are still EXPRESSIBLE (the whole point: push everything into the grammar,
     using the gate). Non-control operands and reads need no provenance. This is a
     generous, mechanism-aware ceiling -- it measures 'can be written & gated', not
-    'A1 will produce it' (that is G2) nor 'auto-completes' (gated ones need a human)."""
+    'the Planner will produce it' (that is G2) nor 'auto-completes' (gated ones need a human)."""
     import re
 
     try:
@@ -193,7 +193,7 @@ def gate1_expressible(ut, spec, params, docs=None) -> tuple[bool | None, str]:
 # They are kept apart because fidelity-as-one-gate DIVERGED from the goal (a plan
 # can match the trace yet miss the goal, or reach the goal via another trace).
 
-def _excess_deficiency(ut, spec, params, a1_trace) -> tuple[int | None, int | None]:
+def _excess_deficiency(ut, spec, params, planner_trace) -> tuple[int | None, int | None]:
     """Return (excess, deficiency) call counts vs ground truth, or (None, None)
     if the task ships no ground_truth."""
     try:
@@ -203,7 +203,7 @@ def _excess_deficiency(ut, spec, params, a1_trace) -> tuple[int | None, int | No
     gt_calls = [(fc.function, _positional(fc, params)) for fc in gt]
     matched: set = set()
     excess = 0
-    for tool, args in a1_trace:
+    for tool, args in planner_trace:
         hit = None
         for i, (gt_tool, gt_args) in enumerate(gt_calls):
             if i in matched or gt_tool != tool:
@@ -268,7 +268,7 @@ def eval_suite(suite_name: str) -> list[GateRow]:
     for task_id in sorted(adj.user_tasks):
         ut = adj.user_tasks[task_id]
 
-        # Gate 1 is A1-independent (property of the task vs the grammar).
+        # Gate 1 is the Planner-independent (property of the task vs the grammar).
         g1ok, _ = gate1_expressible(ut, spec, params)
         g1 = "n/a" if g1ok is None else ("pass" if g1ok else "fail")
 
@@ -290,12 +290,12 @@ def eval_suite(suite_name: str) -> list[GateRow]:
         pre = copy.deepcopy(env)
         enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), signer)
         rep = execute_generated_code(prepared.source, enf, params, spec.runner_factory(env))
-        a1_trace = [(e.tool, list(e.args)) for e in rep.events if e.decision.permit]
+        planner_trace = [(e.tool, list(e.args)) for e in rep.events if e.decision.permit]
 
         # Gate 3: runtime soundness (ran clean)
         g3 = "pass" if (rep.crashed is None and not rep.denied) else "fail"
 
-        excess, deficiency = _excess_deficiency(ut, spec, params, a1_trace)
+        excess, deficiency = _excess_deficiency(ut, spec, params, planner_trace)
 
         # Gate 4: deficiency-free -- every REQUIRED tool call was made (correct
         # args). END of PAuth's chain: its mandate is the tool CALLS, not the
@@ -331,7 +331,7 @@ def eval_suite(suite_name: str) -> list[GateRow]:
                 break
 
         # TOOL_CALL_COST: enforced tool calls (a deterministic cost proxy).
-        tool_calls = len(a1_trace)
+        tool_calls = len(planner_trace)
         rows.append(GateRow(task_id, g1, g2, g3, g4, out, xs, gS, tool_calls))
     return rows
 
@@ -351,7 +351,7 @@ def _avg_cost(rows) -> str:
 
 
 def main() -> int:
-    print("Per-gate attribution -- prompt -> correct execution (cached one-shot A1)\n")
+    print("Per-gate attribution -- prompt -> correct execution (cached one-shot the Planner)\n")
     print("  [AVAIL_1..4 = nested PAuth chain ⊇]   [OUTCOME = agent, apart]   "
           "[SEC_*]   [COST_*]\n")
     hdr = (f"{'suite':<10}{'A1_EXPR':>9}{'A2_PLAN':>9}{'A3_RAN':>8}{'A4_CALLS':>9}"

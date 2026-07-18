@@ -7,8 +7,8 @@ Two collections live here:
   Used by ``tests/test_recognizer.py``.
 
 * :data:`FREEFORM_CASES` -- free-form natural-language prompts for measuring
-  the LLM A1 + A2/A3 pipeline (``gateway/planning/agentic_a1.py``). ``expected_accept``
-  reflects whether we expect the agentic A1 with grammar repair to succeed.
+  the LLM the Planner + Slicer/Rule-compiler pipeline (``gateway/planning/agentic_planner.py``). ``expected_accept``
+  reflects whether we expect the agentic the Planner with grammar repair to succeed.
   ``must_call`` / ``must_not_call`` are surface-level intent hints used to
   detect "accepted but generated the wrong code".
 
@@ -97,8 +97,8 @@ RECOGNIZER_CASES: list[PromptCase] = [
 
 
 # --------------------------------------------------------------------------
-# FREEFORM_CASES -- LLM A1 + A2/A3 pipeline.
-# expected_accept reflects measured behaviour with agentic A1 (max_retries=3).
+# FREEFORM_CASES -- LLM the Planner + Slicer/Rule-compiler pipeline.
+# expected_accept reflects measured behaviour with agentic the Planner (max_retries=3).
 # --------------------------------------------------------------------------
 
 FREEFORM_CASES: list[PromptCase] = [
@@ -115,7 +115,7 @@ FREEFORM_CASES: list[PromptCase] = [
         expected_accept=True,
         must_call=["get_product_details", "add_to_cart", "get_cart_summary", "send_money"],
         must_not_call=["list_products"],
-        note="natural rephrasing; agentic A1 succeeds after 1 grammar-repair",
+        note="natural rephrasing; agentic the Planner succeeds after 1 grammar-repair",
     ),
     PromptCase(
         id="A2_aurora_terse",
@@ -127,7 +127,7 @@ FREEFORM_CASES: list[PromptCase] = [
         expected_accept=True,
         must_call=["get_product_details", "add_to_cart", "get_cart_summary", "send_money"],
         must_not_call=["list_products"],
-        note="terse phrasing; agentic A1 succeeds",
+        note="terse phrasing; agentic the Planner succeeds",
     ),
 
     # cheapest-under-$80 -- structurally requires nested condition (cheapest
@@ -145,13 +145,13 @@ FREEFORM_CASES: list[PromptCase] = [
         must_call=["list_products", "add_to_cart", "get_cart_summary", "send_money"],
         must_not_call=["get_product_details"],
         note=(
-            "measured 2026-06-04: even agentic A1 with N=3 fails -- LLM keeps "
+            "measured 2026-06-04: even agentic the Planner with N=3 fails -- LLM keeps "
             "writing nested if for 'after successfully adding'. structural "
             "limitation of the restricted grammar, not a retry-budget issue."
         ),
     ),
 
-    # under-specified prompts -- A1 may fabricate or fail.
+    # under-specified prompts -- the Planner may fabricate or fail.
     PromptCase(
         id="C1_missing_iban",
         prompt=(

@@ -1,11 +1,11 @@
-"""Agentic A1: restricted-grammar code generation with grammar + semantic self-repair.
+"""Agentic the Planner: restricted-grammar code generation with grammar + semantic self-repair.
 
-The paper's A1 step is one-shot. Free-form measurement showed:
+The paper's the Planner step is one-shot. Free-form measurement showed:
 
 * 5/7 first-try failures were nested-if violations (Appendix A rule 10) --
   the LLM "knows" the rule but writes defensive Python anyway.
 * Grammar-valid outputs sometimes silently drop part of the user's intent
-  to satisfy the restricted grammar (B1 / two_products / post_action).
+  to satisfy the restricted grammar (call interception / two_products / post_action).
 
 This module adds a two-stage validator inside a feedback loop (grammar repair + semantic judge):
 
@@ -22,7 +22,7 @@ This module adds a two-stage validator inside a feedback loop (grammar repair + 
      return the last attempt (the caller's ``pauth.prepare`` will reject
      it cleanly).
 
-This stays faithful to the paper's A2/A3/B1-B4 invariants -- only A1 is
+This stays faithful to the paper's Slicer/Rule-compiler/runtime enforcement invariants -- only the Planner is
 augmented. ``pauth/codegen.py`` is untouched so the paper reproduction path
 remains the one-shot version.
 """
@@ -65,7 +65,7 @@ def load_me_env(path: Path = ME_ENV_PATH) -> None:
     """Populate ``os.environ`` from ``me.env`` (parallel to PAuth's ``.env``).
 
     Keeps Anthropic credentials in a separate file from ``.env`` (which carries
-    the OpenAI key for the A1 generator). Silently no-ops if the file is missing
+    the OpenAI key for the Planner generator). Silently no-ops if the file is missing
     -- callers are expected to surface a useful error when the variable they
     need is absent.
     """
@@ -370,7 +370,7 @@ def _judge_intent(
     """
     if _is_anthropic_model(judge_model):
         # ``temperature`` is deprecated on newer Claude models (opus 4.8+); omit
-        # it entirely. Determinism matters less for the judge than for A1, and
+        # it entirely. Determinism matters less for the judge than for the Planner, and
         # Anthropic's default sampling is already low-variance for short JSON
         # outputs like this.
         response = judge_client.messages.create(
@@ -391,7 +391,7 @@ def _judge_intent(
         # shape. Weaker decorrelation than a cross-provider judge; used when
         # only an OpenAI key is available. ``temperature`` is omitted for the
         # same reason as the Anthropic branch -- gpt-5-family models reject
-        # non-default values, and judge determinism matters less than A1's.
+        # non-default values, and judge determinism matters less than the Planner's.
         response = judge_client.chat.completions.create(
             model=judge_model,
             messages=[
@@ -538,7 +538,7 @@ def generate_code_with_self_repair(
     if client is None:
         if not has_api_key():
             raise RuntimeError(
-                "OPENAI_API_KEY is not set; cannot run agentic A1 without a cache hit"
+                "OPENAI_API_KEY is not set; cannot run agentic the Planner without a cache hit"
             )
         from openai import OpenAI  # lazy import
 
@@ -619,11 +619,11 @@ def generate_code_with_self_repair(
         # return, or comparing a datetime field to a string. Runs only when the
         # caller supplies an ``executor`` (the benchmark path, which has a mock
         # env at plan time); a live deployment would need a sandboxed sim env, so
-        # production callers may leave it None. The probe never raises into A1.
+        # production callers may leave it None. The probe never raises into the Planner.
         if executor is not None:
             try:
                 runtime_error = executor(code)
-            except Exception:  # noqa: BLE001 -- a probe failure must not crash A1
+            except Exception:  # noqa: BLE001 -- a probe failure must not crash the Planner
                 runtime_error = None
             if runtime_error:
                 failure_history.append(f"runtime: {runtime_error}")
@@ -644,7 +644,7 @@ def generate_code_with_self_repair(
                 intent_ok, intent_issues = _judge_intent(
                     task, code, judge_model, judge_client
                 )
-            except Exception as exc:  # noqa: BLE001 -- judge failures shouldn't crash A1
+            except Exception as exc:  # noqa: BLE001 -- judge failures shouldn't crash the Planner
                 # Conservative fallback: treat judge-side errors as a failed
                 # intent check so we don't accept unverified code.
                 intent_ok = False

@@ -1,4 +1,4 @@
-"""Session persistence tests (B1)."""
+"""Session persistence tests (call interception)."""
 
 from __future__ import annotations
 

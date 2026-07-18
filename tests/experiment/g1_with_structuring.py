@@ -1,6 +1,6 @@
 """Does the structuring layer raise the MEASURED G1 ceiling? (deterministic)
 
-G1 (expressibility) is A1-independent: gate1_expressible asks whether every
+G1 (expressibility) is the Planner-independent: gate1_expressible asks whether every
 ground-truth argument is a prompt literal or a clean FIELD of a prior tool
 result. A prose-locked value (an amount inside a text blob) fails, because
 read_file returns a bare string with no such field.
@@ -13,7 +13,7 @@ to the pool. That models a plan calling ``structure_text`` on the read and
 referencing ``view.amounts`` / ``sum(view.amounts)``.
 
 So the delta is the G1 CEILING lift the structuring + sum machinery makes
-possible -- with NO A1 regeneration and NO generation noise. (Whether A1 would
+possible -- with NO the Planner regeneration and NO generation noise. (Whether the Planner would
 actually emit such plans is the separate, noisier question.)
 
 Run:  .venv/bin/python -m tests.experiment.g1_with_structuring

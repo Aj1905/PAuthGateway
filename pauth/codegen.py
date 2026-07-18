@@ -1,9 +1,9 @@
-"""A1 -- imperative code generation (paper sec. 4.1.1).
+"""the Planner -- imperative code generation (paper sec. 4.1.1).
 
 Given a user task and the schema of the available tools (extended with an
 *output* schema, paper sec. 4.1.1), an LLM generates a ``run`` function in the
 restricted grammar of Appendix A.  This is the only LLM-dependent step of
-PAuth; everything downstream (A2, A3, B1-B4) is deterministic.
+PAuth; everything downstream (the Slicer, the Rule compiler, runtime enforcement) is deterministic.
 
 The OpenAI call is made lazily and only when ``OPENAI_API_KEY`` is available.
 Generated code is cached on disk so a benchmark re-run costs nothing.
@@ -277,7 +277,7 @@ def generate_code(
         if not has_api_key():
             raise RuntimeError(
                 "OPENAI_API_KEY is not set. Export it (or put it in .env) to run "
-                "the A1 code-generation step."
+                "the Planner code-generation step."
             )
         from openai import OpenAI  # imported lazily
 

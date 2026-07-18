@@ -34,7 +34,7 @@ def test_collision_raises_without_namespace():
 def test_namespace_resolves_collision():
     merged = merge_suites("m", {"a": _ping_suite("A"), "b": _ping_suite("B")}, namespace=True)
     assert set(merged.tool_names()) == {"a__ping", "b__ping"}
-    # namespaced names are valid Python identifiers (grammar/A1 can call them).
+    # namespaced names are valid Python identifiers (grammar/the Planner can call them).
     assert all(n.replace("__", "_").isidentifier() for n in merged.tool_names())
     # the tool doc carries the namespaced name too.
     docs = {d.name for d in merged.tool_docs()}

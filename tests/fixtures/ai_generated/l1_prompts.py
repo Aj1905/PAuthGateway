@@ -8,8 +8,8 @@ Two collections:
   fields, extra clauses), and (c) prompts that should clearly reject.
 
 * :data:`AI_FREEFORM_CASES` -- varied shopping-domain prompts for the LLM
-  A1 + A2/A3 pipeline. ``expected_accept`` is the AI's *guess* at whether
-  agentic A1 (max_retries=3) will succeed. The point of human review is
+  the Planner + Slicer/Rule-compiler pipeline. ``expected_accept`` is the AI's *guess* at whether
+  agentic the Planner (max_retries=3) will succeed. The point of human review is
   to correct these guesses based on measurement.
 """
 
@@ -114,7 +114,7 @@ AI_RECOGNIZER_CASES: list[PromptCase] = [
 
 
 # --------------------------------------------------------------------------
-# FREEFORM candidates (LLM A1 path, shopping suite)
+# FREEFORM candidates (LLM the Planner path, shopping suite)
 # --------------------------------------------------------------------------
 
 AI_FREEFORM_CASES: list[PromptCase] = [
@@ -128,7 +128,7 @@ AI_FREEFORM_CASES: list[PromptCase] = [
         ),
         expected_accept=True,
         must_call=["add_to_cart", "get_cart_summary", "send_money"],
-        note="AI-generated: no guards, should A1-compile cleanly (similar to C2)",
+        note="AI-generated: no guards, should the Planner-compile cleanly (similar to C2)",
     ),
     PromptCase(
         id="ai_free_single_guard_aurora",
@@ -167,7 +167,7 @@ AI_FREEFORM_CASES: list[PromptCase] = [
         note=(
             "AI-generated, reviewed 2026-06-04: 'whichever is cheaper' naturally "
             "requires nested-if/else, which the restricted grammar forbids. In "
-            "practice (gpt-4.1 + agentic A1) the LLM simplifies the comparison "
+            "practice (gpt-4.1 + agentic the Planner) the LLM simplifies the comparison "
             "and produces a grammar-valid plan that drops part of the user "
             "intent. The gateway accepts because grammar is satisfied; the "
             "intent drift is a known limitation of the PreAuth "
@@ -195,14 +195,14 @@ AI_FREEFORM_CASES: list[PromptCase] = [
         ),
     ),
 
-    # Underspecified -- A1 might fabricate, A2/A3 might still compile.
+    # Underspecified -- the Planner might fabricate, Slicer/Rule-compiler might still compile.
     PromptCase(
         id="ai_free_no_constants",
         prompt="Buy something nice for under $50 and pay for it.",
         expected_accept=False,
         must_call=[],
         note=(
-            "AI-generated: under-specified; A1 may either fabricate "
+            "AI-generated: under-specified; the Planner may either fabricate "
             "constants (compile-ok but semantically wrong) or refuse. AI guess "
             "leans reject because no IBAN/subject/date hooks exist."
         ),
@@ -234,7 +234,7 @@ AI_FREEFORM_CASES: list[PromptCase] = [
         expected_accept=True,
         must_call=["add_to_cart", "get_cart_summary", "send_money"],
         note=(
-            "AI-generated: polite filler shouldn't affect A1, but worth "
+            "AI-generated: polite filler shouldn't affect the Planner, but worth "
             "checking robustness."
         ),
     ),

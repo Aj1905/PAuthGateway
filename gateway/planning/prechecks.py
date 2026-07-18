@@ -15,7 +15,7 @@ over-authorization classes below never depend on an LLM verdict:
 One-sided by construction: every check only *rejects*; a false trigger is an
 over-rejection (recoverable via the retry loop), never an over-authorization.
 Constants are compared against the prompt; variables are left to the
-deterministic dataflow layers (A2/A3 + enforcer), which already bind them to
+deterministic dataflow layers (Slicer/Rule-compiler + enforcer), which already bind them to
 signed observations.
 
 """

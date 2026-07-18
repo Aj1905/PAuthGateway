@@ -2,7 +2,7 @@
 
 Metric: DROPPED_NEEDED_SUITES (needed suite dropped by the filter) and
 SUITE_FILTER_RECALL over the labelled corpus, swept across top_k. A small top_k
-shrinks A1's prompt but risks dropping the suite a task needs -- this quantifies
+shrinks the Planner's prompt but risks dropping the suite a task needs -- this quantifies
 that blind spot.
 
 Run: .venv/bin/python -m eval.filter_recall

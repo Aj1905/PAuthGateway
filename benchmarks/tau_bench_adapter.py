@@ -2,19 +2,19 @@
 
 tau-bench is realistic structured tool-agent work: typed function-calling over a
 DB-backed retail domain (users / orders / products), with policy rules. We use it
-for the AVAILABILITY axis -- can A1 plan on real, complex, stateful tasks? -- the
+for the AVAILABILITY axis -- can the Planner plan on real, complex, stateful tasks? -- the
 honest counterweight to FN=0. (tau-bench has no injections; we author a few
 off-plan probes for the security axis.)
 
 tau-bench tools return JSON STRINGS. This adapter (a) surfaces a STRUCTURED return
-schema (from the domain entities) so A1 sees fields, not "string" (the travel
+schema (from the domain entities) so the Planner sees fields, not "string" (the travel
 stringified-collection problem), and (b) parses each result into an attribute-
 accessible object so a generated plan's ``order.status`` works -- gateway-side
 structuring of an otherwise stringified API.
 
 Reference plans come from each task's ground-truth actions (fully-resolved
 constant calls), so the suite runs OFFLINE. The real availability measure -- does
-A1 GENERATE a valid plan from the instruction -- needs a live run:
+the Planner GENERATE a valid plan from the instruction -- needs a live run:
 ``python -m eval.fpfn --suites tau_retail --no-cache`` (API key).
 """
 
@@ -29,7 +29,7 @@ from pauth.suites.base import Call, SuiteSpec, TaskSpec, ToolSpec
 
 # Structured return schema per tool, reconstructed from the retail entities (the
 # tool bodies only ``json.dumps`` these). Approximate but field-typed, which is
-# what A1 needs to navigate the result.
+# what the Planner needs to navigate the result.
 _RETURNS = {
     "get_order_details": ("object {order_id: string, user_id: string, address: object, "
                           "items: list of object, fulfillments: list of object, "
@@ -119,7 +119,7 @@ def _reference_code(actions, param_order) -> str:
 
 def build_suite(reference: bool = True) -> SuiteSpec:
     """``reference=True`` ships the ground-truth plan (offline sanity). With
-    ``reference=False`` tasks carry NO plan, so A1 must GENERATE one from the
+    ``reference=False`` tasks carry NO plan, so the Planner must GENERATE one from the
     instruction -- the real availability measure (needs an API key)."""
     env = _env()
     tools = _tools(env)
@@ -163,5 +163,5 @@ def build_suite(reference: bool = True) -> SuiteSpec:
 
 
 def build_suite_a1() -> SuiteSpec:
-    """A1-generation variant: no reference plan, so A1 plans from the instruction."""
+    """the Planner-generation variant: no reference plan, so the Planner plans from the instruction."""
     return build_suite(reference=False)

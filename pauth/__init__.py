@@ -3,7 +3,7 @@
 A faithful reimplementation of the deterministic core of PAuth (Sharma, Jiang,
 Lin & Chen, arXiv:2603.17170): NL-slice derivation, Algorithm-1 rule
 compilation, signed envelopes and the runtime enforcer.  The LLM-dependent
-A1 step lives in :mod:`pauth.codegen`.
+the Planner step lives in :mod:`pauth.codegen`.
 """
 
 from .enforcer import (

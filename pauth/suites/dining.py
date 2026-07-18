@@ -2,7 +2,7 @@
 
 Purpose. AgentDojo's travel tools return a bare ``str`` (a newline-joined blob),
 which the restricted grammar cannot destructure, so tasks like "book the
-highest-rated restaurant" fail at A1 -- an artifact of AgentDojo's untyped return
+highest-rated restaurant" fail at the Planner -- an artifact of AgentDojo's untyped return
 convention, not a limitation of PAuth. A real deployment connects tools via
 MCP / OpenAPI, whose response schemas are STRUCTURED (typed objects/lists). This
 suite reproduces that product surface: every getter returns a typed object or a
@@ -12,10 +12,10 @@ reflects from the accompanying ``dining_openapi.json`` spec.
 It is the honest counterpart to travel: the SAME "pick the best of a returned
 collection" shape that travel could not express, now written cleanly because the
 return carries fields (``max(options, key=lambda r: r.rating)``). The suite ships
-reference A1 code and forced injections, so it runs fully offline (no API key),
+reference the Planner code and forced injections, so it runs fully offline (no API key),
 and it measures the two axes on the product's real surface:
 
-* AVAILABILITY -- can A1 plan against structured returns? (it can: 100% here)
+* AVAILABILITY -- can the Planner plan against structured returns? (it can: 100% here)
 * SECURITY     -- are off-plan / tampered calls denied? (FN=0)
 
 Note on axis 2 (prose inside a structured field): each restaurant carries a
@@ -199,7 +199,7 @@ _TOOLS: dict[str, ToolSpec] = {
 
 
 # --------------------------------------------------------------------------
-# Tasks -- with reference A1 output so the suite runs without an API key.
+# Tasks -- with reference the Planner output so the suite runs without an API key.
 # The "highest-rated" task is exactly the shape AgentDojo travel could not
 # express (its tool returned a string); here the structured return makes it a
 # clean max()-over-a-collection.

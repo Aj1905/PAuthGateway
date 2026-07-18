@@ -1,6 +1,6 @@
 """Pluggable plan generation for the gateway.
 
-This module owns the volatile A1 boundary: turning a user prompt into the
+This module owns the volatile the Planner boundary: turning a user prompt into the
 restricted imperative ``run`` function that PAuth can validate and slice.
 Everything downstream of this boundary should stay stable while deployments
 swap recognizers, LLM prompts, fine-tuned models, or external planning
@@ -17,7 +17,7 @@ from typing import Callable, Protocol
 from pauth.codegen import generate_code
 from pauth.suites.base import SuiteSpec
 
-from .agentic_a1 import generate_code_with_self_repair
+from .agentic_planner import generate_code_with_self_repair
 from .core import recognize_prompt, run_to_pauth_code
 
 
@@ -73,7 +73,7 @@ def normalize_strategy_name(name: str | None) -> str:
 
 @dataclasses.dataclass(frozen=True)
 class PlanDraft:
-    """Candidate output of A1 before grammar/slice/rule compilation."""
+    """Candidate output of the Planner before grammar/slice/rule compilation."""
 
     suite_name: str
     code: str
@@ -114,7 +114,7 @@ class DeterministicRecognizerPlanner:
 
 @dataclasses.dataclass(frozen=True)
 class LLMFreeformPlanner:
-    """Free-form path: ask A1 to generate restricted code for one suite."""
+    """Free-form path: ask the Planner to generate restricted code for one suite."""
 
     suite_name: str
     model: str = "gpt-4.1"
@@ -156,7 +156,7 @@ class LLMFreeformPlanner:
         return PlanDraft(
             suite_name=self.suite_name,
             code=code,
-            reason=f"plan accepted via LLM A1 ({self.suite_name})",
+            reason=f"plan accepted via LLM the Planner ({self.suite_name})",
         )
 
 

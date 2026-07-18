@@ -12,7 +12,7 @@ the confirmation gate fired exactly when it should:
 
 For each correctly-held case it also verifies that approving the value lets the
 call proceed (the gate does not permanently block legitimate work). Offline: the
-corpus ships reference A1 code, so no API key is needed.
+corpus ships reference the Planner code, so no API key is needed.
 
 Run: .venv/bin/python -m tests.experiment.grill_eval
 """

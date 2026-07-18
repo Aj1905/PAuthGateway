@@ -33,7 +33,7 @@ def _loader(name):
 
 
 # ---------------------------------------------------------------------------
-# Reference decomposition of the B1/cheapest task -- the canonical prompt the
+# Reference decomposition of the call interception/cheapest task -- the canonical prompt the
 # single-run() grammar could not express (nested "after successfully adding").
 # ---------------------------------------------------------------------------
 
@@ -64,7 +64,7 @@ CHEAPEST_PLAN = CompositePlan(
         StageTemplate(code=CHEAPEST_STAGE_1),
         StageTemplate(code=CHEAPEST_STAGE_2, guard="added == True"),
     ),
-    reason="reference decomposition (B1 cheapest)",
+    reason="reference decomposition (call interception cheapest)",
 )
 
 

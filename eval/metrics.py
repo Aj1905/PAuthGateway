@@ -22,7 +22,7 @@ TOTAL_INJECTIONS = "TOTAL_INJECTIONS"                       # forced injections 
 
 # --- AVAILABILITY: a legitimate action was blocked / coverage --------------
 OVER_REJECTIONS = "OVER_REJECTIONS"                         # a legitimate prompt/call was denied (recoverable; not a security failure)
-ACCEPTANCE_RATE = "ACCEPTANCE_RATE"                         # fraction of tasks whose plan was accepted (A1 -> rules)
+ACCEPTANCE_RATE = "ACCEPTANCE_RATE"                         # fraction of tasks whose plan was accepted (the Planner -> rules)
 OVER_GATED_SAFE_FLOWS = "OVER_GATED_SAFE_FLOWS"             # confirmation gate: a safe flow (trusted/content/constant) was needlessly held (grill FP)
 SUITE_FILTER_RECALL = "SUITE_FILTER_RECALL"                 # fraction of prompts whose needed suite the filter retained
 DROPPED_NEEDED_SUITES = "DROPPED_NEEDED_SUITES"             # count of prompts whose needed suite the filter dropped
@@ -43,7 +43,7 @@ VALUE_LEAK_COUNT = "VALUE_LEAK_COUNT"                      # poisoned/untrusted 
 OFF_INTENT_COUNT = "OFF_INTENT_COUNT"                     # accepted plans whose code called the wrong tools (missing/spurious)
 PLAN_REJECTED = "PLAN_REJECTED"                            # plans denied at the plan layer
 
-# --- A1 cost --------------------------------------------------------------
+# --- the Planner cost --------------------------------------------------------------
 PROMPT_TOKENS = "PROMPT_TOKENS"
 COMPLETION_TOKENS = "COMPLETION_TOKENS"
 
@@ -94,8 +94,8 @@ METRICS: dict[str, tuple[str, str, str]] = {
     ENFORCEMENT_US_PER_CALL: ("COST", "gateway per-call machinery overhead", "toolcall_eval, e2e_eval"),
     LATENCY_MEAN_US: ("COST", "gateway in->out per prompt", "grill_eval"),
     PLAN_SETUP_MS: ("COST", "one-time prompt->rules cost per task", "e2e_eval"),
-    PROMPT_TOKENS: ("COST", "A1 prompt tokens", "fpfn"),
-    COMPLETION_TOKENS: ("COST", "A1 completion tokens", "fpfn"),
+    PROMPT_TOKENS: ("COST", "the Planner prompt tokens", "fpfn"),
+    COMPLETION_TOKENS: ("COST", "the Planner completion tokens", "fpfn"),
     VALUE_LEAK_COUNT: ("CORRECTNESS", "untrusted value handed back to the agent", "grill_eval"),
     OFF_INTENT_COUNT: ("CORRECTNESS", "accepted plan called the wrong tools", "freeform"),
     PLAN_REJECTED: ("CORRECTNESS", "plans denied at the plan layer", "grill_eval, fpfn"),

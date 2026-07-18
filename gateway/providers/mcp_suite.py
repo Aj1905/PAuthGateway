@@ -117,7 +117,7 @@ class StdioTransport:
         on_restart: "Callable[[StdioTransport], None] | None" = None,
         max_restarts: int = 3,
     ) -> None:
-        """Spawn ``command`` and supervise it (B4).
+        """Spawn ``command`` and supervise it (envelope signing).
 
         A crashed subprocess is respawned on the next ``rpc`` up to
         ``max_restarts`` times (crash-loop guard). ``on_restart`` is invoked

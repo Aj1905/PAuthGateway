@@ -73,7 +73,7 @@ def merge_suites(
                     f"{prev!r} and {source_name!r}; rename one or set namespace=True"
                 )
             if namespace:
-                # Rename the tool identifier the grammar/enforcer/A1 see.
+                # Rename the tool identifier the grammar/enforcer/the Planner see.
                 spec = dataclasses.replace(
                     spec, name=merged_name,
                     doc=dataclasses.replace(spec.doc, name=merged_name),

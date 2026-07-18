@@ -2,7 +2,7 @@
 
 Feeds each hand-written intent-deficient case from
 ``tests/fixtures/ai_generated/l1_adversarial.py`` directly to
-:func:`gateway.agentic_a1._judge_intent` and reports the verdict.
+:func:`gateway.agentic_planner._judge_intent` and reports the verdict.
 
 Pass criterion: every case is ruled ``intent_captured=False`` with at
 least one non-empty issue. A judge that rubber-stamps will fail visibly
@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from gateway.planning.agentic_a1 import (
+from gateway.planning.agentic_planner import (
     DEFAULT_JUDGE_MODEL,
     _get_anthropic_client,
     _judge_intent,

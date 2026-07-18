@@ -1,7 +1,7 @@
 """L3 -- reference code + forced-injection fixtures (paper sec. 5.1).
 
-The canonical fixture type for paper-style A2/A3/B1-B4 evaluation: skip the
-LLM A1, hand the enforcer a reference ``run`` function known to be correct,
+The canonical fixture type for paper-style Slicer/Rule-compiler/runtime enforcement evaluation: skip the
+LLM the Planner, hand the enforcer a reference ``run`` function known to be correct,
 and check that a list of malicious calls is rejected one by one.
 
 This file currently defines the type only. The historical worked-example

@@ -1,9 +1,9 @@
 """Plan-time suite filtering.
 
-Plan generation (A1) hands the LLM the schemas of every registered
+Plan generation (the Planner) hands the LLM the schemas of every registered
 tool. With one or two suites this is fine; with twenty MCPs the prompt
 balloons, the LLM gets distracted, and grammar violations rise. This
-module narrows the universe to a likely-relevant subset before A1 sees
+module narrows the universe to a likely-relevant subset before the Planner sees
 it.
 
 The default implementation is intentionally cheap and deterministic:

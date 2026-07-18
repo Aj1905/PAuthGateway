@@ -1,10 +1,10 @@
 """Semantics-preserving normalization applied before slicing (Tier-1).
 
 The restricted grammar rejects several constructs that are not *unsafe*, merely
-outside the slicer's canonical form. Rejecting them lowers A1's acceptance rate
+outside the slicer's canonical form. Rejecting them lowers the Planner's acceptance rate
 without buying any security. This module rewrites such code into the canonical
 form the slicer already understands, **without changing what the code does** --
-so the deterministic core (A2 slices / A3 rules / B1-B4 enforcement) is untouched
+so the deterministic core (the Slicer slices / the Rule compiler rules / runtime enforcement enforcement) is untouched
 and the FP/FN guarantee is unaffected. Two transforms, both run after
 :func:`strip_dead_code` and before :func:`validate_semantics`:
 
@@ -22,7 +22,7 @@ and the FP/FN guarantee is unaffected. Two transforms, both run after
   "one definition per name" invariant the slicer assumes. It is applied only when
   every reassignment is straight-line; if any reassigned name is defined inside a
   conditional (which would need a merge/phi), the pass bails and leaves the code
-  unchanged so behavior is exactly as before (still rejected at A1 -- no
+  unchanged so behavior is exactly as before (still rejected at the Planner -- no
   regression, no unsound slice).
 """
 

@@ -285,8 +285,8 @@ def measure(corpus: Corpus, task: Task, mode: str) -> dict[str, str]:
 
     # excess / deficiency vs ground truth (AgentDojo: from ut; tau/injec: ref trace)
     if task.ut is not None:
-        a1_trace = [(e.tool, list(e.args)) for e in rep.events if e.decision.permit]
-        excess, deficiency = _excess_deficiency(task.ut, suite, suite.tool_params(), a1_trace)
+        planner_trace = [(e.tool, list(e.args)) for e in rep.events if e.decision.permit]
+        excess, deficiency = _excess_deficiency(task.ut, suite, suite.tool_params(), planner_trace)
     else:
         ref = _ref_trace(suite, task.ref_code)
         excess, deficiency = _exc_def_generic(ref, trace_strs)
@@ -327,7 +327,7 @@ def _agentic_plan(suite, task, scratch_dir):
     cached to scratch so re-runs are free. Needs OPENAI_API_KEY. This is the
     `planner=agentic` knob -- what eval/task_success measured for fresh plans."""
     from pathlib import Path
-    from gateway.planning.agentic_a1 import generate_code_with_self_repair
+    from gateway.planning.agentic_planner import generate_code_with_self_repair
     d = Path(scratch_dir); d.mkdir(parents=True, exist_ok=True)
     pf = d / f"{task.task_id}.py"
     if pf.exists():

@@ -128,7 +128,7 @@ def restore_channel(
     session_id: str,
     audit_log: "AuditLog | None" = None,
 ) -> AgentChannel | None:
-    """Rebuild a persisted session by replaying its stored prompt (B1).
+    """Rebuild a persisted session by replaying its stored prompt (call interception).
 
     Returns a fresh :class:`AgentChannel` with the plan re-established, or
     ``None`` if the session is not in the store. Mid-task observations are not
@@ -152,7 +152,7 @@ class _Handler(BaseHTTPRequestHandler):
     # staticmethod: a plain function stored as a class attribute would bind to
     # the handler instance (self.suite_loader -> loader(self, name), 2 args).
     suite_loader: Callable[[str], SuiteSpec] = staticmethod(default_suite_loader)
-    session_store: "SessionStore | None" = None  # B1: opt-in persistence (None = off)
+    session_store: "SessionStore | None" = None  # call interception: opt-in persistence (None = off)
     audit_log: "AuditLog | None" = None  # opt-in shared persistent audit trail
     auth: "TokenAuth | None" = None  # None = open mode (loopback only; warned)
     # Optional LLM proxy: when set, /v1/* is forwarded to this upstream so the
@@ -286,7 +286,7 @@ class _Handler(BaseHTTPRequestHandler):
                     self._send_json(403, {"error": "session belongs to another principal"})
                     return
             else:
-                # Restore a persisted session after a restart (B1); otherwise
+                # Restore a persisted session after a restart (call interception); otherwise
                 # create implicitly (first message under a client-supplied id).
                 # Either way the session is bound to THIS principal; a persisted
                 # session owned by someone else is refused.
@@ -425,7 +425,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--session-store", default=os.environ.get("SESSION_STORE_PATH", ""),
-        help="JSON file to persist sessions across restarts (B1); empty = disabled",
+        help="JSON file to persist sessions across restarts (call interception); empty = disabled",
     )
     parser.add_argument(
         "--audit-log", default=os.environ.get("AUDIT_LOG_PATH", ""),

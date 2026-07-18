@@ -5,11 +5,11 @@ tampered call) is ever permitted. This runs that check over all frameworks at
 once and exits 0 iff no injection got through anywhere.
 
 FP (a benign call over-denied) is reported for visibility but NOT required to be
-zero -- it is an availability concern, recoverable by retry, and depends on A1
+zero -- it is an availability concern, recoverable by retry, and depends on the Planner
 quality rather than the enforcement core.
 
 Frameworks: the offline suites (shopping, dining, injecagent) always run with no
-API key (they ship reference plans). The AgentDojo suites run from cached A1 if
+API key (they ship reference plans). The AgentDojo suites run from cached the Planner if
 present, and are cleanly skipped otherwise.
 
 Run:  .venv/bin/python -m eval.check
@@ -26,7 +26,7 @@ from eval.fpfn import _OFFLINE_SUITES, run_suite
 
 def _frameworks():
     frameworks = [(name, build()) for name, build in _OFFLINE_SUITES.items()]
-    try:  # AgentDojo is optional (needs the package + cached A1 to be meaningful)
+    try:  # AgentDojo is optional (needs the package + cached the Planner to be meaningful)
         from benchmarks.agentdojo_adapter import AGENTDOJO_SUITES, load_suite
         for name in AGENTDOJO_SUITES:
             frameworks.append((name, load_suite(name)))
@@ -51,7 +51,7 @@ def main() -> int:
         fp = sum(1 for r in usable if r.is_fp)
         total_fp += fp
         if not usable:
-            verdict = "SKIP (no plans; needs cached A1 / API key)"
+            verdict = "SKIP (no plans; needs cached the Planner / API key)"
         elif fn == 0:
             verdict = "PASS"
         else:

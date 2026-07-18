@@ -2,7 +2,7 @@
 
 The point (the whole thread): a prose value (a bill amount buried in a text
 file) is inexpressible because the string-op-free grammar cannot pull it out, so
-A1 either hardcodes it (rejected by precheck: not prompt-entailed) or fails --
+the Planner either hardcodes it (rejected by precheck: not prompt-entailed) or fails --
 it never reaches the confirmation gate. ``structure_text`` turns the prose into
 typed FIELDS, so the value flows as a DATAFLOW field (not a constant): precheck
 defers dataflow, the taint gate marks it untrusted (structure_text is an

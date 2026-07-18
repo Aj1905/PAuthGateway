@@ -1,4 +1,4 @@
-"""Runtime enforcement (paper sec. 3.4 and sec. 4.1.3, steps B1-B4).
+"""Runtime enforcement (paper sec. 3.4 and sec. 4.1.3, steps runtime enforcement).
 
 The agent's tool calls are proxied through the enforcer.  For each call the
 enforcer searches for the rules applicable to the tool, then checks that the
@@ -8,7 +8,7 @@ exact-matching rule is found" (paper sec. 5.2).
 
 This module also provides the sandboxed runner that executes the generated
 ``run`` function, routing every tool call through the enforcer and turning
-each permitted result into a signed envelope (B4).
+each permitted result into a signed envelope (envelope signing).
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ class Enforcer:
             self.rules_by_tool.setdefault(rule.tool, []).append(rule)
 
     def check(self, tool: str, args: list[Any]) -> Decision:
-        """B1-B3: decide whether a concrete call is authorized.
+        """the authorization check: decide whether a concrete call is authorized.
 
         The call is permitted iff some rule for ``tool`` has all guards
         satisfied and every operand expression evaluating to the supplied
@@ -131,7 +131,7 @@ class Enforcer:
         )
 
     def record(self, rule: Rule, result: Any) -> None:
-        """B4: wrap a permitted call's result into a signed envelope."""
+        """envelope signing: wrap a permitted call's result into a signed envelope."""
         signer = self.tool_signer.get(rule.tool, rule.tool)
         symbolic = canon(rule.call_node)
         env = make_envelope(result, symbolic, signer, self._keyring())
@@ -182,8 +182,8 @@ def execute_generated_code(
 ) -> ExecReport:
     """Execute ``run`` with every tool call proxied through the enforcer.
 
-    Tool calls are intercepted (B1), checked (B2-B3), executed when permitted,
-    and their results recorded as envelopes (B4).  A denial is recorded; with
+    Tool calls are intercepted (call interception), checked (the authorization check), executed when permitted,
+    and their results recorded as envelopes (envelope signing).  A denial is recorded; with
     ``stop_on_denial`` the run halts on the first denial, mirroring the paper's
     "execution stops with a denial".
     """

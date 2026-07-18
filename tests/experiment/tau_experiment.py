@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 from benchmarks.tau_bench_adapter import build_suite
-from gateway.planning.agentic_a1 import generate_code_with_self_repair
+from gateway.planning.agentic_planner import generate_code_with_self_repair
 from pauth import prepare
 from pauth.enforcer import Enforcer, check_injection, execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing

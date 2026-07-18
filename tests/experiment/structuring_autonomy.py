@@ -11,7 +11,7 @@ from agentdojo.task_suite.load_suites import get_suites
 
 from benchmarks.agentdojo_adapter import load_suite
 from benchmarks.structured_read import augment_with_structuring
-from gateway.planning.agentic_a1 import generate_code_with_self_repair
+from gateway.planning.agentic_planner import generate_code_with_self_repair
 from pauth import prepare
 from pauth.enforcer import Enforcer, execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing

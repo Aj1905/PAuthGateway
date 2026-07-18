@@ -6,7 +6,7 @@ whose fields are attacker-controlled) alongside a trusted source
 (``get_balance``) and two sinks, plus a labelled corpus that stresses exactly
 where the confirmation gate must and must not fire (content/control + provenance).
 
-Each :class:`GrillCase` ships hand-written reference A1 code so the eval runs
+Each :class:`GrillCase` ships hand-written reference the Planner code so the eval runs
 offline (no API key), and the concrete call sequence an agent would make.
 ``expected_grill`` is the ground truth: does an untrusted value reach a CONTROL
 operand of a sink (=> must be held for confirmation)?

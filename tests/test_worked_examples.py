@@ -1,7 +1,7 @@
 """Offline verification of the PAuth zero-FP / zero-FN claim.
 
-This script needs **no API key**: it feeds hand-written / paper-verbatim A1
-output into the deterministic pipeline (A2, A3, B1-B4) and checks that
+This script needs **no API key**: it feeds hand-written / paper-verbatim the Planner
+output into the deterministic pipeline (the Slicer, the Rule compiler, runtime enforcement) and checks that
 
 * every benign run is fully permitted   -> zero false positives,
 * every forced injection is denied      -> zero false negatives.
@@ -43,7 +43,7 @@ def check(condition: bool, label: str, detail: str = "") -> None:
 def run_and_check(suite, task: TaskSpec) -> None:
     """Run one task through the full pipeline and assert zero FP / zero FN."""
     result = run_task(suite, task, model="", client=None, use_cache=False)
-    check(result.usable, f"[{task.id}] A1->A3 produced a checkable task", result.a1_detail)
+    check(result.usable, f"[{task.id}] the Planner->the Rule compiler produced a checkable task", result.planner_detail)
     if not result.usable:
         return
     check(

@@ -1,6 +1,6 @@
 """Restricted-grammar parser and validator (paper Appendix A).
 
-The A1 step asks an LLM to generate a ``run`` function in a restrictive subset
+The Planner step asks an LLM to generate a ``run`` function in a restrictive subset
 of Python.  Before any slice is derived we
 
 1. parse the code and reject anything outside the grammar's *syntax*
@@ -12,9 +12,9 @@ of Python.  Before any slice is derived we
 
 Paper sec. 4.1.1: "The code is parsed and checked for any syntax or semantic
 errors and for any violation of our restrictive grammar."  Code that fails any
-check is rejected at A1 and never reaches the enforcer -- so an LLM that emits,
+check is rejected at the Planner and never reaches the enforcer -- so an LLM that emits,
 e.g., ``item.subject.lower()`` (no method-call production exists in the BNF)
-produces an *A1 failure*, never a false positive.
+produces an *the Planner failure*, never a false positive.
 """
 
 from __future__ import annotations

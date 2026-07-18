@@ -13,7 +13,7 @@ from pathlib import Path
 from agentdojo.task_suite.load_suites import get_suites
 
 from benchmarks.agentdojo_adapter import load_suite
-from gateway.planning.agentic_a1 import generate_code_with_self_repair
+from gateway.planning.agentic_planner import generate_code_with_self_repair
 from pauth.grammar import (
     RestrictedGrammarError,
     parse_and_validate,

@@ -107,7 +107,7 @@ def main():
 
     injec = build_injec()
     def injec_plan(t):
-        return t.reference_code   # InjecAgent uses the reference as the A1 plan
+        return t.reference_code   # InjecAgent uses the reference as the Planner plan
     def injec_ref(t):
         return _ref_trace(injec, t.reference_code)
     score_framework("InjecAgent", injec, injec_plan, injec_ref, limit=40)

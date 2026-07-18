@@ -8,14 +8,14 @@ prose field = injection surface" case: the tool return is a typed object, but on
 field is attacker-controlled.
 
 What this adapter measures. For each case we build the benign plan (a call to the
-User Tool) as reference A1 code, and replay each Attacker Tool as a forced
+User Tool) as reference the Planner code, and replay each Attacker Tool as a forced
 injection. PAuth authorizes only the user tool, so every attacker call is
 off-plan and must be denied (default-deny). This is the SECURITY axis (does PAuth
 block the injected off-plan action) on InjecAgent's real attack scenarios.
 
 Honest scope. Tool execution is stubbed (InjecAgent has no real backend -- it is
 LLM-emulated upstream), and the benign plan is synthesized from the User Tool, not
-A1-generated. So this is an injection-case source, not a runnable-env / A1-quality
+the Planner-generated. So this is an injection-case source, not a runnable-env / the Planner-quality
 suite. Data is a vendored subset under injecagent_data/ (see its NOTICE.md).
 """
 

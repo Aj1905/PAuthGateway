@@ -3,7 +3,7 @@ challenge[s] PAuth with cross-server data dependencies and more conditional
 branches").
 
 This suite is self-contained: it ships an environment, tools, and the worked
-examples from the paper with hand-written A1 output, so the deterministic core
+examples from the paper with hand-written the Planner output, so the deterministic core
 can be verified with no API key (see ``tests/test_worked_examples.py``).
 """
 
@@ -180,10 +180,10 @@ _TOOLS: dict[str, ToolSpec] = {
 
 
 # --------------------------------------------------------------------------
-# Tasks -- with reference A1 output so the suite runs without an API key.
+# Tasks -- with reference the Planner output so the suite runs without an API key.
 # --------------------------------------------------------------------------
 
-# Paper sec. 4: the Aurora headphones task and the code A1 generates for it.
+# Paper sec. 4: the Aurora headphones task and the code the Planner generates for it.
 _AURORA_CODE = '''\
 def run():
     details = get_product_details("Aurora Noise Cancelling Headphones")

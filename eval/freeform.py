@@ -1,22 +1,22 @@
 """Baseline measurement: how well does PAuth handle free-form prompts?
 
-The deterministic recognizer is bypassed. The LLM A1 step generates code
+The deterministic recognizer is bypassed. The LLM the Planner step generates code
 directly from each prompt. We then measure:
 
-  1. A1 success -- the generated code conforms to the restricted grammar
+  1. the Planner success -- the generated code conforms to the restricted grammar
      and ``pauth.prepare`` succeeds (slice/rule derivation works).
   2. Tool coverage -- which tools the generated code calls vs. expected.
   3. Spurious calls -- tools that appear in the code but should not (the
      prompt-injection probe in particular).
 
-This is intentionally cheap: each prompt is one A1 call. The runner caches
+This is intentionally cheap: each prompt is one the Planner call. The runner caches
 generated code under ``gateway/cache/freeform/`` so repeat runs are free.
 
 Usage::
 
     .venv/bin/python -m eval.freeform
     .venv/bin/python -m eval.freeform --model gpt-4.1-mini
-    .venv/bin/python -m eval.freeform --no-cache  # re-run A1
+    .venv/bin/python -m eval.freeform --no-cache  # re-run the Planner
 """
 
 from __future__ import annotations
@@ -137,7 +137,7 @@ def measure(args: argparse.Namespace) -> int:
 
     print("=" * 78)
     print(
-        f"freeform A1 measurement :: fixtures={args.fixtures} "
+        f"freeform the Planner measurement :: fixtures={args.fixtures} "
         f"({len(cases)} prompts), suite={suite_name}, model={args.model}"
     )
     print("=" * 78)
@@ -238,7 +238,7 @@ def measure(args: argparse.Namespace) -> int:
     print("SUMMARY")
     print("=" * 78)
     print(f"prompts:                        {len(outcomes)}")
-    print(f"A1+A2/A3 accepted:              {len(accepted)} / {len(outcomes)}")
+    print(f"the Planner+Slicer/Rule-compiler accepted:              {len(accepted)} / {len(outcomes)}")
     print(f"rejected:                       {len(rejected)}")
     print(f"accepted but off-intent:        {len(intent_mismatches)}")
     print(f"{M.OVER_AUTHORIZATION_ACCEPTS:<32}{len(over_auth_accepts)}   <- must be 0")
@@ -298,7 +298,7 @@ def measure(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else "")
     parser.add_argument("--model", default="gpt-4.1", help="OpenAI model id (default: gpt-4.1)")
-    parser.add_argument("--no-cache", action="store_true", help="ignore cached A1 outputs")
+    parser.add_argument("--no-cache", action="store_true", help="ignore cached the Planner outputs")
     parser.add_argument("--show-code", action="store_true", help="print generated code per prompt")
     parser.add_argument(
         "--max-retries", type=int, default=3,

@@ -2,7 +2,7 @@
 
 Where toolcall_eval takes a hand-authored tool-call trace, this one is
 PROMPT-DRIVEN end to end: for each task it takes the prompt's plan (the reference
-imperative code -- in a real deployment A1 generates it; a real LLM plan can be
+imperative code -- in a real deployment the Planner generates it; a real LLM plan can be
 swapped in), *executes* that plan against the real suite environment to obtain
 the actual tool-call trace WITH REAL OBSERVED VALUES, then routes that trace
 through the full ``Gateway`` (enforcer + confirmation gate) and replays the
@@ -19,7 +19,7 @@ SCOPE / honesty. This measures the prompt->execution flow of the *authorized
 plan* plus forced-injection defense. It is NOT yet a live autonomous agent that
 dynamically deviates under live injection -- that final rung needs an agent
 runner (e.g. AgentDojo's) and is a separate step; the counters here are exactly
-what it would reuse. A1 *quality* (does the plan match the prompt) is measured
+what it would reuse. the Planner *quality* (does the plan match the prompt) is measured
 separately by eval/freeform.py and eval/fpfn.py.
 
 Run:  .venv/bin/python -m eval.e2e_eval

@@ -1,4 +1,4 @@
-"""Session persistence (B1): survive a gateway restart.
+"""Session persistence (call interception): survive a gateway restart.
 
 In-memory sessions are lost on ``systemctl restart``. This store persists, per
 session, the inputs needed to *reconstruct* it -- the clean user prompt and the

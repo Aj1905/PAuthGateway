@@ -255,7 +255,7 @@ class Gateway:
         )
 
     # ------------------------------------------------------------------
-    # Free-form plan generation -- LLM A1 over an arbitrary prompt.
+    # Free-form plan generation -- LLM the Planner over an arbitrary prompt.
     # ------------------------------------------------------------------
     def submit_user_prompt_freeform(
         self,
@@ -269,15 +269,15 @@ class Gateway:
     ) -> SubmissionResult:
         """Plan generation via LLM, bypassing the deterministic recognizer.
 
-        ``max_retries == 0`` uses the paper-faithful one-shot A1 from
+        ``max_retries == 0`` uses the paper-faithful one-shot the Planner from
         ``pauth.codegen``. ``max_retries > 0`` enables the grammar
-        self-repair loop in ``gateway.agentic_a1``: each
+        self-repair loop in ``gateway.agentic_planner``: each
         ``RestrictedGrammarError`` is fed back to the LLM with the
         previous (invalid) code and an explicit "you MUST obey rule X"
         instruction.
 
-        Rejection modes are unchanged: unknown suite, A1 grammar
-        violation (after the retry budget), or A2/A3 compilation failure.
+        Rejection modes are unchanged: unknown suite, the Planner grammar
+        violation (after the retry budget), or Slicer/Rule-compiler compilation failure.
         On acceptance, ``handle_tool_call`` enforcement is identical to
         the recognizer path.
         """
@@ -619,7 +619,7 @@ class Gateway:
             self._session = self._rejected_session(prompt, reason)
             return SubmissionResult(accepted=False, reason=reason)
         except Exception as exc:  # noqa: BLE001
-            reason = f"A1 codegen failed: {type(exc).__name__}: {exc}"
+            reason = f"the Planner codegen failed: {type(exc).__name__}: {exc}"
             self._session = self._rejected_session(prompt, reason)
             return SubmissionResult(accepted=False, reason=reason)
 
@@ -684,7 +684,7 @@ class Gateway:
             prepared = prepare(draft.code, suite.tool_names(), suite.tool_signer())
         except Exception as exc:  # noqa: BLE001
             reason = (
-                f"A2/A3 failed: {type(exc).__name__}: {exc}"
+                f"Slicer/Rule-compiler failed: {type(exc).__name__}: {exc}"
                 if generated_code_on_success
                 else f"plan compilation failed: {type(exc).__name__}: {exc}"
             )

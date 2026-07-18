@@ -41,7 +41,7 @@ class TaskSpec:
     id: str
     prompt: str
     forced_injections: list[Call]
-    reference_code: str | None = None  # offline suites ship hand-written A1 output
+    reference_code: str | None = None  # offline suites ship hand-written the Planner output
 
 
 @dataclasses.dataclass

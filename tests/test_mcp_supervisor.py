@@ -1,4 +1,4 @@
-"""StdioTransport health-check + auto-restart supervisor tests (B4)."""
+"""StdioTransport health-check + auto-restart supervisor tests (envelope signing)."""
 
 from __future__ import annotations
 

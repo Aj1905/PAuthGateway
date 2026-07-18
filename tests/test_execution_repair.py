@@ -11,7 +11,7 @@ import types
 
 import pytest
 
-from gateway.planning.agentic_a1 import generate_code_with_self_repair
+from gateway.planning.agentic_planner import generate_code_with_self_repair
 from pauth.codegen import ToolDoc
 
 TOOLS = [

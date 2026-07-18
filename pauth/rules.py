@@ -2,7 +2,7 @@
 
 Parsing and analysing a slice on every call would be inefficient, so PAuth
 compiles each slice once, at slice-generation time, into reusable rules that
-the enforcer consumes directly at runtime (paper sec. 4.1, step A3).
+the enforcer consumes directly at runtime (paper sec. 4.1, step the Rule compiler).
 
 A rule records (paper "In general, a rule records five pieces of
 information"): the expected tool, a per-operand symbolic expression, a guard
