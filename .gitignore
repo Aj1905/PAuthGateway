@@ -34,3 +34,4 @@ tests/experiment/regen_scratch/
 tests/experiment/g5_scratch/
 tests/experiment/tau_scratch/
 tests/experiment/bestofn_scratch/
+tests/experiment/funnel_scratch/

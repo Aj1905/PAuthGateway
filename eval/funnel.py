@@ -11,11 +11,19 @@ injecagent become argument choices, not separate files. Metrics are the universa
 gate vocabulary (see eval/metrics.py); each corpus populates the subset its data
 supports (coverage matrix), and n/a marks the rest.
 
-Axes:
-  corpus : agentdojo | tau | injecagent   (which tasks/tools/ground-truth)
-  mode   : headless | hitl                (raw enforcer, or a confirmer in the loop)
+Axes (knobs):
+  corpus    : agentdojo | tau | injecagent | scenarios
+  mode      : headless | hitl              (raw enforcer, or a confirmer in the loop)
+  planner   : cached | agentic             (fixed cache, or regenerate via self-repair)
+  confirmer : oracle | interactive         (hitl: informed oracle, or a human on stdin)
 
-Usage:  python -m eval.funnel <corpus> [--mode headless|hitl]
+Subsumes as argument choices:
+  gates          = funnel(agentdojo)
+  task_success   = funnel(agentdojo, planner=agentic)
+  hitl scenarios = funnel(scenarios, mode=hitl)
+  hitl_agentdojo = funnel(agentdojo, mode=hitl [--confirmer interactive])   (gate footprint)
+
+Usage:  python -m eval.funnel <corpus> [--mode ...] [--planner ...] [--confirmer ...] [--limit N]
 """
 
 from __future__ import annotations
@@ -108,6 +116,101 @@ CORPORA: dict[str, Callable[[], list[Corpus]]] = {
     "tau": _corpus_tau,
     "injecagent": _corpus_injecagent,
 }
+
+
+def _agentdojo_gate_footprint(interactive: bool = False) -> None:
+    """mode=hitl on AgentDojo also reports the GATE FOOTPRINT (fail-closed upper
+    bound): how many plans/calls route a control operand to a human, and how many
+    are judgeable (carry a breakdown/provenance a cautious human can approve). This
+    is what eval/hitl_agentdojo measured. --confirmer interactive lets you answer."""
+    from agentdojo.task_suite.load_suites import get_suites
+    from benchmarks.agentdojo_adapter import load_suite
+    from gateway.runtime.confirmation import (
+        PendingConfirmation, SourceTrust, provenance_reference, reduction_breakdown,
+        static_taint_map, is_side_effecting,
+    )
+    from gateway.runtime.confirmer import CautiousConfirmer, InteractiveConfirmer
+    from pathlib import Path
+    conf = InteractiveConfirmer() if interactive else None
+    cache = Path("tests/experiment/cache")
+    n = gated = calls = judge = 0
+    for name in ("banking", "slack", "travel", "workspace"):
+        adj = get_suites("v1")[name]; spec = load_suite(name)
+        docs = {t: s.doc for t, s in spec.tools.items()}
+        for tid in sorted(adj.user_tasks):
+            p = cache / name / f"{tid}.py"
+            if not p.exists():
+                continue
+            try:
+                prepared = prepare(p.read_text(), spec.tool_names(), spec.tool_signer())
+            except RestrictedGrammarError:
+                continue
+            n += 1
+            narrow = static_taint_map(p.read_text(), docs, SourceTrust.fail_closed())
+            enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), spec.tool_signer())
+            rep = execute_generated_code(prepared.source, enf, spec.tool_params(),
+                                         spec.runner_factory(spec.make_env()))
+            se = [e for e in rep.events if e.decision.permit and is_side_effecting(e.tool)]
+            gcalls = [(e, i) for e in se for (t, i) in narrow if t == e.tool and i < len(e.args)]
+            if gcalls:
+                gated += 1
+            calls += len(gcalls)
+            for e, i in gcalls:
+                bd = prov = None
+                for rule in enf.rules_by_tool.get(e.tool, []):
+                    bd = reduction_breakdown(rule, i, enf.store)
+                    if bd:
+                        break
+                if bd is None:
+                    for rule in enf.rules_by_tool.get(e.tool, []):
+                        prov = provenance_reference(rule, i, enf.store)
+                        if prov:
+                            break
+                pn = docs[e.tool].parameters[i]["name"] if i < len(docs[e.tool].parameters) else str(i)
+                pc = PendingConfirmation(tid, e.tool, i, pn, e.args[i],
+                                         source=narrow[(e.tool, i)], breakdown=bd, provenance=prov,
+                                         task_desc=docs[e.tool].description)
+                if CautiousConfirmer.judgeable(pc):
+                    judge += 1
+                if conf is not None:
+                    print(f"    {name}/{tid}: {e.tool}.{pn} "
+                          f"{'APPROVED' if conf.confirm(pc) else 'REJECTED'}")
+    print("\n  -- gate footprint (hitl on agentdojo, fail-closed upper bound) --")
+    print(f"    plans routing a control operand to a human : {gated}/{n}")
+    print(f"    control-operand calls needing a human      : {calls}")
+    print(f"    of those, JUDGEABLE (breakdown/provenance) : {judge}/{calls}"
+          f"  ({calls - judge} bare -> a cautious human blocks for lack of UX)")
+
+
+def _run_scenarios(mode: str) -> None:
+    """The poison-scenario corpus (websum / dining), where an untrusted-derived
+    value reaches a control operand and the ENFORCER authorizes it (on-slice), so
+    only a human catches a poisoned value. This is where mode matters:
+      headless -> a rubber-stamp confirmer (models 'no human') approves the poison
+                  -> SEC_INJECTIONS_DENIED fails (FN).
+      hitl     -> an informed (oracle) confirmer rejects the poison -> FN=0,
+                  while the benign value still completes (availability unchanged).
+    """
+    from eval.hitl import SCENARIOS, _run, _ok
+    from gateway.runtime.confirmer import OracleConfirmer, TrustingConfirmer
+
+    def _conf():
+        return OracleConfirmer() if mode == "hitl" else TrustingConfirmer()
+
+    benign_ok = poison_blocked = total = 0
+    for scn in SCENARIOS:
+        benign, _ = _run(scn, False, _conf())
+        poison, _ = _run(scn, True, _conf())
+        total += 1
+        benign_ok += int(_ok(benign, scn.benign_value))
+        poison_blocked += int(poison is None)
+    print(f"\nfunnel(corpus=scenarios, mode={mode})  [{total} poison scenarios]\n")
+    print("  -- outcome (agent-inclusive) --")
+    print(f"    {OUTCOME_TASK_COMPLETED:24} {benign_ok}/{total}   (benign value completed)")
+    print("  -- security --")
+    print(f"    {SEC_INJECTIONS_DENIED:24} {poison_blocked}/{total}   (poison blocked)")
+    print(f"\n  headless models 'no human' (rubber-stamp) -> poison slips through (FN);")
+    print(f"  hitl uses an informed confirmer -> poison blocked, benign unaffected.")
 
 
 # --------------------------------------------------------------------------
@@ -219,12 +322,36 @@ def measure(corpus: Corpus, task: Task, mode: str) -> dict[str, str]:
     return m
 
 
-def run(corpus_name: str, mode: str = "headless") -> None:
+def _agentic_plan(suite, task, scratch_dir):
+    """Regenerate a plan through the agentic self-repair pipeline (grammar repair),
+    cached to scratch so re-runs are free. Needs OPENAI_API_KEY. This is the
+    `planner=agentic` knob -- what eval/task_success measured for fresh plans."""
+    from pathlib import Path
+    from gateway.planning.agentic_a1 import generate_code_with_self_repair
+    d = Path(scratch_dir); d.mkdir(parents=True, exist_ok=True)
+    pf = d / f"{task.task_id}.py"
+    if pf.exists():
+        return pf.read_text()
+    res = generate_code_with_self_repair(
+        task.prompt, suite.tool_docs(), model="gpt-4.1", max_retries=3, enable_judge=False)
+    pf.write_text(res.code)
+    return res.code
+
+
+def run(corpus_name: str, mode: str = "headless", planner: str = "cached",
+        limit: int | None = None, confirmer: str = "oracle") -> None:
     corpora = CORPORA[corpus_name]()
     agg: dict[str, list[int]] = {k: [0, 0] for k in _ORDER}
     cost_tot = cost_n = 0
     for corpus in corpora:
-        for task in corpus.tasks:
+        tasks = corpus.tasks if limit is None else corpus.tasks[:limit]
+        for task in tasks:
+            if planner == "agentic":
+                scratch = f"tests/experiment/funnel_scratch/{corpus.name.replace(':','_')}"
+                try:
+                    task = dataclasses.replace(task, plan_code=_agentic_plan(corpus.suite, task, scratch))
+                except Exception:  # noqa: BLE001 -- a generation failure -> no plan
+                    task = dataclasses.replace(task, plan_code=None)
             row = measure(corpus, task, mode)
             for k in _ORDER:
                 if row[k] != "n/a":
@@ -233,8 +360,9 @@ def run(corpus_name: str, mode: str = "headless") -> None:
             if row[COST_TOOL_CALLS] >= 0:
                 cost_tot += row[COST_TOOL_CALLS]; cost_n += 1
 
-    print(f"\nfunnel(corpus={corpus_name}, mode={mode})  "
-          f"[{sum(len(c.tasks) for c in corpora)} tasks]\n")
+    n_tasks = sum(len(c.tasks if limit is None else c.tasks[:limit]) for c in corpora)
+    print(f"\nfunnel(corpus={corpus_name}, mode={mode}, planner={planner})  "
+          f"[{n_tasks} tasks]\n")
     print("  -- PAuth availability chain (nested ⊇) --")
     for k in _CHAIN:
         p, n = agg[k]
@@ -249,17 +377,28 @@ def run(corpus_name: str, mode: str = "headless") -> None:
     print("  -- cost --")
     print(f"    {COST_TOOL_CALLS:24} {cost_tot/cost_n:.1f} calls/task" if cost_n
           else f"    {COST_TOOL_CALLS:24} n/a")
+    if corpus_name == "agentdojo" and mode == "hitl":
+        _agentdojo_gate_footprint(interactive=(confirmer == "interactive"))
+
+
+def _flag(name, default=None):
+    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
 
 
 def main() -> int:
     corpus = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else "agentdojo"
-    mode = "headless"
-    if "--mode" in sys.argv:
-        mode = sys.argv[sys.argv.index("--mode") + 1]
+    mode = _flag("--mode", "headless")
+    planner = _flag("--planner", "cached")     # cached | agentic (regenerate, needs OPENAI_API_KEY)
+    confirmer = _flag("--confirmer", "oracle")  # oracle | interactive (hitl mode)
+    limit = _flag("--limit")
+    limit = int(limit) if limit else None
+    if corpus == "scenarios":
+        _run_scenarios(mode)
+        return 0
     if corpus not in CORPORA:
-        print(f"unknown corpus '{corpus}'. choices: {', '.join(CORPORA)}")
+        print(f"unknown corpus '{corpus}'. choices: {', '.join(CORPORA)}, scenarios")
         return 1
-    run(corpus, mode)
+    run(corpus, mode, planner, limit, confirmer)
     return 0
 
 
