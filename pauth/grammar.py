@@ -183,46 +183,58 @@ def _check_no_nested_if(func: ast.FunctionDef) -> None:
 
 
 def _check_bounded_for(func: ast.FunctionDef) -> None:
-    """Bounded for: ``for <var> in <collection-var>: <tool calls only>``.
+    """Bounded for: ``for <var> in <collection>: <tool calls / nested for>``.
 
-    Only this shape is sliceable soundly (the slicer emits a quantified rule over
-    the observed collection): the loop var is a single fresh identifier, the
-    iterable is a bound variable (a tool result the gateway observed), the body is
-    straight-line tool calls, and no loop/if nests inside. Anything else (index
-    loops, ``range``, nested bodies, in-body assignments) stays rejected."""
-    # A for-loop may appear ONLY at the top level. Nested inside an if/for it
-    # would escape the shape checks below (and mix quantified rules with path
-    # guards), so reject it outright -- keeps the loop machinery unchanged.
-    top_fors = {id(s) for s in func.body if isinstance(s, ast.For)}
-    for node in ast.walk(func):
-        if isinstance(node, ast.For) and id(node) not in top_fors:
-            raise RestrictedGrammarError(
-                "for-loops may appear only at the top level, not inside an if or for body"
-            )
+    Sliceable soundly: each loop var is a single fresh identifier, each iterable is
+    a bound collection variable (a tool result) or a field of an outer loop var
+    (``order.items`` -- a sub-collection), and a for-body holds only tool calls or
+    NESTED for-loops. The slicer records the loop stack and the enforcer enumerates
+    the signed collections' nested product, so the authorized set is exactly the
+    reachable tuples (FN=0). A for may NOT appear inside an ``if`` (mixing a
+    quantifier with a path guard under one leaf is out of scope)."""
     assigned = {t.id for n in ast.walk(func) if isinstance(n, ast.Assign)
                 for t in n.targets if isinstance(t, ast.Name)}
-    for stmt in func.body:
-        if not isinstance(stmt, ast.For):
-            continue
+
+    def _iter_ok(it: ast.expr) -> bool:
+        while isinstance(it, (ast.Attribute, ast.Subscript)):
+            it = it.value
+        return isinstance(it, ast.Name)
+
+    def _check_for(stmt: ast.For) -> None:
         if not isinstance(stmt.target, ast.Name):
             raise RestrictedGrammarError("for-loop target must be a single variable (rule 2a)")
         if stmt.target.id in assigned:
             raise RestrictedGrammarError(f"for-loop variable '{stmt.target.id}' shadows an assignment")
-        if not isinstance(stmt.iter, ast.Name):
+        if not _iter_ok(stmt.iter):
             raise RestrictedGrammarError(
-                "for-loop must iterate a bound collection variable, e.g. "
-                "`items = get_items(); for x in items:` (rule 2a)"
+                "for-loop must iterate a bound collection variable or a field of one, "
+                "e.g. `for x in items:` or `for i in order.items:` (rule 2a)"
             )
         if stmt.orelse:
             raise RestrictedGrammarError("for-else is forbidden")
         for inner in stmt.body:
             if isinstance(inner, ast.Pass):
                 continue
-            if not (isinstance(inner, ast.Expr) and isinstance(inner.value, ast.Call)):
+            if isinstance(inner, ast.For):
+                _check_for(inner)  # nested loop
+            elif not (isinstance(inner, ast.Expr) and isinstance(inner.value, ast.Call)):
                 raise RestrictedGrammarError(
-                    "a for-body may contain only tool-call statements (no assignments, "
-                    "loops, or ifs)"
+                    "a for-body may contain only tool-call statements or nested "
+                    "for-loops (no assignments or ifs)"
                 )
+
+    def _no_for_in_if(stmts: list[ast.stmt]) -> None:
+        for s in stmts:
+            if isinstance(s, ast.If):
+                if any(isinstance(n, ast.For) for n in ast.walk(s)):
+                    raise RestrictedGrammarError("for-loops may not appear inside an if body")
+            elif isinstance(s, ast.For):
+                _no_for_in_if(s.body)
+
+    _no_for_in_if(func.body)
+    for stmt in func.body:
+        if isinstance(stmt, ast.For):
+            _check_for(stmt)
 
 
 def _check_lambdas(func: ast.FunctionDef) -> None:

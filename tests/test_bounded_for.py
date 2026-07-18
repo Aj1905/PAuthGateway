@@ -33,7 +33,7 @@ def test_bounded_for_accepted_and_compiles_to_quantified_rule():
     suite = build_suite()
     prepared = prepare(_LOOP, suite.tool_names(), suite.tool_signer())
     loop_rules = [r for r in prepared.rules if r.tool == "add_to_cart"]
-    assert len(loop_rules) == 1 and loop_rules[0].loop_var == "p"
+    assert len(loop_rules) == 1 and [v for v, _ in loop_rules[0].loops] == ["p"]
 
 
 def test_membership_permits_in_collection_denies_off_collection():

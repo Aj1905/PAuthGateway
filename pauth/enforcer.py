@@ -76,28 +76,37 @@ class Enforcer:
                 reasons.append(f"{rule.key}: guard predicate is false")
                 continue
 
-            # Bounded for: quantified rule. The operand is authorized iff it matches
-            # arg_exprs for SOME element of the gateway-observed collection. Because
-            # the collection is a signed envelope, its projection is the exact
-            # authorized set -- a value not produced by any element is off-slice.
-            if rule.loop_var is not None:
-                try:
-                    collection = ev.eval(rule.loop_iter)
-                except (NotConcretizable, TamperedEnvelopeError) as exc:
-                    reasons.append(f"{rule.key}: loop collection unresolved ({exc})")
-                    continue
-                matched = False
-                for element in collection if isinstance(collection, (list, tuple)) else []:
-                    ev_e = Evaluator(self.store, rule.lets, {rule.loop_var: element})
+            # Bounded for(s): quantified rule. The operand is authorized iff it
+            # matches arg_exprs for SOME tuple of the NESTED enumeration over the
+            # signed collections (each inner iter evaluated with the outer vars
+            # bound). The collections are signed envelopes, so the enumeration is the
+            # exact authorized set -- a tuple no loop can produce is off-slice, and a
+            # value using one is denied (FN=0). Handles independent products
+            # (for x in A: for y in B) and dependent nesting (for o in os: for i in o.items).
+            if rule.loops:
+                def _match(level: int, binds: dict) -> bool:
+                    if level == len(rule.loops):
+                        ev_e = Evaluator(self.store, rule.lets, binds)
+                        try:
+                            expected = [ev_e.eval(expr) for expr in rule.arg_exprs]
+                        except Exception:  # noqa: BLE001 -- this tuple just doesn't match
+                            return False
+                        return all(values_match(e, a) for e, a in zip(expected, args))
+                    var, it = rule.loops[level]
+                    ev_l = Evaluator(self.store, rule.lets, binds)
                     try:
-                        expected = [ev_e.eval(expr) for expr in rule.arg_exprs]
-                    except Exception:  # noqa: BLE001 -- this element just doesn't match
-                        continue
-                    if all(values_match(e, a) for e, a in zip(expected, args)):
-                        matched = True
-                        break
-                if not matched:
-                    reasons.append(f"{rule.key}: no element of the observed collection matches")
+                        collection = ev_l.eval(it)
+                    except (NotConcretizable, TamperedEnvelopeError):
+                        return False
+                    if not isinstance(collection, (list, tuple)):
+                        return False
+                    for element in collection:
+                        if _match(level + 1, {**binds, var: element}):
+                            return True
+                    return False
+
+                if not _match(0, {}):
+                    reasons.append(f"{rule.key}: no loop tuple of the observed collections matches")
                     continue
                 return Decision(True, rule, f"authorized by loop rule {rule.key}")
 

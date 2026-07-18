@@ -439,7 +439,7 @@ class Gateway:
         assert decision.rule is not None
         # A loop (quantified) rule authorises many calls; only NON-loop rules are
         # one-shot in a composite stage.
-        if decision.rule.loop_var is None and decision.rule.key in state.consumed:
+        if not decision.rule.loops and decision.rule.key in state.consumed:
             return CallResult(
                 False,
                 f"rule {decision.rule.key} already consumed (composite one-shot)",
@@ -582,7 +582,7 @@ class Gateway:
         reaches here (default-denied), so the gate fires only for a genuine task
         loop -- and only past the cap. Approving lets the rest of that loop run."""
         cap = state.source_trust.bulk_max_iterations
-        if cap is None or rule is None or getattr(rule, "loop_var", None) is None:
+        if cap is None or rule is None or not getattr(rule, "loops", None):
             return None
         if rule.key in state.bulk_confirmed:
             return None

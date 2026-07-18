@@ -30,11 +30,11 @@ class Rule:
     guard: list[ast.expr]              # every predicate must hold (conjunction)
     lets: dict[str, ast.expr]          # let-bindings used by the expressions
     cross_service_deps: list[str]      # tools producing required envelopes
-    # Bounded for: quantified rule. When set, ``loop_var`` is bound to each element
-    # of ``loop_iter`` (a gateway-observed collection) and the operand is authorized
-    # iff it matches ``arg_exprs`` for SOME element.
-    loop_var: str | None = None
-    loop_iter: ast.expr | None = None
+    # Bounded for(s): quantified rule. ``loops`` lists enclosing loops outer->inner
+    # as ``(var, iter_expr)``; the operand is authorized iff it matches ``arg_exprs``
+    # for SOME tuple of the NESTED enumeration (each inner iter evaluated with the
+    # outer vars bound). Empty list = a straight-line (non-loop) rule.
+    loops: list = dataclasses.field(default_factory=list)
 
     @property
     def key(self) -> str:
@@ -87,8 +87,7 @@ def compile_rule(slice_: Slice, tool_service: dict[str, str] | None = None) -> R
         guard=guard,
         lets=dict(slice_.lets),
         cross_service_deps=deps,
-        loop_var=slice_.loop_var,
-        loop_iter=slice_.loop_iter,
+        loops=list(slice_.loops),
     )
 
 
