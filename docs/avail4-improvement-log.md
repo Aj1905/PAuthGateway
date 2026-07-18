@@ -115,8 +115,23 @@ arg strictness.
 
 ---
 
+### T7 — best-of-N + structure_text (attack the extraction wall)
+- **Hypothesis:** exposing structure_text lets a candidate extract the control
+  value (amount/iban) so more hard cases become deficiency-free.
+- **Method:** `funnel(agentdojo, planner=bestof, --structuring)` (fresh N=3, judge off).
+- **Result:** AVAIL_4 **40/66 (61%)** vs bestof-only 36/69 (52%), +9pt. FN=0 (75/75),
+  OUTCOME 19->20. structure_text genuinely rescues the extraction cases.
+- **Diagnosis (final):** of 26 remaining deficient, **0 fixable, 26 HARD** -- no
+  candidate makes all required calls. The misses are MULTI-STEP / LOOP tasks (slack
+  iterate channels+users), CONDITIONAL writes (banking read-then-update), and single
+  writes needing un-extractable prose values (travel create_calendar_event). A
+  fundamental Planner-completeness wall, not selection or extraction.
+- **Verdict:** WINNER (+9pt, legitimate). Best combo = control-match + bestof +
+  structuring = **61%**.
+
 ## Conclusion — AVAIL_4 = 100% is NOT reachable with the current Planner + grammar
-- **Progress made:** AVAIL_4 31% (baseline) -> **~52%**, via ONE principled fix (T3:
+**Best achieved: AVAIL_4 31% -> 61%** (control-operand match + best-of-N + structure_text).
+- **Progress made:** AVAIL_4 31% (baseline) -> **61%**, via ONE principled fix (T3:
   match on CONTROL operands, aligning AVAIL_4 with PAuth's mandate) plus best-of-N
   (raises the working-plan count). FN=0 held throughout; 269 tests pass.
 - **The wall:** the remaining ~half are tasks where NO grammar-valid plan (across
@@ -128,4 +143,4 @@ arg strictness.
   the semantic completeness judge (needs an Anthropic key, absent here).
 - **Anti-gaming note:** AVAIL_4 could be trivially forced to 100% by loosening the
   match further or excluding hollow plans from the denominator, but that is
-  metric-gaming, not improvement -- explicitly NOT done. The honest ceiling is ~52%.
+  metric-gaming, not improvement -- explicitly NOT done. The honest ceiling is ~61%.
