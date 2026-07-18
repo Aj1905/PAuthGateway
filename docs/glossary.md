@@ -15,13 +15,13 @@ execution are gates; a failure at any one means the prompt was not executed
 correctly. Measured per task by `eval/gates.py`.
 
 - **G1 — Expressibility / 表現可能性.** Can the intent be written in the
-  restricted grammar *at all*? The theoretical ceiling, independent of A1's
+  restricted grammar *at all*? The theoretical ceiling, independent of the Planner's
   quality. Oracle: every ground-truth argument must be a prompt literal or a
   clean *field* of a prior tool result; a value buried in prose (a bill's
   "98.70" inside a text file) needs extraction the grammar lacks → inexpressible.
-  Separates "grammar too weak" from "A1 too weak."
-- **G2 — Grammar conformance / 文法適合.** Did A1 actually produce code that
-  passes the restricted grammar? I.e. which tasks A1 *committed to* attempting.
+  Separates "grammar too weak" from "Planner too weak."
+- **G2 — Grammar conformance / 文法適合.** Did the Planner actually produce code that
+  passes the restricted grammar? I.e. which tasks it *committed to* attempting.
 - **G3 — Fidelity / 忠実 (過不足).** Does the executed trace match the
   ground-truth trace with **no excess call and no missing call** (args included)?
   This is *the* 過不足 gate. Measured on the executed trace, so it **subsumes G4**:
@@ -45,7 +45,7 @@ GS orthogonal.
 
 Three increasingly strict levels a task passes through, and the two error rates.
 
-- **Grammar-accepted / 文法受理 (usable, ACCEPTANCE_RATE).** A1 produced a plan
+- **Grammar-accepted / 文法受理 (usable, ACCEPTANCE_RATE).** The Planner produced a plan
   that passed grammar + slice + rule (+ plan-layer). A plan *exists*. Says
   nothing about whether it runs or is correct.
 - **Clean / 実行完遂.** A grammar-accepted plan that ran the benign trace
@@ -83,16 +83,21 @@ Three increasingly strict levels a task passes through, and the two error rates.
 
 ## PAuth mechanism (paper sec. 3–4)
 
-- **Restricted grammar / 制限文法.** The narrow Python subset A1 must emit
-  (no method calls, no string ops, no `while`, bounded `for`, flat/nested-if ≤3).
-  Narrow *so that* slicing is exact and FN=0 is guaranteed — the same restriction
-  that caps expressibility (G1).
-- **A1.** The one LLM step: prompt + tool schemas → a `run()` function in the
-  restricted grammar. The only non-deterministic stage.
-- **A2 / A3.** Deterministic: derive **slices** from `run()`, compile them into
-  **rules**.
-- **B1–B4.** Runtime enforcement: intercept each tool call, check it against the
-  rules, execute if permitted, wrap the result in a signed envelope.
+- **Restricted grammar / 制限文法.** The narrow Python subset the **Planner** must
+  emit (no method calls, no string ops, no `while`, bounded `for`, flat/nested-if
+  ≤3). Narrow *so that* slicing is exact and FN=0 is guaranteed — the same
+  restriction that caps expressibility (G1).
+- **Planner (paper: A1).** The one LLM step: prompt + tool schemas → a `run()`
+  function in the restricted grammar. The only non-deterministic stage, and the
+  quality bottleneck for task success once G1 is high. Named for its job (it plans
+  the tool-call code) rather than the paper's opaque "A1"; the codebase already
+  calls the choice of Planner `--planner oneshot|agentic`.
+- **Slicer (paper: A2).** Deterministic: derives **slices** from the Planner's
+  `run()`.
+- **Rule compiler (paper: A3).** Deterministic: compiles slices into **rules**.
+- **Enforcer (paper: B1–B4).** Runtime enforcement: intercept each tool call,
+  check it against the rules, execute if permitted, wrap the result in a signed
+  envelope.
 - **Slice / スライス.** Per tool call, a symbolic spec: an expression for each
   operand + the path conditions (guards) to reach the call.
 - **Rule / ルール.** A compiled slice the enforcer matches concrete calls
@@ -117,14 +122,14 @@ Three increasingly strict levels a task passes through, and the two error rates.
 
 - **Expressibility ceiling / 表現可能性の天井.** The fraction of tasks the
   restricted grammar can represent at all (G1 ≈ 40% on AgentDojo). The binding
-  constraint on availability — not A1 quality.
+  constraint on availability — not Planner quality.
 - **Prose-locked value / 散文に埋もれた値.** A value present only inside an
   unstructured text return (a bill amount in a `.txt`), unextractable by the
   string-op-free grammar. The dominant expressibility failure.
-- **exec-repair / 実行時修復.** Agentic-A1 stage: dry-run the grammar-valid
+- **exec-repair / 実行時修復.** Agentic-Planner stage: dry-run the grammar-valid
   candidate against a mock env; feed a crash back for repair; if still crashing
   after retries, replace with the reject sentinel `def run(): pass`. Eliminates
-  crashes but does not raise task success (a `pass` plan does nothing).
+  crashes but does not raise task success (a `pass` plan does nothing). A1=Planner throughout.
 - **Intent judge / 意図判定器.** A separate LLM that checks whether the code
   captures the prompt's intent (excess/deficiency) during agentic repair. Noisy
   (opinion-based); the ground-truth `utility()`/`ground_truth()` are preferred.
