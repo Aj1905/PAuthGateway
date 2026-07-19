@@ -75,6 +75,8 @@ _STRUCTURING = False  # set by --structuring: expose structure_text to the Plann
 _JUDGE = False        # set by --judge: run the OpenAI-backed completeness judge
 _BESTOF_N = 3         # set by --n: number of candidates for planner=bestof
 _MODEL = "gpt-4.1"    # set by --model: the Planner LLM
+_EXECUTOR = False     # set by --executor: dry-run each candidate against a mock env
+                      # at plan time and feed crashes back for repair (lifts AVAIL_3)
 
 
 def _corpus_agentdojo() -> list[Corpus]:
@@ -189,6 +191,139 @@ def _agentdojo_gate_footprint(interactive: bool = False) -> None:
     print(f"    control-operand calls needing a human      : {calls}")
     print(f"    of those, JUDGEABLE (breakdown/provenance) : {judge}/{calls}"
           f"  ({calls - judge} bare -> a cautious human blocks for lack of UX)")
+
+
+def _authorize_footprint() -> None:
+    """mode=authorize: drive the REAL human-authorization execution path
+    (gateway.runtime.human_authorized) over the cached gpt-5.1 struct best-of plans.
+    A StaticProposer stands in for the extractor (perfect-extraction CEILING), an
+    informed human approves the benign candidates, and each recovered action executes
+    only by redeeming a single-use, fully-bound grant. Reports AVAIL_4 / OUTCOME
+    recovered THROUGH the real path, and the automation cost. FN=0 under a tampered
+    proposal is pinned in tests/test_human_authorized.py, not re-measured here."""
+    from pathlib import Path
+    from agentdojo.task_suite.load_suites import get_suites
+    from benchmarks.agentdojo_adapter import load_suite
+    from benchmarks.structured_read import augment_with_structuring
+    from gateway.runtime.confirmation import control_operands, is_side_effecting
+    from gateway.runtime.confirmer import TrustingConfirmer
+    from gateway.runtime.human_authorized import (
+        GrantLedger, ProposedAction, StaticProposer, execute_with_human_authorization)
+    from gateway.planning.prechecks import PrecheckPolicy
+
+    scratch = Path("tests/experiment/funnel_scratch")
+    # match run()'s cache tag so the footprint reads the CURRENT model's plans
+    tag = ("struct_" if _STRUCTURING else "") + ("judge_" if _JUDGE else "") + \
+          ("exec_" if _EXECUTOR else "") + \
+          (f"n{_BESTOF_N}_" if _BESTOF_N != 3 else "") + \
+          (f"{_MODEL.replace(chr(46), chr(95))}_" if _MODEL != "gpt-4.1" else "")
+    base_a4 = auth_a4 = base_out = auth_out = ran = confirms = gated = 0
+    for sname in ("banking", "slack", "travel", "workspace"):
+        adj = get_suites("v1")[sname]
+        suite = augment_with_structuring(load_suite(sname))
+        docs = {n: s.doc for n, s in suite.tools.items()}
+        try:
+            env_l = suite.make_env().model_dump_json().lower()
+        except Exception:  # noqa: BLE001
+            env_l = str(suite.make_env()).lower()
+
+        def _ci(tool):
+            return [i for i, _ in control_operands(tool, docs, PrecheckPolicy())]
+
+        for tid in sorted(adj.user_tasks):
+            td = scratch / f"{tag}bestof_agentdojo_{sname}" / tid
+            cands = sorted(td.glob("cand*.py")) if td.exists() else []
+            if not cands:
+                continue
+            # the AVAIL_4=47 baseline plan: most-side-effecting clean candidate
+            best = None; bn = -1
+            for f in cands:
+                try:
+                    prep = prepare(f.read_text(), suite.tool_names(), suite.tool_signer())
+                except RestrictedGrammarError:
+                    continue
+                enf = Enforcer(prep.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
+                rep = execute_generated_code(prep.source, enf, suite.tool_params(),
+                                             suite.runner_factory(suite.make_env()))
+                if rep.crashed is not None or rep.denied:
+                    continue
+                nse = sum(1 for e in rep.events if e.decision.permit and is_side_effecting(e.tool))
+                if nse > bn:
+                    best, bn = f.read_text(), nse
+            if best is None:
+                continue
+            ran += 1
+            ut = adj.user_tasks[tid]
+
+            # plan trace -> unmatched GT calls (deficiency), matching on control operands
+            prep = prepare(best, suite.tool_names(), suite.tool_signer())
+            enf = Enforcer(prep.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
+            rep = execute_generated_code(prep.source, enf, suite.tool_params(),
+                                         suite.runner_factory(suite.make_env()))
+            trace = [(e.tool, list(e.args)) for e in rep.events if e.decision.permit]
+            gt = [(fc.function, _positional(fc, suite.tool_params()))
+                  for fc in ut.ground_truth(suite.make_env())]
+            matched: set = set()
+            for tool, args in trace:
+                for i, (gtl, gar) in enumerate(gt):
+                    if i in matched or gtl != tool:
+                        continue
+                    if all(str(args[j]) == str(gar[j]) for j in _ci(tool)
+                           if j < len(args) and j < len(gar)):
+                        matched.add(i); break
+            unmatched = [gt[i] for i in range(len(gt)) if i not in matched]
+            base_a4 += (not unmatched)
+
+            # propose the env-EXTRACTABLE side-effecting misses (a real extractor can
+            # only surface a value present in the untrusted data it reads)
+            proposals = []
+            recoverable = bool(unmatched)
+            for tool, args in unmatched:
+                extractable = all(str(args[j]).strip().lower() in env_l
+                                  for j in _ci(tool) if j < len(args) and str(args[j]).strip())
+                if is_side_effecting(tool) and extractable:
+                    proposals.append(ProposedAction(tool, args, sources=("extracted:untrusted",)))
+                else:
+                    recoverable = False   # a miss no extractor can feed -> unrecoverable
+
+            # headless OUTCOME: utility after ONLY the plan runs (fresh env)
+            env0 = suite.make_env(); pre0 = copy.deepcopy(env0)
+            enf0 = Enforcer(prep.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
+            execute_generated_code(prep.source, enf0, suite.tool_params(),
+                                   suite.runner_factory(env0))
+            try:
+                base_out += bool(ut.utility("", pre0, env0))
+            except Exception:  # noqa: BLE001
+                pass
+
+            # run the REAL path on a fresh env: plan + human-authorized recoveries
+            env = suite.make_env(); pre = copy.deepcopy(env)
+            enf2 = Enforcer(prep.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
+            hrep = execute_with_human_authorization(
+                prep.source, enf2, suite.tool_params(), suite.runner_factory(env),
+                proposer=StaticProposer(proposals), confirmer=TrustingConfirmer(),
+                docs=docs, ledger=GrantLedger())
+            confirms += len(proposals)
+            if proposals:
+                gated += 1
+
+            # AVAIL_4 after authorize: deficiency 0 iff all misses were recovered
+            auth_a4 += (not unmatched) or (recoverable and len(hrep.human_authorized) == len(proposals))
+            # OUTCOME: utility on the env the plan + human-authorized calls acted on
+            try:
+                auth_out += bool(ut.utility("", pre, env))
+            except Exception:  # noqa: BLE001
+                pass
+
+    print("\n  -- mode=authorize: recovery through the REAL human-authorization path --")
+    print(f"    AVAIL_4  headless (enforcer only)   {base_a4}/97")
+    print(f"    AVAIL_4  + human-authorize CEILING  {auth_a4}/97   "
+          f"(+{auth_a4 - base_a4}, env-extractable misses only)")
+    print(f"    OUTCOME  headless (enforcer only)   {base_out}/97")
+    print(f"    OUTCOME  + human-authorize          {auth_out}/97   (+{auth_out - base_out})")
+    print(f"    automation cost: confirmations      {confirms} over {gated} gated tasks")
+    print(f"    (grants: single-use, all-control-operand-bound, signed; FN=0 under a")
+    print(f"     tampered proposal verified in tests/test_human_authorized.py)")
 
 
 def _run_scenarios(mode: str) -> None:
@@ -335,6 +470,23 @@ def measure(corpus: Corpus, task: Task, mode: str) -> dict[str, str]:
     return m
 
 
+def _crash_probe(suite):
+    """An executor for the Planner's self-repair loop: dry-run a candidate against a
+    fresh MOCK env and return the crash string (or None if it runs clean). A crash is
+    fed back to the LLM for repair; denials are NOT crashes, so they are ignored here.
+    Safe because the env is a throwaway benchmark mock -- no real side effects."""
+    def probe(code: str):
+        try:
+            prepared = prepare(code, suite.tool_names(), suite.tool_signer())
+        except RestrictedGrammarError:
+            return None                     # grammar is a separate repair stage
+        enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
+        rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
+                                     suite.runner_factory(suite.make_env()))
+        return rep.crashed                  # str (crash) or None
+    return probe
+
+
 def _agentic_plan(suite, task, scratch_dir):
     """Regenerate a plan through the agentic self-repair pipeline (grammar repair),
     cached to scratch so re-runs are free. Needs OPENAI_API_KEY. This is the
@@ -346,7 +498,8 @@ def _agentic_plan(suite, task, scratch_dir):
     if pf.exists():
         return pf.read_text()
     res = generate_code_with_self_repair(
-        task.prompt, suite.tool_docs(), model=_MODEL, max_retries=3, enable_judge=False)
+        task.prompt, suite.tool_docs(), model=_MODEL, max_retries=3, enable_judge=False,
+        executor=_crash_probe(suite) if _EXECUTOR else None)
     pf.write_text(res.code)
     return res.code
 
@@ -370,7 +523,8 @@ def _bestof_plan(suite, task, scratch_dir, n=None):
         res = generate_code_with_self_repair(
             task.prompt + ("" if i == 0 else f"\n(variant {i})"),
             suite.tool_docs(), model=_MODEL, max_retries=3,
-            enable_judge=_JUDGE, judge_model=_MODEL)   # OpenAI-backed completeness judge
+            enable_judge=_JUDGE, judge_model=_MODEL,   # OpenAI-backed completeness judge
+            executor=_crash_probe(suite) if _EXECUTOR else None)
         pf.write_text(res.code); cands.append(res.code)
 
     def score(code):
@@ -398,6 +552,7 @@ def run(corpus_name: str, mode: str = "headless", planner: str = "cached",
         for task in tasks:
             if planner in ("agentic", "bestof"):
                 tag = ("struct_" if _STRUCTURING else "") + ("judge_" if _JUDGE else "") + \
+                      ("exec_" if _EXECUTOR else "") + \
                       (f"n{_BESTOF_N}_" if planner == "bestof" and _BESTOF_N != 3 else "") + \
                       (f"{_MODEL.replace(chr(46),chr(95))}_" if _MODEL != "gpt-4.1" else "")
                 scratch = f"tests/experiment/funnel_scratch/{tag}{planner}_{corpus.name.replace(':','_')}"
@@ -433,6 +588,8 @@ def run(corpus_name: str, mode: str = "headless", planner: str = "cached",
           else f"    {COST_TOOL_CALLS:24} n/a")
     if corpus_name == "agentdojo" and mode == "hitl":
         _agentdojo_gate_footprint(interactive=(confirmer == "interactive"))
+    if corpus_name == "agentdojo" and mode == "authorize":
+        _authorize_footprint()
 
 
 def _flag(name, default=None):
@@ -441,9 +598,10 @@ def _flag(name, default=None):
 
 def main() -> int:
     corpus = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else "agentdojo"
-    global _STRUCTURING, _JUDGE, _BESTOF_N, _MODEL
+    global _STRUCTURING, _JUDGE, _BESTOF_N, _MODEL, _EXECUTOR
     _STRUCTURING = "--structuring" in sys.argv
     _JUDGE = "--judge" in sys.argv
+    _EXECUTOR = "--executor" in sys.argv
     _BESTOF_N = int(_flag("--n", "3"))
     _MODEL = _flag("--model", "gpt-4.1")
     mode = _flag("--mode", "headless")

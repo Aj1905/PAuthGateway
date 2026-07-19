@@ -204,8 +204,35 @@ judge) fixes. **There is no legitimate path to AVAIL_4=100% in this setup.**
   AVAIL_4 on BOTH models -- its reject-sentinel fallback dominates. Confirmed: not a
   model issue. Rolled back (--judge off).
 
-**FINAL: 11 trials, 2 models. No legitimate lever reaches AVAIL_4=100%. Best = 61%
-(gpt-4.1 + control-match + best-of-N + structure_text). FN=0 held on all 11.**
+### T12 — selection policy (most-acting vs minimal-complete), planner FIXED
+- **Hypothesis:** best-of-N's "pick the MOST side-effecting clean candidate" may be
+  what inflates both AVAIL_4 and excess. Re-selecting for "fewest side-effecting >0"
+  (minimal-complete) might trade a little AVAIL_4 for better least authority (a
+  tradeoff CURVE), planner untouched. Re-ran on the SAME cached gpt-5.1 candidates
+  (no API), measuring both ends. Script: tests/experiment/selection_tradeoff.py.
+- **Result (gpt-5.1 struct, /97):** MAX vs MIN nearly COINCIDE.
+  AVAIL_4 47->46, SEC_NO_EXCESS **21->21 (unchanged)**, OUTCOME 22->20, COST 3.17->2.99.
+  Diagnostic: of 88 tasks with clean candidates, only 15 differ in side-effecting
+  count and only **8** have an acting-but-lower-excess alternative to select.
+- **Verdict:** FAIL as a lever. The curve is essentially a POINT -- selection policy
+  moves neither AVAIL_4 nor least authority at N=3. **Corrects an earlier claim:**
+  excess is NOT a selection artifact; it is planner-INTRINSIC (all N candidates emit
+  the same excess calls). Reselection cannot raise AVAIL_4 or lower excess.
+
+### T13 — cross-framework AVAIL_4 (tau retail, gpt-5.1) = architectural ceiling
+- **Observation (not an intervention):** tau retail AVAIL_4 = **0/79**. Every tau
+  task is a MULTI-TURN role-play where control operands (refund amount, order id)
+  are disclosed by the user turn-by-turn at runtime. A statically-compiled plan
+  cannot contain a control value that does not exist until a later turn.
+- **Verdict:** structural, model-invariant (gpt-4.1 and gpt-5.1 both 0). The
+  static-planning ceiling in its purest form -- the same wall as agentdojo's
+  dynamic-content tasks, but covering 100% of the corpus. FN=0 held (109/109 denied).
+  Confirms AVAIL_4 is a function of a task's STATIC-plannability, while FN=0 is
+  framework-invariant (agentdojo, tau, injecagent 1054/1054 all denied).
+
+**FINAL: 13 trials, 2 models, 3 frameworks. No legitimate lever reaches AVAIL_4=100%.
+Best = 61% (gpt-4.1 + control-match + best-of-N + structure_text); tau=0% by
+construction. FN=0 held on every trial and framework.**
 - **Progress made:** AVAIL_4 31% (baseline) -> **61%**, via ONE principled fix (T3:
   match on CONTROL operands, aligning AVAIL_4 with PAuth's mandate) plus best-of-N
   (raises the working-plan count). FN=0 held throughout; 269 tests pass.

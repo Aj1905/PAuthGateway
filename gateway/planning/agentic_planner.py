@@ -445,6 +445,46 @@ def _get_judge_client(judge_model: str, generator_client: Any) -> Any:
     return generator_client
 
 
+def _get_generation_client(model: str, client: Any) -> Any:
+    """Resolve the GENERATOR client for ``model``. Anthropic models (claude-*, e.g.
+    Fable 5) get an Anthropic client; the OpenAI family gets an OpenAI client."""
+    if client is not None:
+        return client
+    if _is_anthropic_model(model):
+        return _get_anthropic_client()
+    if not has_api_key():
+        raise RuntimeError(
+            "OPENAI_API_KEY is not set; cannot run the Planner generator without a cache hit"
+        )
+    from openai import OpenAI  # lazy import
+
+    return OpenAI()
+
+
+def _call_generator(client: Any, model: str, messages: list[dict[str, str]]):
+    """One generation turn. Returns (text, prompt_tokens, completion_tokens),
+    branching OpenAI vs Anthropic (which takes the system prompt as a top-level
+    param and returns content blocks + input/output token counts)."""
+    if _is_anthropic_model(model):
+        system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
+        convo = [m for m in messages if m["role"] != "system"]
+        resp = client.messages.create(
+            model=model, max_tokens=4096, system=system, messages=convo
+        )
+        text = "".join(
+            b.text for b in resp.content if getattr(b, "type", "") == "text"
+        )
+        u = resp.usage
+        return text, getattr(u, "input_tokens", 0) or 0, getattr(u, "output_tokens", 0) or 0
+    resp = client.chat.completions.create(model=model, temperature=0, messages=messages)
+    u = resp.usage
+    return (
+        resp.choices[0].message.content or "",
+        getattr(u, "prompt_tokens", 0) or 0,
+        getattr(u, "completion_tokens", 0) or 0,
+    )
+
+
 def _read_cached(cache_path: Path, model: str) -> AgenticCodegenResult | None:
     if cache_path is None or not cache_path.exists():
         return None
@@ -535,14 +575,7 @@ def generate_code_with_self_repair(
     if cached is not None:
         return cached
 
-    if client is None:
-        if not has_api_key():
-            raise RuntimeError(
-                "OPENAI_API_KEY is not set; cannot run agentic the Planner without a cache hit"
-            )
-        from openai import OpenAI  # lazy import
-
-        client = OpenAI()
+    client = _get_generation_client(model, client)
 
     if enable_judge and judge_client is None:
         judge_client = _get_judge_client(judge_model, client)
@@ -559,15 +592,10 @@ def generate_code_with_self_repair(
     last_code = ""
 
     for attempt in range(1, max_retries + 2):  # initial + retries
-        response = client.chat.completions.create(
-            model=model,
-            temperature=0,
-            messages=messages,
-        )
-        code = _strip_fences(response.choices[0].message.content or "")
-        usage = response.usage
-        total_prompt_tokens += getattr(usage, "prompt_tokens", 0) or 0
-        total_completion_tokens += getattr(usage, "completion_tokens", 0) or 0
+        raw, pt, ct = _call_generator(client, model, messages)
+        code = _strip_fences(raw)
+        total_prompt_tokens += pt
+        total_completion_tokens += ct
         last_code = code
 
         # Stage 1: full grammar -- mirror pauth.pipeline.prepare so the loop

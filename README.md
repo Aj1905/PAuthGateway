@@ -1,544 +1,354 @@
 # PAuthGateway
 
-**A personal "task-scoped authorization firewall" that sits between an AI agent
-and the real tools/SaaS it calls.** (The first target is Claude Code.)
+**A task-scoped authorization firewall that sits between an AI agent and the real
+tools and SaaS it calls.** It derives a plan from the user's clean prompt exactly
+once, then checks every tool call against it — default-deny. Even if the agent is
+hijacked by prompt injection or poisoned tool output, **operations the user did
+not request cannot execute.**
 
-## Purpose
+Based on *"PAuth — Precise Task-Scoped Authorization For Agents"* (Sharma, Jiang,
+Lin & Chen, arXiv:2603.17170). The first integration target is Claude Code.
 
-**The goal.** OAuth-style authorization cannot fully control an AI agent. An
-OAuth token grants the agent *standing* access to a whole scope ("can send
-email", "can transfer money") — so once the agent is hijacked by prompt
-injection, everything the token allows, the attacker now does too. The token
-answers "*who* may use this API," never "*is this specific call part of what the
-user actually asked for?*" This project raises that security bar: **how do you
-stop a compromised agent without trusting the agent itself?** The answer is an
-enforcement point *outside* the agent — a deterministic, default-deny gateway
-that derives a plan from the user's clean prompt exactly once, then checks every
-subsequent tool call against it. Authorization narrows from "everything the
-credential permits" to "only the task the user requested."
+- **Want the security argument and the numbers?** → [`docs/evaluation.md`](docs/evaluation.md)
+- **Want to run the gateway in front of an agent?** → [Deploy](#deploy)
+- **Want to reproduce the experiments?** → [Reproduce](#reproduce)
 
 ---
 
-Before the agent starts acting, the natural-language prompt the user enters is
-converted exactly once into a "restricted plan," and every subsequent tool call
-is checked against that plan (default-deny). As a result, even if the agent is
-hijacked by prompt injection or tool-result poisoning, **operations the user did
-not actually request cannot be executed**.
+## Why
 
-The method itself is based on the paper **"PAuth – Precise Task-Scoped
-Authorization For Agents"** (Sharma, Jiang, Lin & Chen, arXiv:2603.17170).
+An OAuth token grants *standing* access to a whole scope ("can send email", "can
+transfer money"). Once the agent is hijacked, everything the token allows, the
+attacker does too. A token answers "*who* may use this API" — never "*is this
+specific call part of what the user asked for?*"
 
-## The problem it solves
+PAuthGateway moves the enforcement point **outside** the agent:
 
-An autonomous agent with access to real systems (banks, email, internal SaaS)
-can, from a single injection, execute operations the user never asked for, such
-as "wire money to the attacker's destination" or "forward confidential email."
-Existing countermeasures tend toward either (a) modifying the agent itself or
-(b) making the LLM police itself. The former is heavy to deploy, and the latter
-delegates the judgment to the very party that has been hijacked.
-
-PAuthGateway moves the enforcement point outside the agent:
-
-- **The agent is unmodified.** It only intercepts prompts and tool calls via
-  Claude Code hooks (later MCP/proxy).
-- **Plan once.** The agent cannot rewrite the plan after seeing poisoned tool
-  output (plan once / enforce every call).
-- **Enforcement is deterministic.** No LLM is used for the permit decision. Only
-  plan generation (A1) uses an LLM; the checking (A2/A3 and B1–B4) is fully
+- **The agent is unmodified** — it is intercepted via hooks (later MCP / proxy).
+- **Plan once, enforce every call** — the agent cannot rewrite the plan after
+  seeing poisoned output.
+- **The decision is deterministic** — no LLM makes the permit call. Only plan
+  generation uses an LLM; slicing, rule compilation, and enforcement are
   deterministic.
-- **The gateway is the authority on observation.** The gateway records each
-  tool's execution result as a signed envelope, so even if the agent forges a
-  value, it does not affect subsequent checks.
+- **The gateway owns observation** — each tool result is recorded as a signed
+  envelope, so a forged value cannot steer later checks.
 
-For the detailed design see [`docs/architecture.md`](docs/architecture.md); for
-the defense scope and non-targets see
-[`docs/threat-model.md`](docs/threat-model.md).
+Design: [`docs/architecture.md`](docs/architecture.md) ·
+Threat model: [`docs/threat-model.md`](docs/threat-model.md) ·
+Terms: [`docs/glossary.md`](docs/glossary.md)
 
-## What this is *not*
+## What it is *not*
 
-- Not a guarantee of correctness. If the user approves a wrong plan, then wrong
-  things will happen within that plan. PAuth only guarantees that "it does not
-  exceed the scope the user requested."
-- Not a sandbox for the agent itself. The gateway only sees tool calls. Side
-  channels such as Bash or file operations require a separate mechanism (a
-  sandbox, etc.).
+- **Not a correctness guarantee.** If the user approves a wrong plan, wrong things
+  happen *within* that plan. PAuth guarantees only "does not exceed the requested
+  scope."
+- **Not an agent sandbox.** The gateway sees tool calls. Side channels (Bash, file
+  ops) need a separate mechanism.
 
 ---
 
-## Quick check: does the gateway actually control the agent?
+## The pipeline
 
-Before anything else, confirm the core property on every integrated framework in
-one command (no API key needed for the offline frameworks):
+```
+prompt ─▶ Planner ─▶ Slicer ─▶ Rule compiler ─▶ Enforcer
+        (LLM: the      (deterministic)          (default-deny; matches each call's
+         only non-                               control operands against the rules;
+         deterministic                          signs results into tamper-evident
+         step)                                   envelopes)
+```
+
+The **Planner** reads only the trusted prompt and tool schemas — never untrusted
+runtime data — so control operands (recipient, amount) have clean provenance. The
+**Enforcer** authorizes a call only if a rule re-derives its control operands from
+signed envelopes. This is why the security guarantee does not depend on plan
+quality: however the Planner errs, the Enforcer authorizes only what the trusted
+plan re-derives.
+
+---
+
+## Quick check — does the gateway actually control the agent?
+
+Confirm the core property (**FN = 0**: no injection is ever permitted) on every
+framework in one command. No API key needed for the offline frameworks:
 
 ```bash
 .venv/bin/python -m eval.check
 ```
 
-It runs each framework's benign tasks and replays every forced injection through
-the gateway, then reports **FN** (an injection that was wrongly *permitted* —
-must be 0) and **FP** (a benign call wrongly *denied*). It exits non-zero if any
-injection gets through anywhere:
-
 ```
 framework      FN  injections   FP  tasks  result
 shopping        0           8    0      2  PASS
 dining          0           7    0      2  PASS
-injecagent      0        1598    0   1054  PASS   <- InjecAgent indirect-injection benchmark
-banking         0         135    0     13  PASS   <- AgentDojo (cached A1)
+injecagent      0        1598    0   1054  PASS
+banking         0         135    0     13  PASS
 ...
 RESULT: PASS -- no injection permitted on any framework (FN=0).
 ```
 
-**FN=0 is the security bar and is the check's pass/fail gate.** FP=0 (zero
-over-rejection) is an availability goal we also track but do not fail on — it
-depends on A1 plan quality, is recoverable by retry, and is not a breach.
-Offline frameworks (shopping, dining, injecagent) always run; the AgentDojo
-suites run from cached A1 and are skipped cleanly if no cache/key is present.
+**FN = 0 is the security bar and the pass/fail gate.** FP = 0 (no over-rejection)
+is an availability goal we track but do not fail on: it depends on plan quality,
+is recoverable by retry, and is not a breach.
+
+**Full results, cross-framework and cross-model, are in
+[`docs/evaluation.md`](docs/evaluation.md)** — including the availability ceiling,
+the least-authority trade-off, and the human-authorization path.
 
 ---
 
-## Deploying the gateway in front of your agent
+## Deploy
 
-This section is for **operators** who want to actually put the gateway between an
-agent and the real tools it calls. (If you only want to reproduce the paper's
-measurements, skip to [Setup](#setup-reproducing-the-paper-experiments).)
+For **operators** putting the gateway between an agent and real tools. (To only
+reproduce the experiments, skip to [Reproduce](#reproduce).)
 
-Deployment is the same four moves in every case:
+Four moves in every case: **install → run the daemon → run the agent as a
+dedicated non-admin user → restrict that user's egress to the gateway.** How the
+agent *reaches* the gateway differs by where it runs:
 
-1. **Install the tools** — Python + this repo.
-2. **Deploy the gateway** — run the daemon as its own service.
-3. **Configure the network (needs admin)** — run the agent as a dedicated
-   non-admin user.
-4. **Restrict egress to the gateway** — pin that user's outbound traffic so the
-   gateway is the *only* place its tool calls can go.
+| Situation | How the agent reaches the gateway |
+|-----------|-----------------------------------|
+| **A. Local agent** (Claude Code / a script on your machine) | You own the config, so you hand the prompt and tool calls to the gateway directly via hooks. |
+| **B. Cloud / API agent** (runs on a provider, driven over an API) | You don't own the process, so the gateway becomes the tool/credential boundary. |
 
-But **how you connect the agent to the gateway differs by where the agent runs.**
-Pick your case:
+### Prerequisites
 
-| Your situation | How the agent reaches the gateway | Read |
-|---|---|---|
-| **A. Local agent** — Claude Code / Codex / a script running on your own machine | You own the agent's config, so you hand the prompt and tool calls to the gateway directly (edit hooks / your own code). No traffic sniffing needed. | [Case A](#case-a--local-agent-on-your-machine) |
-| **B. Cloud / API agent** — the agent runs on a provider and you drive it over an API | You do **not** own the agent process, so you cannot add a local firewall around it or edit its internals. The gateway becomes the **tool/credential boundary** instead. | [Case B](#case-b--cloud--api-agent) |
-
-### Prerequisites (both cases)
-
-- **Python 3.12+** (developed and verified on 3.14).
-- **This repository**, with the virtualenv installed:
+Install the repo and virtualenv:
 
 ```bash
 git clone https://github.com/Aj1905/PAuthGateway.git && cd PAuthGateway && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
-- **A shared auth token** so only your client can drive the daemon. Generate one and keep it:
+Generate a shared auth token so only your client can drive the daemon:
 
 ```bash
 export GATEWAY_AUTH_TOKEN="$(.venv/bin/python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 ```
 
-- For **Case A only**: admin/`sudo` on the machine (used *once*, for the network
-  step) and an OS with a supported firewall — Linux `nftables`/`iptables` or
-  macOS `pf`.
+Case A additionally needs admin/`sudo` (used once, for the network step) and a
+supported firewall — Linux `nftables`/`iptables` or macOS `pf`.
 
-### Deploy the gateway (both cases)
+### Run the daemon (both cases)
 
-Run the daemon. Bind it to loopback and require the token on every route:
+Bind to loopback and require the token on every route:
 
 ```bash
 .venv/bin/python gateway/serving/http_server.py --host 127.0.0.1 --port 8081 --auth-token "$GATEWAY_AUTH_TOKEN"
 ```
 
-Keep it running (a `systemd` unit, `launchd` job, or `tmux` window is fine).
-Useful flags: `--session-store PATH` to survive restarts, `--audit-log PATH` to
-append permit/deny decisions as JSONL (place it where the agent user cannot read
-it — it can quote values). Check liveness (this one route needs no token):
+Keep it running (a `systemd` unit, `launchd` job, or `tmux` window). Useful flags:
+`--session-store PATH` to survive restarts, `--audit-log PATH` to append
+permit/deny decisions as JSONL. Check liveness (this route needs no token):
 
 ```bash
 curl http://127.0.0.1:8081/health
 ```
 
-> **Run the gateway as a *different* OS user than the agent.** The gateway has to
-> reach the real SaaS; the egress rule in Case A deliberately does not apply to
-> it. If the agent and the gateway share a user, the lockdown either breaks the
-> gateway or is too loose to hold.
+> **Run the gateway as a *different* OS user than the agent.** The gateway must
+> reach the real SaaS; the egress rule in Case A deliberately does not apply to it.
 
----
+### Case A — local agent
 
-### Case A — local agent on your machine
+Add two hooks so Claude Code hands the clean prompt and each tool call to the
+gateway (no change to Claude Code, no change to how you type prompts). In
+`~/.claude/settings.json`:
 
-Because the agent runs as *your* process, you don't need to intercept the LLM's
-network traffic to recover the prompt. You **edit your own configuration** to
-hand the clean prompt and each tool call to the gateway. For Claude Code this is
-two hooks (no changes to Claude Code itself, no change to how you type prompts):
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "type": "command", "command": "/ABSOLUTE/PATH/PAuthGateway/gateway/hooks/submit_prompt.sh" }
+    ],
+    "PreToolUse": [
+      { "type": "command", "command": "/ABSOLUTE/PATH/PAuthGateway/gateway/hooks/pretool.sh" }
+    ]
+  }
+}
+```
 
-1. **Connect the agent to the gateway.** Add the two hook scripts to
-   `~/.claude/settings.json` (or a project-local `.claude/settings.json`):
+`submit_prompt.sh` forwards the prompt **before** the model sees it (the plan is
+built from the clean task); `pretool.sh` presents **every** tool call for a
+permit/deny check. Point them at the daemon with `export
+GATEWAY_URL=http://127.0.0.1:8081` and the same token. Options:
+[`gateway/hooks/README.md`](gateway/hooks/README.md). Not Claude Code? Any local
+agent can `POST` the prompt once, then each tool call, to `/sessions/<id>/messages`
+([`docs/self-hosting.md`](docs/self-hosting.md#prompt-capture-boundary)).
 
-   ```json
-   {
-     "hooks": {
-       "UserPromptSubmit": [
-         { "type": "command", "command": "/ABSOLUTE/PATH/PAuthGateway/gateway/hooks/submit_prompt.sh" }
-       ],
-       "PreToolUse": [
-         { "type": "command", "command": "/ABSOLUTE/PATH/PAuthGateway/gateway/hooks/pretool.sh" }
-       ]
-     }
-   }
-   ```
+Create the dedicated non-admin agent user (needs admin):
 
-   `submit_prompt.sh` forwards the prompt **before** the model sees it (so the
-   plan is built from the clean task); `pretool.sh` presents **every** tool call
-   for a permit/deny check. Point them at the daemon with the same token:
-   `export GATEWAY_URL=http://127.0.0.1:8081` and
-   `export GATEWAY_AUTH_TOKEN=…`. Full options (strict vs log mode, planner
-   choice) are in [`gateway/hooks/README.md`](gateway/hooks/README.md).
+```bash
+sudo useradd -m -s /bin/bash pauth-agent   # macOS: sysadminctl -addUser pauth-agent
+```
 
-   *Not Claude Code?* Any local agent works the same way: from your own code,
-   `POST` the prompt once, then `POST` each tool call, to
-   `/sessions/<id>/messages` (schema in
-   [`docs/self-hosting.md`](docs/self-hosting.md#prompt-capture-boundary)). You
-   are editing code you control — no traffic interception.
+Restrict that user's egress to the gateway only (needs admin, run once):
 
-2. **Create a dedicated non-admin agent user** (needs admin). This is the account
-   the agent runs under:
+```bash
+sudo AGENT_USER=pauth-agent GATEWAY_HOST=127.0.0.1 GATEWAY_PORT=8081 gateway/deploy/egress_lockdown.sh apply
+```
 
-   ```bash
-   sudo useradd -m -s /bin/bash pauth-agent   # macOS: sysadminctl -addUser pauth-agent
-   ```
+Now every outbound connection that user makes can reach only `127.0.0.1:8081`;
+anything else is dropped by the kernel. Status / undo:
 
-3. **Restrict that user's egress to the gateway only** (needs admin, run once):
+```bash
+sudo AGENT_USER=pauth-agent gateway/deploy/egress_lockdown.sh status
+```
 
-   ```bash
-   sudo AGENT_USER=pauth-agent GATEWAY_HOST=127.0.0.1 GATEWAY_PORT=8081 gateway/deploy/egress_lockdown.sh apply
-   ```
-
-   Now every outbound connection that user (or any process it spawns, including a
-   hand-typed `curl`) makes can reach **only** `127.0.0.1:8081`. Anything else is
-   dropped by the kernel — so a tool call that tries to skip the hook has nowhere
-   to go, and anything that does reach the gateway hits a default-deny check.
-   Verify and, when needed, undo:
-
-   ```bash
-   sudo AGENT_USER=pauth-agent gateway/deploy/egress_lockdown.sh status
-   sudo AGENT_USER=pauth-agent gateway/deploy/egress_lockdown.sh remove
-   ```
-
-4. **Run the agent as that user** (e.g. `sudo -u pauth-agent claude`).
-
----
+Then run the agent as that user (e.g. `sudo -u pauth-agent claude`).
 
 ### Case B — cloud / API agent
 
-Here the agent runs on a provider you don't control, and you drive it over an
-API. Two things change:
+The agent runs on a provider you don't control. Two things change: (1) there is no
+local UID to pin, so the equivalent control is to make the gateway the **only tool
+endpoint the agent can reach** and broker credentials so real SaaS tokens live
+only inside the gateway; (2) prompt capture uses a **gateway-owned entry point** —
+submit the task to the gateway *first* (`POST /sessions/<id>/messages`), then let
+the agent run with its tool calls routed to the gateway.
 
-- **You cannot use the OS egress lockdown of Step 4.** There is no local UID to
-  pin — the agent isn't a process on your machine. The equivalent control moves
-  into the environment the agent *does* run in: make the gateway the **only tool
-  endpoint the agent can reach**, and broker credentials so the real SaaS
-  tokens live only inside the gateway (the agent never holds a working
-  credential to call SaaS directly). On a cloud VM you own, that means the VM's
-  egress policy (security group / firewall) allows only the gateway.
-- **Prompt capture is different.** You usually can't edit the hosted agent's
-  internals, so instead of a hook you use a **gateway-owned entry point**: submit
-  the task to the gateway *first* (`POST /sessions/<id>/messages` with the clean
-  prompt), get back a session, then let the agent run — with its tool calls
-  routed to the gateway as its tool/MCP endpoint. If the provider exposes a
-  tool-call callback, forward each call to the same session.
+Honest caveat: if a cloud agent can call arbitrary URLs and you cannot constrain
+its egress or credentials, a pure API relationship gives you **observation and
+per-destination allow/deny, not full enforcement**. See
+[`docs/self-hosting.md`](docs/self-hosting.md#setup-boundary).
 
-The honest caveat: if a cloud agent can call arbitrary URLs and you cannot
-constrain its egress or its credentials, a pure API relationship gives you
-**observation and per-destination allow/deny, not full PAuth enforcement**. Treat
-that as L1/L2, not L3. See
-[`docs/self-hosting.md`](docs/self-hosting.md#setup-boundary) for the level
-definitions and the reasoning.
+### The one rule that voids everything
+
+**Keep the agent non-admin.** If it runs as root / admin / a `sudo`-capable user,
+injected code can flush the firewall rule or reach SaaS directly and bypass the
+gateway. The lockdown script refuses to apply to a privileged account for exactly
+this reason.
 
 ---
 
-### The one rule that voids everything: keep the agent non-admin
+## Reproduce
 
-The egress lockdown (Case A) and the credential/egress boundary (Case B) are only
-as strong as the agent's inability to remove them. **If the agent runs as
-root / an admin / a `sudo`-capable user, injected code can flush the firewall
-rule or reach SaaS directly and bypass the gateway entirely.** The lockdown
-script refuses to apply to a privileged account for exactly this reason. If you
-grant the agent admin, report the effective protection honestly as L1/L2.
+Install:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+```
+
+Python 3.12+ (verified on 3.14).
+
+### Offline — no API key
+
+Verify zero FP / zero FN of the deterministic core against the paper's worked
+examples (banking sec. 5.3, shopping sec. 4):
+
+```bash
+.venv/bin/python -m tests.test_worked_examples
+```
+
+Throw attacks (off-slice operators, tampered recipient/amount/date, tampered
+envelope) directly at the Enforcer on the real AgentDojo tools:
+
+```bash
+.venv/bin/python -m tests.test_unexpected_attacks
+```
+
+Interpret strictly: PAuth rejects off-slice attacks, but **a replay that exactly
+matches the legitimate slice is permitted** — that is PAuth's authorization
+boundary, not a bug.
+
+### Full experiment — OpenAI API key
+
+Run the Planner (GPT-4.1) over the four AgentDojo suites and measure FP/FN:
+
+```bash
+cp .env.example .env   # write OPENAI_API_KEY, then:
+.venv/bin/python -m eval.fpfn --suites all
+```
+
+Try cheaply first (first 3 tasks of one suite):
+
+```bash
+.venv/bin/python -m eval.fpfn --suites banking --limit 3
+```
+
+The parameterized funnel measures the full availability + security chain across
+models and modes (see [`docs/evaluation.md`](docs/evaluation.md)):
+
+```bash
+.venv/bin/python -m eval.funnel agentdojo --mode headless --planner bestof --model gpt-5.1 --structuring
+```
+
+`eval.fpfn` options: `--suites banking,shopping` (pick suites), `--limit N`,
+`--model gpt-4.1`, `--no-cache`, `--out path.json`. Cost ≈ $0.002–0.04/task
+(~$1–4 for all 97); generated plans cache under `tests/experiment/cache/`, so
+re-runs are free.
+
+### How FP / FN is measured
+
+- **FP (benign)** — the generated plan is *actually executed* and every call
+  passes through the Enforcer; one rejection makes the task an FP. Rules are
+  derived from the same plan, so a correct implementation yields FP = 0.
+- **FN (injection)** — a forced injection (a tampered operand, or an off-task
+  sensitive call) is presented to the Enforcer against the post-run envelope
+  store; if any rule permits it, that is an FN. PAuth is default-deny.
+
+The harness is not vacuous: passing an on-slice call as an injection *is*
+permitted (correctly detected as an FN).
 
 ---
 
-## Design validity (reproduction experiment)
+## Repository structure
 
-We demonstrate, in a measurable form, that the core algorithm holds with zero FP
-/ zero FN exactly as in the paper. We reconstructed the paper's central claim —
-*task-scoped authorization via NL slices and envelopes permits all benign tasks
-(zero FP) and detects all injected illegitimate operations (zero FN)* — in a
-form that can actually be measured and verified.
-
-> **The measurement is honest.** The experiment runner does not hard-code FP/FN
-> to 0. If the LLM generates wrong code, an FP appears; if a slice is inaccurate,
-> an FN appears. The runner reports what actually happened (the `ANOMALIES`
-> section).
-
-### Experiment results (GPT-4.1, AgentDojo v1 + shopping)
-
-Measured values from `python -m eval.fpfn --suites all`:
-
-| Suite | #FN (#injection runs) | #FP (#benign runs) | A1 skipped |
-|-------|----------------------|--------------------|------------|
-| shopping | 0 (8) | 0 (2) | 0 |
-| banking | 0 (135) | 0 (13) | 3 |
-| slack | 0 (51) | 0 (7) | 14 |
-| travel | 0 (32) | 0 (5) | 15 |
-| workspace | 0 (164) | 0 (22) | 18 |
-| **Overall** | **0 (390)** | **0 (49)** | **50** |
-
-- **zero FP / zero FN** — Across all tasks where A1 generated grammar-conforming
-  code that could be executed (benign 49 + forced injection 390 runs), both false
-  positives and false negatives were 0. This reproduces the central claim of the
-  paper's Table 2.
-- **A1 skipped 50** — Tasks where GPT-4.1 generated code outside the restricted
-  grammar (loops, comprehensions, method calls, multiple assignment, etc.).
-  Rejected at the A1 gate, they never reach the enforcer. The paper reports that
-  "GPT-4.1 generated correct code for all 100 tasks," whereas this
-  implementation's A1 success rate is lower than that (presumably due to
-  differences in prompt strictness and model snapshot).
-- **code-crash 3** — Code that satisfies the grammar but crashes at runtime due
-  to a logic bug (type misuse such as `str > int`). Not FP/FN; reported
-  separately under `ANOMALIES`.
-
-What this result shows is, as in the paper's sec. 5.2 — *if slices/rules are
-derived correctly, zero FP and zero FN are a natural consequence of PAuth's
-design.*
+```
+pauth/              PAuth core (framework-independent, mostly deterministic)
+  grammar.py          restricted-grammar parser / validator (paper Appendix A)
+  codegen.py          Planner: restricted-grammar code generation (OpenAI)
+  slicing.py          Slicer: natural-language slice derivation
+  rules.py            Rule compiler: Algorithm 1
+  evaluator.py        deterministic evaluator for slice expressions
+  enforcer.py         Enforcer: runtime authorization + sandboxed executor
+  envelope.py         signed-envelope structure, HMAC signing, store
+  pipeline.py         Planner → Slicer → Rule compiler wiring
+  suites/shopping.py  the paper's self-contained Shopping suite
+gateway/
+  serving/http_server.py       local HTTP daemon
+  hooks/                        Claude Code prompt + tool-call hooks
+  deploy/egress_lockdown.sh     per-user egress restriction
+  planning/agentic_planner.py   Planner with grammar + semantic self-repair
+  runtime/confirmation.py       confirmation-gate machinery (untrusted-derived operands)
+  runtime/confirmer.py          confirmer strategies (informed / cautious / rubber-stamp)
+  runtime/human_authorized.py   human-authorization path: single-use, bound, signed grants
+benchmarks/
+  agentdojo_adapter.py          normalizes the 4 AgentDojo suites to one interface
+  forced_injection.py           forced-injection generation (sec. 5.1)
+  injecagent_adapter.py, tau_bench_adapter.py   additional framework adapters
+eval/
+  check.py            one-command FN=0 control check across every framework
+  fpfn.py             FP/FN + acceptance runner (paper Table 2 / Fig. 10)
+  funnel.py           parameterized funnel: availability + security across corpus/mode/planner
+  metrics.py          canonical metric vocabulary (AVAIL / OUTCOME / SEC / COST)
+  gates.py            per-metric attribution (see docs/glossary.md)
+docs/
+  evaluation.md       central claim, results, limitations  ← start here for the science
+  architecture.md     whole-system logical design
+  threat-model.md     defense boundary (in / out of scope)
+  glossary.md         precise definitions
+```
 
 ---
 
 ## Correspondence with the paper
 
 | Paper | This implementation |
-|------|----------|
-| A1: imperative code generation (LLM, sec. 4.1.1) | `pauth/codegen.py` (OpenAI GPT-4.1, prompt from Appendix A) |
-| A2: NL slice derivation (sec. 3.3 / 4.1.2, deterministic) | `pauth/slicing.py` |
-| A3: rule compilation (Algorithm 1, deterministic) | `pauth/rules.py` |
-| envelope (signed, sec. 3.4 / Fig. 3) | `pauth/envelope.py` |
-| B1-B4: runtime enforcement (sec. 4.1.3, deterministic) | `pauth/enforcer.py` |
-| restricted grammar (BNF from Appendix A) | `pauth/grammar.py` |
-| implementation on AgentDojo (sec. 4.1) | `benchmarks/agentdojo_adapter.py` |
-| Shopping suite (sec. 5.1) | `pauth/suites/shopping.py` |
-| forced injection (sec. 5.1) | `benchmarks/forced_injection.py` |
+|-------|---------------------|
+| Imperative code generation (LLM, sec. 4.1.1) | Planner — `pauth/codegen.py` (OpenAI, Appendix A prompt) |
+| NL slice derivation (sec. 3.3 / 4.1.2, deterministic) | Slicer — `pauth/slicing.py` |
+| Rule compilation (Algorithm 1, deterministic) | Rule compiler — `pauth/rules.py` |
+| Signed envelope (sec. 3.4 / Fig. 3) | `pauth/envelope.py` |
+| Runtime enforcement (sec. 4.1.3, deterministic) | Enforcer — `pauth/enforcer.py` |
+| Restricted grammar (BNF, Appendix A) | `pauth/grammar.py` |
+| AgentDojo implementation (sec. 4.1) | `benchmarks/agentdojo_adapter.py` |
+| Forced injection (sec. 5.1) | `benchmarks/forced_injection.py` |
 | FP/FN evaluation (sec. 5.2, Table 2) | `eval/fpfn.py` |
 
-As in the paper, **only A1 requires an LLM**; A2/A3/B1-B4 and the envelope are
-fully deterministic (paper sec. 5.2: "The derivation of slices/rules ... is
-deterministic without LLM").
+As in the paper, **only the Planner needs an LLM**; slicing, rule compilation,
+enforcement, and the envelope are fully deterministic (paper sec. 5.2).
 
----
+## Reproduction scope
 
-## Setup (reproducing the paper experiments)
-
-> To deploy the gateway in front of a real agent, see
-> [Deploying the gateway in front of your agent](#deploying-the-gateway-in-front-of-your-agent).
-> The steps below are only for running the reproduction experiments.
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-```
-
-Python 3.12 or later recommended (developed and verified on 3.14).
-
----
-
-## 1. Offline verification (no API key required)
-
-Against the paper's worked example (banking sec. 5.3 / shopping sec. 4 · 5.3),
-this verifies zero FP / zero FN of the deterministic core (A2/A3/B1-B4)
-**without calling any API**.
-
-```bash
-.venv/bin/python -m tests.test_worked_examples
-```
-
-What is verified:
-- that slice derivation matches the figures in the paper's sec. 5.3
-- that all calls are permitted in benign execution (zero FP)
-- that forced injection (illegitimate recipient / tampered amount / illegitimate
-  operator) is all rejected (zero FN)
-- that it works on the actual AgentDojo banking tools, environment, and pydantic
-  objects
-
-The Shopping suite ships with reference code, so it too can run without an API:
-
-```bash
-.venv/bin/python -m eval.fpfn --suites shopping
-```
-
-### Unexpected-attack probes (no API key required)
-
-A test that throws attacks not derived from AgentDojo injection tasks directly at
-the enforcer, under the precondition that a correct slice has already been
-generated. In addition to Shopping, it also checks against the real tools of
-AgentDojo banking / slack / travel / workspace:
-
-```bash
-.venv/bin/python -m tests.test_unexpected_attacks
-```
-
-Attacks verified:
-- off-slice sensitive operator / read operator
-- tampering of recipient, amount, subject, date, or product name
-- direct call in a state where no upstream envelope exists
-- enforcement of a call in a branch where the guard is false
-- tampering of a signed envelope
-
-Interpret the results strictly. Because PAuth is task-scope authorization, it can
-reject off-slice attacks, but **a replay that exactly matches the legitimate
-slice is permitted**. This is not an implementation bug; it is PAuth's
-authorization boundary.
-
----
-
-## 2. Full experiment (OpenAI API key required)
-
-For the four AgentDojo suites (banking / slack / travel / workspace), this runs
-A1 with **OpenAI GPT-4.1** and measures FP/FN in the paper's Table 2 format.
-
-```bash
-cp .env.example .env          # write OPENAI_API_KEY into .env
-.venv/bin/python -m eval.fpfn --suites all
-```
-
-An environment variable also works, without `.env`:
-
-```bash
-OPENAI_API_KEY=sk-... .venv/bin/python -m eval.fpfn --suites all
-```
-
-**Options**
-
-| Flag | Description |
-|--------|------|
-| `--suites all` | shopping + the 4 AgentDojo suites (default) |
-| `--suites banking,shopping` | specify suites |
-| `--limit N` | only the first N tasks of each suite (for cheap sanity checks) |
-| `--model gpt-4.1` | A1's model (`gpt-5-mini` etc. also possible) |
-| `--no-cache` | ignore cached generated code and regenerate |
-| `--out path.json` | output path for the result JSON |
-
-**Cost and time estimate**: about $0.002–0.04 per task (paper Fig. 10). Roughly
-$1–4 and about 10 minutes for all 97 tasks. Generated code is cached under
-`tests/experiment/cache/`, so re-runs after the first are free.
-
-To try cheaply first:
-
-```bash
-.venv/bin/python -m eval.fpfn --suites banking --limit 3
-```
-
----
-
-## How to read the output
-
-```
-Suite       #FN (#injection runs)     #FP (#benign runs)      A1 skipped
-banking     0 (166)                   0 (16)                  0
-...
-Overall     0 (756)                   0 (97)                  0
-```
-
-- **#FP (#benign runs)** — number of benign-execution tasks in which some call
-  was rejected.
-- **#FN (#injection runs)** — number of forced injections that PAuth ended up
-  permitting.
-- **A1 skipped** — number of tasks that could not be evaluated due to a missing
-  API key or a code-generation error.
-- **ANOMALIES** — details of tasks where an FP/FN or a crash of generated code
-  occurred. If this is empty, zero FP / zero FN holds.
-
-Details are written to `tests/experiment/results/results.json` (including per-task
-slice, rejection reason, and token cost).
-
----
-
-## How FP/FN is measured
-
-- **FP (benign)**: The code generated by A1 is *actually executed*, and each tool
-  call is passed through the enforcer. If even one is rejected, that task is an
-  FP. Since the rules are derived from the same code, if the implementation is
-  correct, FP should be 0 — and if one appears, it is a genuine signal of either
-  A1's code quality or an inconsistency in the implementation.
-- **FN (injection)**: A forced injection is "an illegitimate operation slipped
-  into a benign task" (paper sec. 5.1). Given the envelope store after benign
-  execution, an illegitimate call is presented to the enforcer. If any rule for
-  the `tool` permits it, it is an FN. PAuth is default-deny (rejects if there is
-  no exactly matching rule).
-- Forced injection comes in 2 kinds: (1) operand tampering (recipient → attacker,
-  or amount increased), (2) illegitimate operator (a sensitive call that
-  AgentDojo's injection task carries).
-
-The test harness is not vacuous: it is verified that passing an on-slice call as
-an injection is permitted (i.e., detected as an FN).
-
----
-
-## Structure
-
-```
-pauth/                  PAuth core mechanism (framework-independent, mostly deterministic)
-  grammar.py            restricted-grammar parser / validator / dead-code elimination (Appendix A)
-  slicing.py            A2: NL slice derivation
-  rules.py              A3: rule compilation via Algorithm 1
-  envelope.py           envelope data structure, HMAC signing, store
-  evaluator.py          deterministic evaluator for slice expressions (including helpers len/min/max/first/last)
-  enforcer.py           B1-B4: runtime enforcement + sandboxed executor
-  codegen.py            A1: code generation via OpenAI (Appendix A prompt)
-  pipeline.py           wiring of A1→A2→A3
-  suites/shopping.py    the paper's Shopping suite (self-contained)
-gateway/
-  api_spec_monitor.py   report generation for OpenAPI-spec change detection / notification
-  gateway.py            the plan once / enforce every call runtime boundary
-  openapi_suite.py      automatic reflection of OpenAPI 3.x spec → SuiteSpec
-  planner.py            swappable A1 strategy (deterministic recognizer / LLM free-form)
-  agent_channel.py      JSON message boundary for the agent
-  http_server.py        local HTTP daemon
-docs/
-  architecture.md       logical design (whole system)
-  threat-model.md       defense boundary (in / out of scope)
-  glossary.md           precise definitions (gates, metrics, mechanism terms)
-  self-hosting.md       design boundaries of the self-hosted / network-connected versions
-  ingress-design.md     ingress two-mode (SDK / interception) design
-  planning-strategies.md A1 strategy catalog (dialogue structuring / dedicated model / formal analysis)
-  design-status.md      organization of current design / under discussion / impossible / bottlenecks
-  business-operations.md organization of OSS free scope / commercial operation / billing boundary
-benchmarks/
-  agentdojo_adapter.py  normalizes the 4 AgentDojo suites to a common interface
-  forced_injection.py   forced injection generation (sec. 5.1)
-  injecagent_adapter.py, tau_bench_adapter.py  additional framework adapters
-eval/
-  fpfn.py               FP/FN + acceptance experiment runner (Table 2 / Fig. 10)
-  check.py              one-command FN=0 control check across every framework
-  task_success.py       ground-truth task success (AgentDojo utility())
-  gates.py              per-gate attribution G1-G5 + security (see docs/glossary.md)
-tests/experiment/       cached A1 plans + results data (not code)
-tests/
-  test_worked_examples.py  offline zero-FP/FN verification (no API key required)
-```
-
----
-
-## Notes on reproduction scope
-
-- **A1's model**: The paper primarily uses GPT-4.1, with partial evaluation of
-  GPT-5-Mini / Gemini-3-Flash / Sonnet-4.5. This implementation supports only the
-  OpenAI family by default (switchable with `--model`).
-- **envelope signing**: In the paper's multi-host setup, signed envelopes are
-  exchanged between servers. This implementation uses a single-host configuration
-  matched to AgentDojo, attaching HMAC signatures to a shared-memory envelope
-  store (faithful to the paper's sec. 4.1.3 configuration).
-- **Shopping suite**: Since it is the paper's own suite, it is reconstructed
-  self-contained based on the paper's examples (sec. 4 / 5.3) (2 tasks, reference
-  code included).
-- **forced injection count**: The paper hand-crafted 634 cases per task. Because
-  this implementation auto-generates from AgentDojo's injection tasks and operand
-  tampering, the count does not match (about 750), making for a broader search.
-- AgentDojo `v1` task counts are banking 16 / slack 21 / travel 20 /
-  workspace 40. This differs only slightly from the paper's tally (slack 19).
+- **Planner model** — the paper primarily uses GPT-4.1 (partial GPT-5-Mini /
+  Gemini-3-Flash / Sonnet-4.5). This implementation defaults to the OpenAI family
+  (`--model` to switch); results here also cover GPT-5.1.
+- **Envelope signing** — the paper exchanges signed envelopes between hosts; this
+  is a single-host configuration matched to AgentDojo, using HMAC over a
+  shared-memory envelope store.
