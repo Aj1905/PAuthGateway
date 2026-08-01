@@ -23,13 +23,14 @@ slides/
 vercel.json
 .vercelignore
 
-# exception: the lab-meeting deck deployed to GitHub Pages needs its entry
-# point tracked (self-contained HTML; hosting/node_modules stay local)
+# exception: decks under docs/slides/ deploy to GitHub Pages, so each deck's
+# index.html and img/ are tracked (scripts, hosting/, site/, .vercel stay local)
 !docs/slides/
 docs/slides/*
-!docs/slides/LabMeeting_2026_7_24/
-docs/slides/LabMeeting_2026_7_24/*
-!docs/slides/LabMeeting_2026_7_24/index.html
+!docs/slides/*/
+docs/slides/*/*
+!docs/slides/*/index.html
+!docs/slides/*/img/
 
 # graphify tool output — generated caches/reports, regenerable
 graphify-out/

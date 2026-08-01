@@ -1,0 +1,63 @@
+name: Deploy slides
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/slides/**"
+      - ".github/workflows/deploy-slides.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Assemble site from all decks
+        run: |
+          mkdir -p _site
+          for deck in docs/slides/*/; do
+            name=$(basename "$deck")
+            [ -f "$deck/index.html" ] || continue
+            mkdir -p "_site/$name"
+            cp "$deck/index.html" "_site/$name/"
+            if [ -d "$deck/img" ]; then
+              cp -r "$deck/img" "_site/$name/"
+            fi
+            echo "packed deck: $name"
+          done
+          {
+            echo '<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PAuthGateway slides</title><style>body{font-family:sans-serif;max-width:640px;margin:3rem auto;padding:0 1rem}li{margin:.5rem 0}</style></head><body><h1>PAuthGateway slides</h1><ul>'
+            for d in _site/*/; do
+              n=$(basename "$d")
+              echo "<li><a href=\"$n/\">$n</a></li>"
+            done
+            echo '</ul></body></html>'
+          } > _site/index.html
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
