@@ -1,9 +1,9 @@
-"""Human-authorization path: recover AVAIL_4 losses the ENFORCER must deny, by
+"""Human-authorization path: recover REF_REQUIRED_CALLS_PERMITTED losses the ENFORCER must deny, by
 routing them to a human who holds FN=0 -- and measure the honest ceiling + cost.
 
 The existing confirmation path is a SECONDARY gate: it only lets a human APPROVE a
 call the enforcer ALREADY authorized (an untrusted-derived value that still flows
-through the plan's dataflow). It never engages the data-asymmetry AVAIL_4 losses,
+through the plan's dataflow). It never engages the data-asymmetry REF_REQUIRED_CALLS_PERMITTED losses,
 where the enforcer DENIES because the plan has no rule for the value at all.
 
 This probe measures the human-AUTHORIZE path (the enforcer defers to a human on a
@@ -90,7 +90,7 @@ def _locate(value, prompt_l, env_l) -> str:
 
 
 def measure():
-    base_a4 = 0            # headless AVAIL_4 (enforcer only)
+    base_required = 0      # headless REF_REQUIRED_CALLS_PERMITTED (enforcer only)
     ran_clean = 0
     recover_ceiling = 0    # + tasks whose every missing ctrl value is env-extractable
     planner_miss = 0       # tasks whose miss was a value already in the prompt
@@ -115,7 +115,7 @@ def measure():
             cands = sorted(td.glob("cand*.py"))
             if not cands:
                 continue
-            # pick the most-side-effecting clean candidate (the AVAIL_4=47 baseline)
+            # pick the most-side-effecting clean candidate (the REF_REQUIRED_CALLS_PERMITTED=47 baseline)
             best, bn, benf = None, -1, None
             for f in cands:
                 tr, enf = _trace(suite, f.read_text())
@@ -145,7 +145,7 @@ def measure():
             unmatched = [gt_calls[i] for i in range(len(gt_calls)) if i not in matched]
 
             if not unmatched:
-                base_a4 += 1
+                base_required += 1
                 continue
 
             # --- human-authorize path over the deficiency set ---
@@ -197,12 +197,12 @@ def measure():
 
     print(f"human-authorize path -- ceiling & cost (gpt-5.1 struct, /{TOTAL})\n")
     print(f"  ran-clean tasks                     {ran_clean}/{TOTAL}")
-    print(f"  AVAIL_4 headless (enforcer only)    {base_a4}/{TOTAL}")
+    print(f"  REF_REQUIRED headless (enforcer only)  {base_required}/{TOTAL}")
     print(f"  tasks with a deficiency (gated)     {tasks_gated}")
     print(f"    -- of those, by missing-value location --")
     print(f"       value in trusted PROMPT (planner miss)   {planner_miss}")
     print(f"       value NOWHERE (un-derivable)             {unrecoverable}")
-    print(f"  AVAIL_4 + human-authorize CEILING   {base_a4 + recover_ceiling}/{TOTAL}"
+    print(f"  REF_REQUIRED + human-authorize CEILING {base_required + recover_ceiling}/{TOTAL}"
           f"   (+{recover_ceiling} legitimately recovered: every miss env-extractable)")
     print(f"  automation cost: confirmations      {confirms_needed} over {tasks_gated} gated tasks")
     print(f"\n  FN=0 now rests on the HUMAN at the gate (attacker tampers the candidate, n={gate_total}):")

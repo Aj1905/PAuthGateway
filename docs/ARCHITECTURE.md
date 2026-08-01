@@ -46,7 +46,7 @@ PAuth に基づく、改変不要でタスク単位の認可を行うエージ�
    │            │  submit_user_prompt(prompt)     plan ONCE   │      │
    │            │  handle_tool_call(tool, args)   enforce ALL │      │
    │            └────────┬────────────────────────┬───────────┘      │
-   │                     │ A1 → A2 → A3           │ B1 – B4          │
+   │                     │ plan-time pipeline      │ runtime checks   │
    │                     ▼                        ▼                  │
    │            ┌────────────────┐       ┌───────────────────┐       │
    │            │  pauth library │       │ suite runner      │       │
@@ -93,19 +93,21 @@ flowchart LR
         AgentChannel["AgentChannel\nPromptMessage / ToolCallMessage"]
     end
 
-    subgraph PlanningBoundary["A1 planner boundary (replaceable)"]
+    subgraph PlanningBoundary["Planner boundary (replaceable)"]
         PlannerSwitch["PAUTH_PLANNER_STRATEGY"]
         Deterministic["deterministic"]
         Freeform["llm-freeform"]
+        Auto["auto"]
+        Sufficiency["sufficiency-tightness"]
         Interactive["interactive-structuring\n(slot)"]
         Specialized["specialized-codegen\n(slot)"]
         Formal["formal-semantic\n(slot)"]
     end
 
     subgraph StableCore["Stable deterministic core"]
-        GrammarValidator["GrammarValidator\nA1 契約の執行点 (pauth/grammar.py)"]
+        GrammarValidator["GrammarValidator\nPlanner 契約の執行点 (pauth/grammar.py)"]
         Prepare["pauth.prepare()\nslices -> rules"]
-        Enforcer["Enforcer\nB1-B4 default-deny"]
+        Enforcer["Enforcer\ndefault-deny"]
         Envelope["EnvelopeStore\nsigned observations"]
     end
 
@@ -125,15 +127,16 @@ flowchart LR
     AgentChannel --> PlannerSwitch
     PlannerSwitch --> Deterministic
     PlannerSwitch --> Freeform
-    PlannerSwitch --> Interactive
-    PlannerSwitch --> Specialized
-    PlannerSwitch --> Formal
+    PlannerSwitch --> Auto
+    PlannerSwitch --> Sufficiency
+    PlannerSwitch -. "registered only" .-> Interactive
+    PlannerSwitch -. "registered only" .-> Specialized
+    PlannerSwitch -. "registered only" .-> Formal
 
     Deterministic --> GrammarValidator
     Freeform --> GrammarValidator
-    Interactive --> GrammarValidator
-    Specialized --> GrammarValidator
-    Formal --> GrammarValidator
+    Auto --> GrammarValidator
+    Sufficiency --> GrammarValidator
     GrammarValidator -. "棄却 → 再生成" .-> PlanningBoundary
 
     GrammarValidator --> Prepare
@@ -147,6 +150,10 @@ flowchart LR
     OpenAPI --> SuiteSpec
     FutureSaaS --> SuiteSpec
 ```
+
+点線の三戦略は正準名だけを登録した未実装候補である。選択すると
+`NotYetImplementedPlanner` が `PlanGenerationError` を返し、GrammarValidator
+には到達しない。
 
 **GrammarValidator(制限文法検証器)について。** 制限文法(論文付録 A)は
 Planner 境界の*契約そのもの*であり、その執行点をノードとして図示している。
@@ -163,7 +170,7 @@ Planner 境界の*契約そのもの*であり、その執行点をノードと�
 | 境界 | 契約 | 差し替え可能な部分 | 安定した所有者 |
 |---|---|---|---|
 | エージェント ingress | `PromptMessage` と `ToolCallMessage` | Claude hooks、InterceptingProxy(`gateway/serving/proxy.py`、執行の中核は実装済み、TLS/ネットワーク外殻は未着手)、独自クライアント | `gateway/ingress/agent_channel.py` |
-| Planner | 制限された命令型の `def run(...): ...`(執行点は GrammarValidator = `pauth/grammar.py`) | 決定的認識器、LLM 自由生成、対話的構造化、特化モデル、形式的構文解析器 | `gateway/planning/planner.py` |
+| Planner | 制限された命令型の `def run(...): ...`(執行点は GrammarValidator = `pauth/grammar.py`) | 決定的認識器、LLM 自由生成、両者を使う `auto`、充足性・厳密性の二段生成、登録済みの未実装候補 | `gateway/planning/planner.py` |
 | ツール供給源 | `SuiteSpec`(`tools`、`make_env`、`runner_factory`) | 買い物デモ、AgentDojo、MCP サーバー、OpenAPI 仕様、将来の SaaS アダプタ | `pauth/suites/base.py` |
 | 認可の中核 | コンパイル済みルール + envelope に裏付けられたオペランド検査 | プロバイダごとに変わるべきではない | `pauth/` |
 
@@ -264,7 +271,7 @@ flowchart LR
 
 | 赤点線の区画 | 意味 | 現在のリポジトリにおける対応箇所 |
 |---|---|---|
-| 命令型コード生成層 | 未解決の A1 問題:自然言語から制限された `run()` コードへ。 | `gateway/planning/planner.py`、`PLANNING_STRATEGIES.md`、`pauth/codegen.py`、`gateway/planning/agentic_planner.py` |
+| 命令型コード生成層 | 未解決の Planner 問題:自然言語から制限された `run()` コードへ変換する。 | `gateway/planning/planner.py`、`PLANNING_STRATEGIES.md`、`pauth/codegen.py`、`gateway/planning/agentic_planner.py` |
 | セルフホスト/ゲートウェイ設定層 | ユーザーがゲートウェイをどう起動・設定し、Planner 戦略を選び、セッションを管理し、変更された仕様を再読み込みし、監査・通知の出力を受け取るか。 | `gateway/serving/http_server.py`、`gateway/serving/config.py`、`SELF_HOSTING.md`、`gateway/providers/api_spec_monitor.py` |
 | SaaS 設定層 | 実アプリ/SaaS API をどのように登録・反映・監視し、`SuiteSpec` へ適合させるか。 | `pauth/suites/base.py`、`gateway/providers/mcp_suite.py`、`gateway/providers/openapi_suite.py`、`gateway/providers/registry.py` |
 
@@ -287,12 +294,12 @@ flowchart LR
 
 | 構成要素 | 責務 |
 |---|---|
-| `pauth/` | 純粋な PAuth アルゴリズム。`codegen`(A1 の LLM プロンプト)、`grammar`(付録 A のパーサ)、`slicing`(A2)、`rules`(A3、Algorithm 1)、`enforcer`(B1–B4)、`envelope`(署名付き観測)、`evaluator`(決定的な記号評価)、`suites/base`(SuiteSpec インタフェース)。エージェント・hook・HTTP のことは一切知らない。 |
+| `pauth/` | 純粋な PAuth アルゴリズム。`codegen`(Planner の LLM プロンプト)、`grammar`(付録 A のパーサ)、`slicing`、`rules`(Algorithm 1)、`enforcer`、`envelope`(署名付き観測)、`evaluator`(決定的な記号評価)、`suites/base`(SuiteSpec インタフェース)。エージェント・hook・HTTP のことは一切知らない。 |
 | `pauth/suites/shopping.py` | 自己完結したデモスイート:ツール、環境、runner に加え、worked example の参照コードとタスク定義。論文再現(`tests/`)とゲートウェイのデモの両方で使う。 |
 | `gateway/planning/core.py` | 自然言語 → run() の認識器(決定的、正規表現駆動)。strict 経路でのみ使われ、agentic/自由生成経路では飛ばされる。 |
-| `gateway/planning/planner.py` | 差し替え可能な A1 境界。Planner 戦略が制限された命令型コードを出力し、`Gateway` がそれを安定した PAuth パイプラインでコンパイルし執行する。 |
-| `PLANNING_STRATEGIES.md` | A1 戦略の目録:対話的構造化、命令型コード特化モデル、形式的な自然言語解析。 |
-| `gateway/planning/agentic_planner.py` | 文法フィードバックループ付きの LLM A1(Q12)。`pauth.codegen.SYSTEM_PROMPT` を包み、`RestrictedGrammarError` を捕捉し、違反した規則を LLM に返して最大 N 回まで再試行する。 |
+| `gateway/planning/planner.py` | 差し替え可能な Planner 境界。正準名、実装状態、生成処理の正本。Planner 戦略が制限された命令型コードを出力し、`Gateway` がそれを安定した PAuth パイプラインでコンパイルし執行する。 |
+| `PLANNING_STRATEGIES.md` | 登録済みの未実装候補について、処理の流れ、導入条件、失敗要因を比較する設計メモ。現行戦略の一覧や設定方法は持たない。 |
+| `gateway/planning/agentic_planner.py` | 文法フィードバックループ付きの LLM Planner(Q12)。`pauth.codegen.SYSTEM_PROMPT` を包み、`RestrictedGrammarError` を捕捉し、違反した規則を LLM に返して最大 N 回まで再試行する。 |
 | `gateway/runtime/gateway.py` | `Gateway` クラス。タスク一件のライフサイクルを保持する。入口は二つ:`submit_user_prompt(prompt)`(計画は一度だけ)と `handle_tool_call(tool, args)`(呼び出しごとに執行)。 |
 | `gateway/ingress/agent_channel.py` | エージェント向け API。メッセージは `prompt` と `tool_call` の二種。「プロンプトが最初、かつ一度だけ」を構造的に強制する。JSON 直列化可能な通信形。 |
 | `gateway/serving/http_server.py` | 標準ライブラリだけの最小 HTTP ラッパ。`POST /sessions/<id>/messages`。セッションはクライアントが与える id(Claude Code の session_id)で引く。 |
@@ -330,8 +337,8 @@ flowchart LR
                          ▼
               pauth.prepare(code)
               ├─ grammar.parse_and_validate
-              ├─ slicing.derive_slices     (A2)
-              └─ rules.compile_rules       (A3)
+              ├─ slicing.derive_slices
+              └─ rules.compile_rules
                          │
                          ▼
                 Session = { rules, env, store, runner }
@@ -355,7 +362,7 @@ flowchart LR
          Gateway.handle_tool_call(tool, args)
                          │
             ┌────────────┴────────────┐
-            │ Enforcer.check          │ B1, B2, B3 (paper)
+            │ Enforcer.check          │ paper Fig. 6, B series
             │  - rule exists?         │
             │  - guards satisfied?    │
             │  - operands match       │
@@ -366,7 +373,7 @@ flowchart LR
                suite.runner(tool, kwargs)   real SaaS call
                          │
                          ▼
-               wrap result + record envelope (B4)
+               wrap result + record envelope
                          │
                          ▼
                return result to agent
@@ -403,7 +410,7 @@ flowchart LR
 ゲートウェイが防ぐのは、乗っ取られたエージェントが**固定済みの計画の外**で行動する
 ことである。計画にないツール呼び出し、オペランドの水増し・すり替え・捏造、観測の
 省略や順序違反、セッション途中の計画の作り直し、ツール結果を介した行動注入は、
-いずれもデフォルト拒否(B1–B4)と署名付き envelope によって拒絶される。一方、
+いずれも Enforcer のデフォルト拒否と署名付き envelope によって拒絶される。一方、
 ユーザーのプロンプト自体に埋め込まれた injection、hook の無効化・迂回、サイド
 チャネル、計画そのものの正しさは、明示的に対象外である。
 
@@ -416,7 +423,7 @@ flowchart LR
 | 判断 | 所在 |
 |---|---|
 | 計画は一度、執行は呼び出しごと | gateway/runtime/gateway.py の docstring、Q12 の導出 |
-| 認識器を正準とする経路と LLM A1 の対比 | gateway/planning/planner.py、gateway/planning/core.py、gateway/planning/agentic_planner.py、Q9・Q12 |
+| 認識器を正準とする経路と LLM Planner の対比 | gateway/planning/planner.py、gateway/planning/core.py、gateway/planning/agentic_planner.py、Q9・Q12 |
 | 「規則 X には必ず従え」と明示する文法フィードバックループ | gateway/planning/agentic_planner.py、Q12 の回答 |
 | エージェント向けチャネルと信頼の移動 | gateway/ingress/agent_channel.py、Q13 |
 | セルフホストで、ユーザーが SaaS を登録する方式 | SELF_HOSTING.md、未実装 |
@@ -433,7 +440,7 @@ flowchart LR
 * `GATEWAY_MODE_PROMPT=strict` は、拒絶されたプロンプトで Claude Code を
   停止させる。ツール呼び出しの現在の既定は `GATEWAY_MODE_TOOL=log` —— 執行
   対象のツール集合が固まったら `strict` へ切り替えること。
-* 自由生成の LLM A1 経路では、認識器や LLM が使える run() を生成できるだけの
+* 自由生成の LLM Planner 経路では、認識器や LLM が使える run() を生成できるだけの
   文字通りの定数(IBAN、件名、日付など)がユーザープロンプトに含まれていな
   ければならない。指定の足りないプロンプトは、設計上の意図として拒絶される。
 
@@ -461,7 +468,7 @@ flowchart LR
   取引上の意味を持たないオペランドに使う。
 * `gateway/providers/suite_filter.py` —— bag-of-words の ``SuiteFilter``。
   併合された全体集合を、プロンプトに対して採点した部分集合へ絞り込む。多数の
-  MCP を登録しても A1 のプロンプトを小さく保てる。採点器は差し替え可能。
+  MCP を登録しても Planner のプロンプトを小さく保てる。採点器は差し替え可能。
 * `gateway/serving/config.py` —— HTTP サーバーの ``--config`` フラグが読む
   JSON 設定。元スイート、オペランドの方針、スイートフィルタの各種の値を
   宣言する。アダプタ表のおかげで、新しいバックエンドの追加は関数一つで済む。

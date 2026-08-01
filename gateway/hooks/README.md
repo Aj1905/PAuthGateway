@@ -27,7 +27,7 @@
 ```
 
 これは起動したままにしておく。再起動するとすべての有効なセッションが失われる
-(`--session-store PATH` で計画再構築の入力を永続化できる。B1)。
+(`--session-store PATH` で計画再構築の入力を永続化できる。旧 `issues` B1)。
 
 任意で `--audit-log PATH` を追加すると、permit/deny/accept/reject の判定が
 JSONL として追記される(運用者向け; 値を含みうるため、エージェントが読めない
@@ -66,18 +66,22 @@ JSONL として追記される(運用者向け; 値を含みうるため、エ�
 | `GATEWAY_MODE_PROMPT` | `strict` / `log` | `strict` | ゲートウェイが prompt を拒否したとき、Claude Code をブロックする(`strict`)か、ログだけ残して続行する(`log`)か。 |
 | `GATEWAY_MODE_TOOL` | `strict` / `log` | `log` | ツール呼び出しに対する同じ設定。統合の検証中は既定の `log` のままにし、強制対象のツール集合が固まったら `strict` に切り替える。 |
 | `GATEWAY_MODE` | `strict` / `log` | — | より具体的な変数が未設定のときの代替。 |
-| `PAUTH_PLANNER_STRATEGY` | `deterministic` / `llm-freeform` / `auto` / `sufficiency-tightness` / `interactive-structuring` / `specialized-codegen` / `formal-semantic` | `auto` | A1 の計画戦略を選ぶ(未設定なら `AgentChannel` の既定 `auto`)。 |
-| `PAUTH_PLANNER_SUITE` | suite 名 | — | `llm-freeform` に必須。例: `shopping`。 |
+| `PAUTH_PLANNER_STRATEGY` | `deterministic` / `llm-freeform` / `auto` / `sufficiency-tightness` / `interactive-structuring` / `specialized-codegen` / `formal-semantic` | `auto` | Planner 戦略を選ぶ(未設定なら `AgentChannel` の既定 `auto`)。 |
+| `PAUTH_PLANNER_SUITE` | suite 名 | — | `llm-freeform` と `sufficiency-tightness` に必須。`auto` では LLM フォールバック先を有効にする。例: `shopping`。 |
 | `PAUTH_PLANNER_MODEL` | model id | `gpt-4.1` | LLM を用いる戦略のモデル。 |
 | `PAUTH_PLANNER_MAX_RETRIES` | 整数 | `3` | 検証器フィードバックループの再試行予算。 |
-| `PAUTH_PLANNER_ENABLE_JUDGE` | 真偽値 | `true` | `llm-freeform` の意味判定器を有効化する。 |
-| `PAUTH_PLANNER_JUDGE_MODEL` | model id | — | 意味判定器に別モデルを使う場合に指定(任意)。 |
+| `PAUTH_PLANNER_ENABLE_JUDGE` | 真偽値 | `true` | `llm-freeform`、`auto` の LLM フォールバック、`sufficiency-tightness` の意味判定器を有効化する。 |
+| `PAUTH_PLANNER_JUDGE_MODEL` | model id | — | これらの意味判定器に別モデルを使う場合に指定(任意)。 |
 | `PAUTH_PLANNER_CACHE_DIR` | path | — | 生成コードのキャッシュ先。**デーモン側の環境変数としてのみ有効**。wire 経由の値は任意ディレクトリ書き込み防止のため無視される(`agent_channel.py` の `parse_message` 参照)。 |
 
 これらは shell の rc、hook のコマンド自体、または Claude Code の `env`
-ブロックで設定する。planner 系の変数はゲートウェイデーモン側と prompt hook 側の
-どちらでも設定でき、設定されていれば `submit_prompt.sh` が prompt メッセージに
-載せて転送する。
+ブロックで設定する。Planner 系の変数は、`PAUTH_PLANNER_CACHE_DIR` を除いて
+ゲートウェイデーモン側と prompt hook 側のどちらでも設定できる。設定されていれば
+`submit_prompt.sh` が prompt メッセージに載せて転送する。キャッシュ先は
+ゲートウェイデーモン側でのみ設定する。
+
+正準名と生成処理の正本は `gateway/planning/planner.py` の `KNOWN_STRATEGIES` と
+`build_planner()` である。この表は配備時に使う値だけを転記する。
 
 自由形式 planner の例:
 
@@ -124,8 +128,10 @@ sudo AGENT_USER=pauth-agent GATEWAY_HOST=127.0.0.1 GATEWAY_PORT=8081 gateway/dep
   を設定して `PAUTH_PLANNER_STRATEGY=llm-freeform` に切り替えるか、認識器を
   拡張する。
 * **登録済みだが未実装の戦略** → `interactive-structuring`、
-  `specialized-codegen`、`formal-semantic` は現在明示的に拒否する。これらは
-  将来の作業のための名前付きの枠であり、代替経路ではない。
+  `specialized-codegen`、`formal-semantic` は `PlanGenerationError` となり、
+  `accepted=false`、`rule_count=0` を返す。Gateway には計画生成失敗を記録した
+  セッションが残り、同じ channel では再計画できない。これは Planner の計画生成失敗であり、
+  Enforcer の拒否ではない。
 * **計画にないツール** → `pretool.sh` は REJECT を報告する。`strict` モード
   では Claude Code はそのツールを実行できない。`log` モードでは続行するが、
   拒否はログに記録される。強制に踏み切る前に Claude Code の実際の挙動を

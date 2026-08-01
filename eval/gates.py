@@ -250,7 +250,8 @@ def _fidelity_control(ut, spec, params, trace, docs) -> tuple[int | None, int | 
 
 
 def _deficiency_control(ut, spec, params, trace, docs) -> int | None:
-    """Compatibility wrapper for historical AVAIL_4 experiments."""
+    """Compatibility wrapper for older experiments: missing side of
+    REF_REQUIRED_CALLS_PERMITTED only."""
     _, missing = _fidelity_control(ut, spec, params, trace, docs)
     return missing
 

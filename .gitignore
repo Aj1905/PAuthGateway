@@ -14,9 +14,6 @@ gateway/cache/
 # (regenerable via tests/fixtures/extract_real_prompts.py)
 tests/fixtures/real_external_prompts.jsonl
 
-# business strategy memo — kept local, not pushed to remote
-docs/BUSINESS.md
-
 # not part of the OSS library — kept local, untracked
 slides/
 *.pdf

@@ -267,7 +267,7 @@ docs/
 
 - **導入する人**: [README](README.md)（本書）→ [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) → [`gateway/hooks/README.md`](gateway/hooks/README.md)
 - **設計を知りたい人**: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) → [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) → [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md)
-- **評価を知りたい人**: [`docs/EVALUATION.md`](docs/EVALUATION.md) → [`docs/GLOSSARY.md`](docs/GLOSSARY.md) → [`docs/AVAIL4_IMPROVEMENT_LOG.md`](docs/AVAIL4_IMPROVEMENT_LOG.md)（履歴）
+- **評価を知りたい人**: [`docs/EVALUATION.md`](docs/EVALUATION.md) → [`docs/GLOSSARY.md`](docs/GLOSSARY.md) → [`docs/REF_REQUIRED_IMPROVEMENT_LOG.md`](docs/REF_REQUIRED_IMPROVEMENT_LOG.md)（履歴）
 - **論文執筆**: [`paper/PAuthGateway/AUTHORING_GUIDE.md`](paper/PAuthGateway/AUTHORING_GUIDE.md)
 
 ---

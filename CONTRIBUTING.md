@@ -8,10 +8,10 @@
 本プロジェクトの要点は一つの保証にある: **侵害されたエージェントは、承認済み計画を超えて行動できない**(過剰認可なし)。これを守る二つの不変条件がある —
 プルリクエストで明確な根拠を示さずに弱めてはならない:
 
-1. **決定的な中核は決定的なままにする。** どの planner 戦略も、`pauth.prepare()` が
+1. **決定的な中核は決定的なままにする。** どの Planner 戦略も、`pauth.prepare()` が
    構文解析・スライス導出・ルールコンパイルを行う制限付き `run()` コードを出力する。
-   その検証を迂回したり、ルールを直接出力したりする planner は認めない
-   (`docs/PLANNING_STRATEGIES.md` を参照)。
+   その検証を迂回したり、ルールを直接出力したりする Planner は認めない
+   (`docs/GLOSSARY.md` の Planner / GrammarValidator と `docs/ARCHITECTURE.md` §1.1 を参照)。
 2. **エージェント向けフィードバックは値を含まないままにする。** エージェントのモデル文脈に
    再流入する拒否理由は、オペランド値を一切含んではならない — プロンプトインジェクションの
    ペイロードになりうるためである。`gateway/runtime/feedback.py` を参照。
@@ -19,14 +19,14 @@
 ## リポジトリ構成
 
 - `pauth/` — フレームワーク非依存のアルゴリズム中核: 制限文法、スライス導出、
-  ルールコンパイル、Enforcer、署名付き envelope、A1 コード生成。
-- `gateway/` — 実行時: planner 戦略、呼び出し単位の執行、ツールプロバイダ
+  ルールコンパイル、Enforcer、署名付き envelope、Planner コード生成。
+- `gateway/` — 実行時: Planner 戦略、呼び出し単位の執行、ツールプロバイダ
   (MCP / OpenAPI / スイート)、HTTP 配信、入口処理、デプロイスクリプト、
   Claude Code フック。
-- `eval/` — 測定ランナー(FP/FN、自由形式 A1)。
+- `eval/` — 測定ランナー(FP/FN、自由形式 Planner)。
 - `tests/` — 単体テストに加えて、実験アダプタとフィクスチャ。
 - `docs/` — 設計文書: アーキテクチャ、脅威モデル、自己ホスティング、入口設計、
-  planning 戦略、設計状況。
+  Planner 戦略候補、設計状況。
 
 ## 開発環境の準備
 
@@ -44,7 +44,7 @@ LLM の planner / 判定器の経路だけで、決定的なテストとオフ�
 
 ```bash
 .venv/bin/python -m pytest tests/ -q                          # full suite, offline
-.venv/bin/python -m tests.test_recognizer --backend fixture   # A1 recognizer, no key
+.venv/bin/python -m tests.test_recognizer --backend fixture   # Planner recognizer, no key
 .venv/bin/python -m eval.fpfn --suites shopping               # FP/FN measurement, no key
 ```
 

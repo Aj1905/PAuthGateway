@@ -40,7 +40,7 @@
 
 ## 保護の前提条件: 生のサイドチャネルを持たないこと (Stage 1)
 
-Stage 1 の保護の主張は、次の前提条件の下でのみ成り立つ(決定記録: S6、B5)。
+Stage 1 の保護の主張は、次の前提条件の下でのみ成り立つ(決定記録: S6。ボトルネック #5)。
 
 - エージェントが生の Bash、直接のネットワーク I/O、観測されない資格情報の経路を**持たない**こと。すべての外向きの動作はゲートウェイを通る tool 呼び出しである。
 - この前提条件を満たさない配備(例: Bash を有効にした Claude Code)を L3 保護として売り出してはならない。実効的な保護水準を L1/L2 として正直に報告する。
@@ -138,7 +138,7 @@ gateway ingress
   |
   | normalized PromptMessage / ToolCallMessage
   v
-planner boundary (A1)
+Planner boundary
   |
   | restricted imperative code
   v
@@ -156,32 +156,16 @@ upstream tool/SaaS/MCP server
 
 この境界より前はすべてアダプタ/プロキシの仕事である。Planner 境界より後はすべて PAuth の決定的な核である。
 
-## Planner 戦略
+## Planner の選択
 
-A1 のロジックは意図的に流動的にしてある。ゲートウェイはこれを HTTP/プロキシ面の一部としてではなく、差し替え可能な戦略として扱わなければならない。
+自己ホスト配備は、配備またはセッションごとに Planner 戦略を選ぶ。現在の
+`PAUTH_PLANNER_STRATEGY` の値、既定値、必須設定は `gateway/hooks/README.md` §3、
+正準名と生成処理は `gateway/planning/planner.py` を正とする。本書では一覧を
+複製しない。
 
-戦略の一覧は `PLANNING_STRATEGIES.md` にある。近い将来の三つの枠組みは次のとおり。
-
-- 「Grill me」流の明確化ループによる対話的構造化。
-- 検証器による再試行を備えた、命令型コード生成の専用モデル。
-- 狭い制御言語ドメインを対象とする、形式的な自然言語解析。
-
-実行時の戦略切り替えは、現在の HTTP/フック配備では `PAUTH_PLANNER_STRATEGY` という名前である。正準値は `deterministic`、`llm-freeform`、`interactive-structuring`、`specialized-codegen`、`formal-semantic` である。将来のパッケージ化されたアプリは、Planner 境界を変えることなく、同じ名前を設定ファイルや UI の設定へ移せる。
-
-現在の戦略:
-
-- `DeterministicRecognizerPlanner`: 厳格な正規表現の部分集合。テストと確度の高いデモに向く。
-- `LLMFreeformPlanner`: 文法修復と任意の意図判定器を備えた、汎用のプロンプトからコードへの生成。
-
-将来の戦略も、同じ Planner の形を実装すべきである。
-
-- ファインチューニングされたプロンプトからコードへのモデル。
-- リモートの Planner サービス。
-- 人間の確認を経る計画承認。
-- スイート固有の Planner。
-- 探索と LLM を組み合わせた複合 Planner。
-
-不変条件は、どの戦略も制限された命令型の `run` コードを出力し、その後に `pauth.prepare()` が文法を検証し、スライスを導出し、ルールをコンパイルすることである。いかなる Planner もこの決定的な検証を迂回することは許されない。
+未実装候補の状態は `DESIGN_STATUS.md`「Planner 戦略の発展」、設計上の比較は
+`PLANNING_STRATEGIES.md` に置く。将来の設定ファイルや UI も同じ正準名を使い、
+`ARCHITECTURE.md` §1.1 の Planner 境界を変えない。
 
 ## 自己ホストの基盤
 
@@ -232,7 +216,7 @@ OpenAPI に基づくスイートはゲートウェイ設定に登録できる。
 }
 ```
 
-ゲートウェイ起動時に、`gateway/providers/openapi_suite.py` が現在の OpenAPI 文書を `SuiteSpec` に反映する。operation は tool になり、パラメータと JSON ボディのフィールドはその tool のオペランドになり、レスポンススキーマは A1 の tool ドキュメントになる。
+ゲートウェイ起動時に、`gateway/providers/openapi_suite.py` が現在の OpenAPI 文書を `SuiteSpec` に反映する。operation は tool になり、パラメータと JSON ボディのフィールドはその tool のオペランドになり、レスポンススキーマは Planner の tool ドキュメントになる。
 
 通知/更新の作業の流れには、次を実行する。
 
@@ -256,7 +240,7 @@ OpenAPI に基づくスイートはゲートウェイ設定に登録できる。
 ## 直近の工学的順序
 
 1. `pauth/` を安定かつフレームワーク中立に保つ。
-2. すべての A1 変種を `gateway.planner` の背後に移す。
+2. すべての Planner 変種を `gateway.planner` の背後に移す。
 3. `AgentChannel` の JSON メッセージを内部の正規化済みプロトコルとして扱う。
 4. 実際のエージェント通信をそのプロトコルへ変換する ingress アダプタを作る。
 5. 正規化済みプロトコルが安定した後に、永続化/監査を追加する。

@@ -2,7 +2,7 @@
 
 本書は評価結果の正式なまとめである。中心的な主張、評価の設定、測定結果、
 そして正直な限界を記す。試行ごとの詳細は
-[AVAIL4_IMPROVEMENT_LOG.md](AVAIL4_IMPROVEMENT_LOG.md) に、アーキテクチャは
+[REF_REQUIRED_IMPROVEMENT_LOG.md](REF_REQUIRED_IMPROVEMENT_LOG.md) に、アーキテクチャは
 [ARCHITECTURE.md](ARCHITECTURE.md) に、脅威モデルは [THREAT_MODEL.md](THREAT_MODEL.md) にある。
 
 本書のすべての数値は、各節に記載したコマンドから再現できる。実行系は結果を
@@ -198,8 +198,9 @@ traceは過剰callなしの半分では良い成績を取り、必要call充足�
 
 GPT-5.1 構成では92タスクでpolicyがコンパイルされた。許可制約を外した実行時
 プローブでは生成コードのクラッシュが4件観測された一方、執行下での生成plan
-のtraceはコンパイル済み92件すべてで拒否がなかった。これにより、従来
-`AVAIL_3_RAN_CLEAN` として一括りにされていた二つの現象が分離される。
+のtraceはコンパイル済み92件すべてで拒否がなかった。これにより、従来は一つの
+実行時指標に一括りにされていた二つの現象(実行時クラッシュなしと
+plan-policy整合)が分離される。
 
 実行時クラッシュなしは意図への忠実度ではない。`def run(): pass` はクラッシュ
 しないが必要callを欠く。plan-policy整合も意図への忠実度ではない。過剰に広い
