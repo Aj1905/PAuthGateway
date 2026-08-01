@@ -122,7 +122,7 @@ sudo AGENT_USER=pauth-agent gateway/deploy/egress_lockdown.sh remove
 | ブラウザ/デスクトップ拡張 | フックを持たないエージェントの助けになりうる。 | 壊れやすく、アプリ固有で、順序性の証明が難しい。 |
 | 手動確認への切り替え | 安全性が重要な動作には有用。 | 作業の流れを変え、手間を増やす。 |
 
-ゲートウェイはセッションごとに保護水準(L0–L3)を追跡すべきである。**L0–L3 の正準定義はコード `gateway/runtime/protection.py` の `ProtectionLevel` である**(人間向けの一覧表は `DESIGN_STATUS.md` の「Current protection model」にある)。ここでは要点のみ述べる。
+ゲートウェイはセッションごとに保護水準(L0–L3)を追跡すべきである。**L0–L3 の正準定義はコード `gateway/runtime/protection.py` の `ProtectionLevel` である**(人間向けの一覧表は `DESIGN_STATUS.md` の「現在の保護モデル」にある)。ここでは要点のみ述べる。
 
 - **L2 未満のものを「完全な保護」と呼んではならない。** PAuth 流の主張は L2(素のプロンプト + tool 呼び出し)から始まり、設計目標は L3(+ tool を実行するゲートウェイ)である。
 - 素のプロンプト捕捉または経路制御を欠くセッションは、完全な PAuth 保護として売り出さない。

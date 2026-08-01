@@ -11,107 +11,16 @@ OSS としての提供形態と商用運用の様式は、本設計文書の対�
 そのものには手を入れず、エージェントごとの連携層が、外向きの動作が実行される前に
 タスクイベントとツールイベントを gateway へ転送する。
 
-### 確定した構成
+実装済みの構造の記述 — 構成図、結合境界とその契約、実装済みのアダプタ・ツール
+提供元・Planner 戦略の一覧 — は `ARCHITECTURE.md` を正とする(§1 構成図、§1.1
+結合境界と帰結、§2 構成要素、§8 ツール供給元)。本書はそれらを重複して保持しない。
+本書に残るのは状況の台帳、すなわち以下の保護レベル表(コードの写し)と、検討中・
+不可能・ボトルネックの各節である。
 
-以下が確定した論理構成である。ホスティングの選択はこの図から意図的に除外している。
-gateway は将来、localhost、利用者の VM、私設ネットワーク上のサービス、管理された
-自己ホスト型パッケージのいずれで動かすこともありうるが、ここに示す論理境界は安定に
-保たれるべきである。
+### 現在の保護モデル
 
-```mermaid
-flowchart LR
-    User["User"] -->|"normal prompt workflow"| Agent["Existing agent\nunmodified runtime"]
-
-    subgraph AgentSetup["Agent-specific setup"]
-        Hook["hook / plugin / connector"]
-        Route["network or tool route"]
-    end
-
-    Agent -->|"clean prompt before model/tool contamination"| Hook
-    Agent -->|"attempted tool call"| Hook
-    Agent -->|"outbound action path"| Route
-
-    Hook -->|"PromptEvent\nToolCallEvent\nSessionEvent"| Ingress["Gateway ingress\nnormalized event contract"]
-    Route -->|"prevent direct bypass"| Ingress
-
-    subgraph GatewayApp["PAuth Gateway"]
-        Ingress --> Channel["AgentChannel\nsession state"]
-        Channel --> Planner["Planner strategy\nNL -> restricted run() code"]
-        Planner --> Validator["Deterministic validation\nparser / slicing / rules"]
-        Validator --> Enforcer["Runtime enforcer\ndefault-deny decisions"]
-        Enforcer --> Audit["Audit + envelope store\nplans / decisions / observations"]
-    end
-
-    subgraph ToolBoundary["Tool source adapters"]
-        SuiteSpec["SuiteSpec"]
-        MCP["MCP adapter"]
-        OpenAPI["OpenAPI adapter\nspec reflection"]
-        Native["native SaaS adapter"]
-        Mock["demo / AgentDojo adapter"]
-    end
-
-    Enforcer -->|"allowed call only"| SuiteSpec
-    MCP --> SuiteSpec
-    OpenAPI --> SuiteSpec
-    Native --> SuiteSpec
-    Mock --> SuiteSpec
-
-    SuiteSpec -->|"real API call"| SaaS["SaaS / external systems"]
-
-    Config["Config + health checks\nplanner mode / sources / protection level"] --> Ingress
-    SpecMonitor["API spec monitor\nchange detection"] --> OpenAPI
-
-    style AgentSetup stroke:#111,stroke-width:2px,stroke-dasharray:4 4,fill:#fff
-    style GatewayApp stroke:#d00,stroke-width:2px,stroke-dasharray:4 4,fill:#fff
-    style ToolBoundary stroke:#d00,stroke-width:2px,stroke-dasharray:4 4,fill:#fff
-```
-
-確定事項から導かれる帰結:
-
-- エージェントごとに専用の導入アダプタが必要になりうる。すべてのアダプタが同一の
-  gateway イベント契約へ正規化する限り、それは許容できる。
-- gateway の製品としての中核は Claude Code hook ではない。Claude Code は一つの
-  アダプタにすぎない。
-- バイパスを防ぐためにネットワーク経路の制御は必要だが、プロンプトイベントと
-  ツールイベントも併せて捕捉しない限り、PAuth の執行には十分でない。
-- ホスティングは運用上の判断である。Planner の論理、執行の論理、`SuiteSpec` に
-  漏れ込んではならない。
-- gateway は自身の実効的な保護レベルを報告しなければならない。プロンプト捕捉や
-  経路制御を欠くとき、そのセッションを完全な PAuth 保護と称してはならない。
-
-現在安定している境界:
-
-| 境界 | 現在の契約 | リポジトリ内の対応箇所 |
-|---|---|---|
-| エージェント ingress | gateway メッセージ API 上の `PromptMessage` と `ToolCallMessage`。 | `gateway/ingress/agent_channel.py`, `gateway/serving/http_server.py` |
-| 立案 | ユーザープロンプトとツールスキーマを、制限された命令型の `run()` コードへ変換する。 | `gateway/planning/planner.py`, `PLANNING_STRATEGIES.md` |
-| 検証 | 生成されたコードは、執行の前に文法・スライス・ルールコンパイルを通過しなければならない。 | `pauth/grammar.py`, `pauth/pipeline.py`, `pauth/rules.py` |
-| 執行 | すべてのツール呼び出しを、コンパイル済みルールと envelope に裏付けられた観測に照らして検査する。 | `pauth/enforcer.py`, `pauth/envelope.py` |
-| ツール供給元 | ツール提供元は `SuiteSpec` に適合させる。 | `pauth/suites/base.py`, `gateway/providers/openapi_suite.py`, `gateway/providers/mcp_suite.py` |
-
-実装済みの連携と提供元:
-
-- Claude Code hooks は最初の ingress アダプタであり、製品の中核ではない。
-- shopping suite はローカルで決定的に動く実演用スイートである。
-- AgentDojo は `benchmarks/agentdojo_adapter.py` を介して、ベンチマーク／モック環境
-  として使っている。
-- MCP と OpenAPI の提供元は `SuiteSpec` に適合させられる。
-- OpenAPI 仕様はツールスキーマへ反映でき、その変更は監視できる。
-
-実装済みの Planner 戦略:
-
-- `deterministic`: 既知のプロンプト様式に対する既定の認識器。
-- `llm-freeform`: 文法修復の再試行と、任意で判定器の支援を伴う LLM によるコード
-  生成。
-
-登録済みだが未実装の Planner 枠:
-
-- `interactive-structuring`
-- `specialized-codegen`
-- `formal-semantic`
-
-現在の保護モデル(正準の定義はコード `gateway/runtime/protection.py` の
-`ProtectionLevel` であり、以下はその人間向けの写しである):
+正準の定義はコード `gateway/runtime/protection.py` の `ProtectionLevel` であり、
+以下はその人間向けの写しである。
 
 | レベル | gateway が観測するもの | 主張できること |
 |---|---|---|

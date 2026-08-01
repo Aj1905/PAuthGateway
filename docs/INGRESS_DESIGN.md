@@ -4,7 +4,7 @@
 
 本書は `DESIGN_STATUS.md` の規律に従う。確定した決定と未解決の問いを分離し、設計が実際以上に固まって見えないようにする。
 
-相互参照: `ARCHITECTURE.md` §1.1/§1.2(ingress 境界 — そこでは「ingress」を*アダプタ*の水準で使っている。そこにある「Terminology note」を参照。これは本書の方向モデルを指している。leg モデルが ARCHITECTURE.md に現れるのは傍受の実装後である)、`DESIGN_STATUS.md` のボトルネック #2(プロンプト捕捉が製品上の主たるリスク)。
+相互参照: `ARCHITECTURE.md` §1.1/§1.2(そこでは「ingress」を*アダプタ*の水準で使う。二水準の定義は `GLOSSARY.md` の「ingress の二水準」を正とする。アダプタの実装状態の正は同書 §1.1 の結合境界表である)、`DESIGN_STATUS.md` のボトルネック #2(プロンプト捕捉が製品上の主たるリスク)。
 
 ## 核心原理: ingress の方式はエージェントを誰が所有するかで決まる
 
@@ -15,7 +15,7 @@
 
 どちらの ingress 方式も**同じ** `PromptMessage` / `ToolCallMessage` 契約(`gateway/ingress/agent_channel.py`)へ正規化され、**同じ**決定的な核(`pauth/`)へ流れ込む。異なるのは ingress アダプタだけである。これはまさに、`ARCHITECTURE.md` の疎結合な境界が想定していた使い方である。
 
-ただし注意: **本書は「ingress」を二つの水準で使う** — *アダプタ*(上記の SDK か傍受か)と、各捕捉/強制タップの*配線上の方向*である。捕捉と強制は往復の**同じ leg には載らない**。Mode 2 を読む前に、下の「方向モデル」を読むこと。
+ただし注意: **本書は「ingress」を二つの水準で使う** — *アダプタ*(上記の SDK か傍受か。`ARCHITECTURE.md` の "ingress" はこの水準のみ)と、方向モデルの*区間(leg)*である(二水準の定義は `GLOSSARY.md` の「ingress の二水準」)。捕捉と強制は往復の**同じ leg には載らない**。Mode 2 を読む前に、下の「方向モデル」を読むこと。
 
 ## 方向モデル: 「ingress」≠ 単一の方向(request/response × ingress/egress)
 
@@ -64,7 +64,7 @@ agent ──────────────────▶ gateway ──�
 | 共有の核(`pauth/`、Enforcer、envelope、`AgentChannel` 契約) | **作る** | 両方式に仕える。土台である。 |
 | Ingress 境界(安定した契約を持つきれいな継ぎ目) | **既に存在** | Mode 2 を後から接続できるよう、きれいなまま保つ。 |
 | Mode 1 SDK ingress | **作る** | 橋頭堡。最初の顧客はこれを使う。 |
-| Mode 2 傍受 ingress(プロキシ / フック) | **一部 — 核は実装済み** | フック(`gateway/hooks/`)は稼働している。プロキシの強制の核(`gateway/serving/proxy.py` の `InterceptingProxy`、S22)と egress lockdown(`gateway/deploy/egress_lockdown.sh`)も実装済み。残るのは TLS 終端 / ネットワーク配線の外殻だけである。 |
+| Mode 2 傍受 ingress(プロキシ / フック) | **一部 — 核は実装済み** | 何がどこまで実装済みか(フック、`InterceptingProxy`、egress lockdown、TLS/ネットワーク外殻)は `ARCHITECTURE.md` §1.1 の結合境界表と §2 を正とする。 |
 
 「両方作る」とは両方を*準備する*(共有の核 + 開いた境界)ことであって、両方を*実装する*ことではない。Mode 1 の検証前に Mode 2 のアダプタを書くのは、未検証の第二の用途に対する早すぎる抽象化である。
 
@@ -99,7 +99,7 @@ customer agent code
 
 ## Mode 2 — 傍受(無改変エージェント。先送り、差し込み口のみ)
 
-コードを変更できないエージェント(Claude Code、Codex)向け。**まだ作っていない。** 境界を後付けではなく設計に織り込んだまま保つため、ここに記録する。
+コードを変更できないエージェント(Claude Code、Codex)向け。**完成したアダプタとしてはまだ提供していない**(部分実装の現状は `ARCHITECTURE.md` §1.1 の結合境界表を正とする)。境界を後付けではなく設計に織り込んだまま保つため、ここに記録する。
 
 傍受の下位方式は、エージェントの認証方法に依存する。
 
