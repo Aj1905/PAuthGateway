@@ -36,6 +36,7 @@ docs/slides/*/*
 graphify-out/
 
 # LaTeX build artifacts
+paper/PAuthGateway/build/
 paper/**/*.aux
 paper/**/*.log
 paper/**/*.fls
