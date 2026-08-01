@@ -15,7 +15,7 @@ gateway/cache/
 tests/fixtures/real_external_prompts.jsonl
 
 # business strategy memo — kept local, not pushed to remote
-BUSINESS_STRATEGY.md
+docs/BUSINESS.md
 
 # not part of the OSS library — kept local, untracked
 slides/
@@ -23,10 +23,29 @@ slides/
 vercel.json
 .vercelignore
 
+# exception: the lab-meeting deck deployed to GitHub Pages needs its entry
+# point tracked (self-contained HTML; hosting/node_modules stay local)
+!docs/slides/
+docs/slides/*
+!docs/slides/LabMeeting_2026_7_24/
+docs/slides/LabMeeting_2026_7_24/*
+!docs/slides/LabMeeting_2026_7_24/index.html
+
+# graphify tool output — generated caches/reports, regenerable
+graphify-out/
+
+# LaTeX build artifacts
+paper/**/*.aux
+paper/**/*.log
+paper/**/*.fls
+paper/**/*.fdb_latexmk
+paper/**/*.bbl
+paper/**/*.blg
+paper/**/*.synctex.gz
+
 # internal Japanese working logs — kept local, not published
 docs/plan.md
 docs/solution.md
-docs/materials/
 
 # personal agent/advisory prefs — not project contributor guidance
 AGENTS.md

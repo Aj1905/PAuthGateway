@@ -29,6 +29,12 @@ from gateway.runtime.confirmation import PendingConfirmation
 
 
 class Confirmer(Protocol):
+    """``confirm`` is required. A confirmer MAY also define
+    ``announce_handover(approved: int, rejected: int) -> None``: the batched
+    executor calls it once, after the barrier has decided every deferred action
+    and before the unattended commit, so a human-facing confirmer can tell the
+    user no further confirmation will occur. Headless confirmers omit it."""
+
     def confirm(self, pending: PendingConfirmation) -> bool: ...
 
 
@@ -142,3 +148,12 @@ class InteractiveConfirmer:
         except EOFError:
             ans = ""
         return ans in ("y", "yes")
+
+    def announce_handover(self, approved: int, rejected: int) -> None:
+        print("\n----- 確認完了 -----")
+        print("お疲れ様でした。ここから先、確認ゲートは発生しません。")
+        if approved:
+            tail = f"(却下された {rejected} 件は実行しません)" if rejected else ""
+            print(f"承認いただいた {approved} 件は、こちらで引き受けて実行します。{tail}")
+        else:
+            print("承認された操作はないため、何も実行せずに終了します。")

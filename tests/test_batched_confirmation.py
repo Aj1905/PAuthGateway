@@ -85,6 +85,16 @@ class _Recorder:
         return v
 
 
+@dataclasses.dataclass
+class _AnnouncingRecorder(_Recorder):
+    """Also records the handover announcement: its counts, how many confirms had
+    happened by then, and what had been paid at that moment."""
+    handovers: list = dataclasses.field(default_factory=list)
+
+    def announce_handover(self, approved, rejected):
+        self.handovers.append((approved, rejected, self._i, list(self.env.paid)))
+
+
 def test_both_gated_pays_deferred_to_one_barrier():
     prepared, enf, env, suite, tmap = _armed_pay()
     conf = _Recorder([True, True], env)
@@ -107,6 +117,18 @@ def test_rejected_action_never_executes_fn0():
     assert len(rep.deferred) == 2
     assert env.paid == [("alice", 100.0)]         # only the approved one ran
     assert [a.approved for a in rep.deferred] == [True, False]
+
+
+def test_handover_announced_once_after_barrier_before_commit():
+    prepared, enf, env, suite, tmap = _armed_pay()
+    conf = _AnnouncingRecorder([True, False], env)
+    execute_with_batched_confirmation(
+        prepared.source, enf, suite.tool_params(), suite.runner_factory(env),
+        taint_map=tmap, docs={n: s.doc for n, s in _PAY_TOOLS.items()}, confirmer=conf)
+    # announced exactly once, with the barrier's tally, after BOTH confirms and
+    # before ANY commit -- so "no further confirmation" is true when displayed
+    assert conf.handovers == [(1, 1, 2, [])]
+    assert env.paid == [("alice", 100.0)]         # commit happened after the announce
 
 
 # ---- non-gated dependency: create returns a trusted id used by share ---------
@@ -153,6 +175,9 @@ def test_non_gated_side_effect_with_result_dependency_runs_inline():
     class _NoConfirm:
         def confirm(self, pending):  # must never be called
             raise AssertionError("no gated action -> no confirmation expected")
+
+        def announce_handover(self, approved, rejected):  # nothing was asked
+            raise AssertionError("no barrier interaction -> no handover announce")
 
     rep = execute_with_batched_confirmation(
         prepared.source, enf, suite.tool_params(), suite.runner_factory(env),

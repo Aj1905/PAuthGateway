@@ -12,13 +12,17 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 
 from pauth.codegen import generate_code
 from pauth.suites.base import SuiteSpec
 
 from .agentic_planner import generate_code_with_self_repair
 from .core import recognize_prompt, run_to_pauth_code
+from .sufficiency_tightness import (
+    SufficiencyTightnessError,
+    generate_sufficiency_tightness,
+)
 
 
 class PlanGenerationError(Exception):
@@ -31,6 +35,7 @@ STRATEGY_AUTO = "auto"
 STRATEGY_INTERACTIVE_STRUCTURING = "interactive-structuring"
 STRATEGY_SPECIALIZED_CODEGEN = "specialized-codegen"
 STRATEGY_FORMAL_SEMANTIC = "formal-semantic"
+STRATEGY_SUFFICIENCY_TIGHTNESS = "sufficiency-tightness"
 
 STRATEGY_ALIASES = {
     "strict": STRATEGY_DETERMINISTIC,
@@ -48,6 +53,10 @@ STRATEGY_ALIASES = {
     "imperative-model": STRATEGY_SPECIALIZED_CODEGEN,
     "formal": STRATEGY_FORMAL_SEMANTIC,
     "formal_semantic": STRATEGY_FORMAL_SEMANTIC,
+    "sufficiency_tightness": STRATEGY_SUFFICIENCY_TIGHTNESS,
+    "coverage-audit": STRATEGY_SUFFICIENCY_TIGHTNESS,
+    "coverage_audit": STRATEGY_SUFFICIENCY_TIGHTNESS,
+    "st": STRATEGY_SUFFICIENCY_TIGHTNESS,
 }
 
 KNOWN_STRATEGIES = {
@@ -57,6 +66,7 @@ KNOWN_STRATEGIES = {
     STRATEGY_INTERACTIVE_STRUCTURING,
     STRATEGY_SPECIALIZED_CODEGEN,
     STRATEGY_FORMAL_SEMANTIC,
+    STRATEGY_SUFFICIENCY_TIGHTNESS,
 }
 
 
@@ -79,6 +89,7 @@ class PlanDraft:
     code: str
     reason: str
     run_doc: dict | None = None
+    planner_metadata: dict[str, Any] | None = None
 
 
 class Planner(Protocol):
@@ -134,12 +145,16 @@ class LLMFreeformPlanner:
             raise PlanGenerationError(
                 f"unknown suite {self.suite_name!r}: {type(exc).__name__}: {exc}"
             ) from exc
-        if self.max_retries > 0:
+        # ``pauth.codegen.generate_code`` is OpenAI-only. Claude/Fable must use
+        # the provider-aware generator even for a one-shot Direct@1 run.
+        # With zero retries we also disable the embedded semantic judge so the
+        # historical "one model generation" meaning remains intact.
+        if self.max_retries > 0 or self.model.lower().startswith("claude"):
             kwargs = {
                 "model": self.model,
                 "max_retries": self.max_retries,
                 "cache_path": self.cache_path,
-                "enable_judge": self.enable_judge,
+                "enable_judge": self.enable_judge if self.max_retries > 0 else False,
             }
             if self.judge_model is not None:
                 kwargs["judge_model"] = self.judge_model
@@ -157,6 +172,59 @@ class LLMFreeformPlanner:
             suite_name=self.suite_name,
             code=code,
             reason=f"plan accepted via LLM the Planner ({self.suite_name})",
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class SufficiencyTightnessPlanner:
+    """Coverage-first generation followed by a mechanically delete-only audit."""
+
+    suite_name: str
+    model: str = "gpt-4.1"
+    cache_path: Path | None = None
+    max_retries: int = 3
+    enable_judge: bool = True
+    judge_model: str | None = None
+    client: Any | None = None
+    judge_client: Any | None = None
+    executor: Any | None = None
+
+    def generate(
+        self,
+        prompt: str,
+        suite_loader: Callable[[str], SuiteSpec],
+    ) -> PlanDraft:
+        try:
+            suite = suite_loader(self.suite_name)
+        except Exception as exc:  # noqa: BLE001
+            raise PlanGenerationError(
+                f"unknown suite {self.suite_name!r}: {type(exc).__name__}: {exc}"
+            ) from exc
+        try:
+            result = generate_sufficiency_tightness(
+                prompt,
+                suite.tool_docs(),
+                tool_signer=suite.tool_signer(),
+                model=self.model,
+                max_retries=self.max_retries,
+                cache_path=self.cache_path,
+                client=self.client,
+                enable_judge=self.enable_judge,
+                judge_model=self.judge_model,
+                judge_client=self.judge_client,
+                executor=self.executor,
+            )
+        except SufficiencyTightnessError as exc:
+            raise PlanGenerationError(str(exc)) from exc
+        return PlanDraft(
+            suite_name=self.suite_name,
+            code=result.code,
+            reason=(
+                "plan accepted via sufficiency→tightness Planner "
+                f"({self.suite_name}; removed {len(result.dropped_action_ids)} "
+                "coverage action(s))"
+            ),
+            planner_metadata=result.metadata(),
         )
 
 
@@ -220,12 +288,17 @@ def build_cache_path(
     prompt: str,
     model: str,
     max_retries: int,
+    enable_judge: bool = True,
+    judge_model: str | None = None,
 ) -> Path | None:
     """Return a stable per-prompt cache path for generated code."""
     if not cache_dir:
         return None
     slug = hashlib.sha1(
-        f"{strategy}::{model}::{prompt}::r{max_retries}".encode()
+        (
+            f"{strategy}::{model}::{prompt}::r{max_retries}"
+            f"::judge={enable_judge}:{judge_model or ''}"
+        ).encode()
     ).hexdigest()[:12]
     return Path(cache_dir) / f"{slug}.py"
 
@@ -250,7 +323,32 @@ def build_planner(
     canonical = normalize_strategy_name(strategy)
     if canonical == STRATEGY_DETERMINISTIC:
         return DeterministicRecognizerPlanner()
-    if canonical in (STRATEGY_LLM_FREEFORM, STRATEGY_AUTO):
+    if canonical in (
+        STRATEGY_LLM_FREEFORM,
+        STRATEGY_AUTO,
+        STRATEGY_SUFFICIENCY_TIGHTNESS,
+    ):
+        if canonical == STRATEGY_SUFFICIENCY_TIGHTNESS:
+            if not suite_name:
+                raise PlanGenerationError(
+                    "planner strategy 'sufficiency-tightness' requires suite_name"
+                )
+            return SufficiencyTightnessPlanner(
+                suite_name=suite_name,
+                model=model,
+                cache_path=build_cache_path(
+                    cache_dir,
+                    strategy=STRATEGY_SUFFICIENCY_TIGHTNESS,
+                    prompt=prompt,
+                    model=model,
+                    max_retries=max_retries,
+                    enable_judge=enable_judge,
+                    judge_model=judge_model,
+                ),
+                max_retries=max_retries,
+                enable_judge=enable_judge,
+                judge_model=judge_model,
+            )
         freeform: LLMFreeformPlanner | None = None
         if suite_name:
             freeform = LLMFreeformPlanner(
@@ -262,6 +360,8 @@ def build_planner(
                     prompt=prompt,
                     model=model,
                     max_retries=max_retries,
+                    enable_judge=enable_judge,
+                    judge_model=judge_model,
                 ),
                 max_retries=max_retries,
                 enable_judge=enable_judge,

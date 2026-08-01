@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import types
+
 import pytest
 
 from pauth.suites.shopping import build_suite as build_shopping_suite
@@ -9,6 +11,7 @@ from pauth.suites.shopping import build_suite as build_shopping_suite
 from gateway.planning.planner import (
     STRATEGY_AUTO,
     AutoPlanner,
+    LLMFreeformPlanner,
     PlanDraft,
     PlanGenerationError,
     build_planner,
@@ -85,3 +88,36 @@ def test_build_planner_auto_with_suite_has_fallback():
     assert isinstance(planner, AutoPlanner)
     assert planner.freeform is not None
     assert planner.freeform.suite_name == "shopping"
+
+
+def test_claude_one_shot_uses_provider_aware_generator(monkeypatch):
+    calls = []
+
+    def fake_agentic(task, tools, **kwargs):
+        calls.append(kwargs)
+        return types.SimpleNamespace(code="def run():\n    pass\n")
+
+    def fail_openai_only(*_args, **_kwargs):
+        raise AssertionError("OpenAI-only generator must not receive a Claude model")
+
+    monkeypatch.setattr(
+        "gateway.planning.planner.generate_code_with_self_repair", fake_agentic
+    )
+    monkeypatch.setattr("gateway.planning.planner.generate_code", fail_openai_only)
+
+    draft = LLMFreeformPlanner(
+        suite_name="shopping",
+        model="claude-fable-5",
+        max_retries=0,
+        enable_judge=True,
+    ).generate("Inspect the cart.", _loader)
+
+    assert draft.code == "def run():\n    pass\n"
+    assert calls == [
+        {
+            "model": "claude-fable-5",
+            "max_retries": 0,
+            "cache_path": None,
+            "enable_judge": False,
+        }
+    ]

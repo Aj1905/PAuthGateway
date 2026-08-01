@@ -1,7 +1,7 @@
 """Measure the crash-repair executor on exactly the tasks that currently crash.
 
-The four AgentDojo tasks whose every cached candidate crashes at runtime (the
-AVAIL_3 losses) are regenerated WITH the crash-probe executor wired into the
+The four AgentDojo tasks whose every cached candidate crashes at runtime are
+regenerated WITH the crash-probe executor wired into the
 Planner's self-repair loop -- it dry-runs each candidate against a mock env and
 feeds the crash back for repair. Reports before (all crash) -> after (does the
 selected candidate now run clean?). Targeted, so it costs ~4 tasks of API, not 97.
@@ -89,8 +89,9 @@ def main():
                 best_clean = True
         recovered += best_clean
         print(f"  {sname}/{tid}: before=CRASH  after={'CLEAN (recovered)' if best_clean else 'still crash'}")
-    print(f"\ncrash-repair executor: recovered {recovered}/{len(CRASHERS)} AVAIL_3 losses "
-          f"(AVAIL_3 88 -> {88 + recovered}/97, AVAIL_4 unaffected unless the recovered run also fills its calls)")
+    print(f"\ncrash-repair executor: recovered {recovered}/{len(CRASHERS)} runtime crashes "
+          f"(crash-free compiled plans 88 -> {88 + recovered}/92; reference fidelity "
+          f"is unchanged unless the recovered run also fills its calls)")
 
 
 if __name__ == "__main__":

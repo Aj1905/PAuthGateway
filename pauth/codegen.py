@@ -206,7 +206,7 @@ class CodegenResult:
     code: str
     prompt_tokens: int
     completion_tokens: int
-    cost_usd: float
+    cost_usd: float | None
     cached: bool
     model: str
 
@@ -220,8 +220,13 @@ _PRICING: dict[str, tuple[float, float]] = {
 }
 
 
-def _cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
-    inp, out = _PRICING.get(model, _PRICING["gpt-4.1"])
+def _cost(
+    model: str, prompt_tokens: int, completion_tokens: int
+) -> float | None:
+    pricing = _PRICING.get(model)
+    if pricing is None:
+        return None
+    inp, out = pricing
     return prompt_tokens / 1e6 * inp + completion_tokens / 1e6 * out
 
 

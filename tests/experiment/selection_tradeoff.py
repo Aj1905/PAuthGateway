@@ -1,10 +1,11 @@
-"""Availability vs least-authority tradeoff, planner FIXED, selection VARIED.
+"""Reference-fidelity tradeoff with planner candidates fixed and selection varied.
 
 Re-selects from the SAME cached gpt-5.1 best-of-N candidates under two policies:
-  MAX  -- clean, then MOST side-effecting calls   (current: maximizes AVAIL_4)
-  MIN  -- clean, then FEWEST side-effecting >0     (minimal-complete: minimizes excess)
-and measures AVAIL_2/3/4, OUTCOME, SEC_NO_EXCESS, COST for each. No API calls
-(candidates are cached), so this isolates the selection policy from the planner.
+  MAX  -- clean, then MOST side-effecting calls
+  MIN  -- clean, then FEWEST side-effecting >0
+and measures lifecycle diagnostics, both reference-fidelity halves, their exact
+conjunction, outcome, and cost. No API calls are made because candidates are
+cached, so this isolates selection policy from Planner generation.
 
 Usage: python -m tests.experiment.selection_tradeoff
 """
@@ -17,7 +18,17 @@ from agentdojo.task_suite.load_suites import get_suites
 
 from benchmarks.agentdojo_adapter import load_suite
 from benchmarks.structured_read import augment_with_structuring
-from eval.gates import _deficiency_control, _excess_deficiency, _positional
+from eval.gates import _fidelity_control, _permissive_runtime_crash
+from eval.metrics import (
+    CONFORMANCE_PLAN_TRACE_PERMITTED,
+    COST_TOOL_CALLS,
+    OUTCOME_TASK_COMPLETED,
+    REF_EXACT_AUTHORIZATION,
+    REF_NO_EXCESS_CALLS_PERMITTED,
+    REF_REQUIRED_CALLS_PERMITTED,
+    RELIABILITY_RUNTIME_CRASH_FREE,
+    SYNTHESIS_POLICY_COMPILED,
+)
 from gateway.runtime.confirmation import is_side_effecting
 from pauth import prepare
 from pauth.enforcer import Enforcer, execute_generated_code
@@ -30,17 +41,16 @@ TOTAL = 97  # full agentdojo user-task count -> percentages are /97
 
 
 def _exec(suite, code):
-    """Return (prepared_ok, ran_clean, trace) for one plan; trace = permitted calls."""
+    """Return prepared plan, enforced report, and permitted trace."""
     try:
         prepared = prepare(code, suite.tool_names(), suite.tool_signer())
     except RestrictedGrammarError:
-        return None, False, []
+        return None, None, []
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
                                  suite.runner_factory(suite.make_env()))
-    clean = rep.crashed is None and not rep.denied
     trace = [(e.tool, list(e.args)) for e in rep.events if e.decision.permit]
-    return prepared, clean, trace
+    return prepared, rep, trace
 
 
 def _nse(trace):
@@ -52,9 +62,10 @@ def _select(suite, cands, policy):
     fewest side-effecting. Fall back to any clean, then first valid, then first."""
     scored = []
     for c in cands:
-        prepared, clean, trace = _exec(suite, c)
+        prepared, rep, trace = _exec(suite, c)
         if prepared is None:
             continue
+        clean = rep.crashed is None and not rep.denied
         scored.append((c, clean, _nse(trace)))
     if not scored:
         return cands[0]
@@ -69,8 +80,17 @@ def _select(suite, cands, policy):
 
 
 def measure(policy):
-    agg = {k: 0 for k in ("A2", "A3", "A4", "OUT", "NOEX", "COST")}
-    cost_calls = considered = 0
+    measured = (
+        SYNTHESIS_POLICY_COMPILED,
+        RELIABILITY_RUNTIME_CRASH_FREE,
+        CONFORMANCE_PLAN_TRACE_PERMITTED,
+        REF_REQUIRED_CALLS_PERMITTED,
+        REF_NO_EXCESS_CALLS_PERMITTED,
+        REF_EXACT_AUTHORIZATION,
+        OUTCOME_TASK_COMPLETED,
+    )
+    agg = {k: 0 for k in measured}
+    cost_calls = cost_n = considered = 0
     for sname in SUITES:
         adj = get_suites("v1")[sname]
         suite = augment_with_structuring(load_suite(sname))
@@ -87,32 +107,41 @@ def measure(policy):
             ut = adj.user_tasks[tid]
             code = _select(suite, cands, policy)
 
-            prepared, clean, trace = _exec(suite, code)
+            prepared, rep, trace = _exec(suite, code)
             if prepared is None:
+                excess, missing = _fidelity_control(
+                    ut, suite, suite.tool_params(), [], docs
+                )
+                agg[REF_REQUIRED_CALLS_PERMITTED] += (missing == 0)
+                agg[REF_NO_EXCESS_CALLS_PERMITTED] += (excess == 0)
+                agg[REF_EXACT_AUTHORIZATION] += (excess == 0 and missing == 0)
                 continue
-            agg["A2"] += 1
+            agg[SYNTHESIS_POLICY_COMPILED] += 1
+            agg[RELIABILITY_RUNTIME_CRASH_FREE] += (
+                _permissive_runtime_crash(suite, prepared.source) is None
+            )
+            agg[CONFORMANCE_PLAN_TRACE_PERMITTED] += (not rep.denied)
+            cost_calls += len(trace)
+            cost_n += 1
+
             # OUTCOME via utility (fresh env)
             env = suite.make_env(); pre = copy.deepcopy(env)
             enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
-            rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
-                                         suite.runner_factory(env))
-            if rep.crashed is None and not rep.denied:
-                agg["A3"] += 1
-                cost_calls += sum(1 for e in rep.events if e.decision.permit)
-                try:
-                    if bool(ut.utility("", pre, env)):
-                        agg["OUT"] += 1
-                except Exception:  # noqa: BLE001
-                    pass
-            # AVAIL_4 (deficiency on control operands == 0)
-            defc = _deficiency_control(ut, suite, suite.tool_params(), trace, docs)
-            if defc == 0:
-                agg["A4"] += 1
-            # SEC_NO_EXCESS (excess vs GT == 0)
-            excess, _ = _excess_deficiency(ut, suite, suite.tool_params(), trace)
-            if excess == 0:
-                agg["NOEX"] += 1
-    agg["COST"] = cost_calls / max(1, agg["A3"])
+            execute_generated_code(
+                prepared.source, enf, suite.tool_params(), suite.runner_factory(env)
+            )
+            try:
+                agg[OUTCOME_TASK_COMPLETED] += bool(ut.utility("", pre, env))
+            except Exception:  # noqa: BLE001
+                pass
+
+            excess, missing = _fidelity_control(
+                ut, suite, suite.tool_params(), trace, docs
+            )
+            agg[REF_REQUIRED_CALLS_PERMITTED] += (missing == 0)
+            agg[REF_NO_EXCESS_CALLS_PERMITTED] += (excess == 0)
+            agg[REF_EXACT_AUTHORIZATION] += (excess == 0 and missing == 0)
+    agg[COST_TOOL_CALLS] = cost_calls / max(1, cost_n)
     return agg, considered
 
 
@@ -123,13 +152,40 @@ def main():
         rows[pol], considered = measure(pol)
     hdr = f"{'metric':22} {'MAX(most-acting)':>18} {'MIN(minimal)':>14}"
     print(hdr); print("-" * len(hdr))
-    labels = [("A2", "AVAIL_2_PLAN_VALID"), ("A3", "AVAIL_3_RAN_CLEAN"),
-              ("A4", "AVAIL_4_CALLS_MADE"), ("OUT", "OUTCOME_COMPLETED"),
-              ("NOEX", "SEC_NO_EXCESS")]
-    for k, name in labels:
+    labels = [
+        SYNTHESIS_POLICY_COMPILED,
+        RELIABILITY_RUNTIME_CRASH_FREE,
+        CONFORMANCE_PLAN_TRACE_PERMITTED,
+        REF_REQUIRED_CALLS_PERMITTED,
+        REF_NO_EXCESS_CALLS_PERMITTED,
+        REF_EXACT_AUTHORIZATION,
+        OUTCOME_TASK_COMPLETED,
+    ]
+    for name in labels:
+        k = name
         mx, mn = rows["max"][k], rows["min"][k]
-        print(f"{name:22} {mx:>4}/{TOTAL} ({100*mx//TOTAL:>2}%)   {mn:>4}/{TOTAL} ({100*mn//TOTAL:>2}%)")
-    print(f"{'COST_TOOL_CALLS':22} {rows['max']['COST']:>17.2f} {rows['min']['COST']:>14.2f}")
+        mx_den = (
+            rows["max"][SYNTHESIS_POLICY_COMPILED]
+            if k in {
+                RELIABILITY_RUNTIME_CRASH_FREE,
+                CONFORMANCE_PLAN_TRACE_PERMITTED,
+            }
+            else TOTAL
+        )
+        mn_den = (
+            rows["min"][SYNTHESIS_POLICY_COMPILED]
+            if k in {
+                RELIABILITY_RUNTIME_CRASH_FREE,
+                CONFORMANCE_PLAN_TRACE_PERMITTED,
+            }
+            else TOTAL
+        )
+        print(
+            f"{name:22} {mx:>4}/{mx_den} ({100 * mx // max(1, mx_den):>2}%)"
+            f"   {mn:>4}/{mn_den} ({100 * mn // max(1, mn_den):>2}%)"
+        )
+    print(f"{COST_TOOL_CALLS:22} {rows['max'][COST_TOOL_CALLS]:>17.2f} "
+          f"{rows['min'][COST_TOOL_CALLS]:>14.2f}")
     print(f"\nconsidered tasks (cached candidates present): {considered}/{TOTAL}")
 
 

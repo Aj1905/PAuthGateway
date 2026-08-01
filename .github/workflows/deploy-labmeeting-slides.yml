@@ -1,0 +1,44 @@
+name: Deploy lab-meeting slides
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/slides/LabMeeting_2026_7_24/**"
+      - ".github/workflows/deploy-labmeeting-slides.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify slide entry point
+        run: test -f docs/slides/LabMeeting_2026_7_24/index.html
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload slide artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/slides/LabMeeting_2026_7_24
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

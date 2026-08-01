@@ -1,36 +1,34 @@
-# Contributing to PAuth Gateway
+# PAuth Gateway への貢献
 
-Thanks for your interest. PAuth Gateway is a task-scoped authorization gateway
-for AI agents — a security tool, and a reproduction/extension of the PAuth paper
-(see `NOTICE`). Contributions are welcome under the Apache-2.0 license.
+関心を持っていただき感謝します。PAuth Gateway は AI エージェント向けのタスク範囲限定の認可ゲートウェイ — すなわちセキュリティツールであり、PAuth 論文の再現と拡張です
+(`NOTICE` を参照)。貢献は Apache-2.0 ライセンスの下で歓迎します。
 
-## Ground rules for a security tool
+## セキュリティツールとしての基本原則
 
-The point of this project is one guarantee: **a compromised agent cannot act
-beyond the approved plan** (no over-authorization). Two invariants protect it —
-do not weaken them without a clear rationale in the pull request:
+本プロジェクトの要点は一つの保証にある: **侵害されたエージェントは、承認済み計画を超えて行動できない**(過剰認可なし)。これを守る二つの不変条件がある —
+プルリクエストで明確な根拠を示さずに弱めてはならない:
 
-1. **The deterministic core stays deterministic.** Every planner strategy emits
-   restricted `run()` code that `pauth.prepare()` parses, slices, and compiles
-   into rules. No planner may bypass that validation or emit rules directly
-   (see `docs/planning-strategies.md`).
-2. **Agent-facing feedback stays value-free.** Denial reasons that re-enter the
-   agent's model context must carry no operand values — they could be a
-   prompt-injection payload. See `gateway/runtime/feedback.py`.
+1. **決定的な中核は決定的なままにする。** どの planner 戦略も、`pauth.prepare()` が
+   構文解析・スライス導出・ルールコンパイルを行う制限付き `run()` コードを出力する。
+   その検証を迂回したり、ルールを直接出力したりする planner は認めない
+   (`docs/PLANNING_STRATEGIES.md` を参照)。
+2. **エージェント向けフィードバックは値を含まないままにする。** エージェントのモデル文脈に
+   再流入する拒否理由は、オペランド値を一切含んではならない — プロンプトインジェクションの
+   ペイロードになりうるためである。`gateway/runtime/feedback.py` を参照。
 
-## Repository layout
+## リポジトリ構成
 
-- `pauth/` — the framework-neutral algorithm core: restricted grammar, slicing,
-  rule compilation, the enforcer, signed envelopes, and A1 code generation.
-- `gateway/` — the runtime: planner strategies, per-call enforcement, tool
-  providers (MCP / OpenAPI / suites), HTTP serving, ingress, deploy scripts, and
-  Claude Code hooks.
-- `eval/` — measurement runners (FP/FN, freeform A1).
-- `tests/` — unit tests plus experiment adapters and fixtures.
-- `docs/` — design docs: architecture, threat model, self-hosting, ingress
-  design, planning strategies, and design status.
+- `pauth/` — フレームワーク非依存のアルゴリズム中核: 制限文法、スライス導出、
+  ルールコンパイル、Enforcer、署名付き envelope、A1 コード生成。
+- `gateway/` — 実行時: planner 戦略、呼び出し単位の執行、ツールプロバイダ
+  (MCP / OpenAPI / スイート)、HTTP 配信、入口処理、デプロイスクリプト、
+  Claude Code フック。
+- `eval/` — 測定ランナー(FP/FN、自由形式 A1)。
+- `tests/` — 単体テストに加えて、実験アダプタとフィクスチャ。
+- `docs/` — 設計文書: アーキテクチャ、脅威モデル、自己ホスティング、入口設計、
+  planning 戦略、設計状況。
 
-## Development setup
+## 開発環境の準備
 
 ```bash
 python -m venv .venv
@@ -38,11 +36,11 @@ python -m venv .venv
 .venv/bin/pip install -e .
 ```
 
-`OPENAI_API_KEY` (and optionally `ANTHROPIC_API_KEY`) are only needed for the
-LLM planner / judge paths; the deterministic and offline tests run without any
-key. Copy `.env.example` to `.env` if you use one.
+`OPENAI_API_KEY`(および任意で `ANTHROPIC_API_KEY`)が必要になるのは
+LLM の planner / 判定器の経路だけで、決定的なテストとオフラインのテストはキーなしで
+動く。使う場合は `.env.example` を `.env` にコピーする。
 
-## Running the tests
+## テストの実行
 
 ```bash
 .venv/bin/python -m pytest tests/ -q                          # full suite, offline
@@ -50,21 +48,21 @@ key. Copy `.env.example` to `.env` if you use one.
 .venv/bin/python -m eval.fpfn --suites shopping               # FP/FN measurement, no key
 ```
 
-All tests must pass before a PR. New behavior needs a test; a security-relevant
-change (enforcement, feedback, taint, side-channel, egress) needs a test that
-would fail without the fix.
+PR の前にすべてのテストが通ること。新しい挙動にはテストが必要であり、セキュリティに関わる
+変更(執行、フィードバック、汚染追跡、サイドチャネル、外向き通信)には、修正がなければ
+失敗するテストが必要。
 
-## Pull requests
+## プルリクエスト
 
-- Branch from `main`; keep each PR focused.
-- Match the surrounding code style. Comments should state constraints, not
-  narrate the change.
-- When your change touches enforcement, feedback, taint, or side-channel policy,
-  explain the security rationale in the PR description.
-- By submitting a pull request you agree to license your contribution under the
-  Apache-2.0 license.
+- `main` から分岐し、各 PR は焦点を絞ること。
+- 周囲のコードスタイルに合わせること。コメントには制約を書き、変更の経緯を
+  語らないこと。
+- 執行、フィードバック、汚染追跡、サイドチャネルの方針に触れる変更では、
+  PR の説明にセキュリティ上の根拠を書くこと。
+- プルリクエストの提出により、貢献を Apache-2.0 ライセンスの下で提供することに
+  同意したものとみなす。
 
-## Reporting a vulnerability
+## 脆弱性の報告
 
-Do **not** open a public issue for a security problem. Use GitHub's private
-vulnerability reporting — see `SECURITY.md`.
+セキュリティ上の問題について、公開 issue を**開かないこと**。GitHub の非公開
+脆弱性報告を使う — `SECURITY.md` を参照。

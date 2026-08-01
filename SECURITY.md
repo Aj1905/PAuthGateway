@@ -1,56 +1,56 @@
-# Security Policy
+# セキュリティ方針
 
-PAuth Gateway is a security tool: a task-scoped authorization gateway that sits
-between an AI agent and the SaaS/tools it can reach. We take vulnerabilities in
-it seriously.
+PAuth Gateway はセキュリティツールである: AI エージェントと、それが到達できる
+SaaS・ツールの間に置かれる、タスク範囲限定の認可ゲートウェイ。その脆弱性を
+私たちは深刻に受け止める。
 
-## Reporting a vulnerability
+## 脆弱性の報告
 
-**Do not open a public issue for a security vulnerability.**
+**セキュリティ脆弱性について、公開 issue を開かないこと。**
 
-Use GitHub's private vulnerability reporting:
-**Security → Report a vulnerability** on this repository. This opens a private
-advisory only the maintainers can see.
+GitHub の非公開脆弱性報告を使う:
+このリポジトリの **Security → Report a vulnerability**。これにより、メンテナだけが
+見られる非公開のアドバイザリが開かれる。
 
-Please include:
+以下を含めてほしい:
 
-- what the gateway did vs. what it should have done,
-- a minimal reproduction (prompt / plan / tool-call sequence),
-- which guarantee it breaks (see the categories below).
+- ゲートウェイが実際に行ったことと、本来行うべきだったこと
+- 最小の再現手順(プロンプト / 計画 / ツール呼び出しの列)
+- どの保証が破られるか(下の分類を参照)
 
-## What is in scope
+## 対象範囲
 
-The core guarantee is **no over-authorization**: a compromised agent cannot
-execute a SaaS action, or tamper with a destination/amount, beyond what the
-approved plan permits. High-value reports:
+中核の保証は**過剰認可なし**である: 侵害されたエージェントは、承認済み計画が
+許可する範囲を超えて SaaS 操作を実行したり、宛先/金額を改ざんしたりできない。
+価値の高い報告:
 
-- **Over-authorization (FN)** — a forced injection or fabricated operand that
-  the gateway *permits* when it should deny.
-- **Value leak** — a poisoned operand value reaching the agent's model context
-  via feedback (agent-facing reasons must be value-free).
-- **Confirmation-gate bypass** — an untrusted-derived control operand reaching a
-  sink without being held for confirmation.
-- **Side-channel / route bypass** that the gateway claims to cover.
+- **過剰認可(FN)** — 拒否すべき強制注入や捏造されたオペランドを、ゲートウェイが
+  *許可*してしまう。
+- **値の漏えい** — 汚染されたオペランド値が、フィードバック経由でエージェントの
+  モデル文脈に到達する(エージェント向けの理由は値を含まないこと)。
+- **確認ゲートの迂回** — 信頼できない由来の制御オペランドが、確認のための保留を
+  経ずにシンクに到達する。
+- ゲートウェイが対象と主張する範囲での**サイドチャネル / 経路の迂回**。
 
-## What is out of scope
+## 対象外
 
-Documented, accepted limitations (see `docs/threat-model.md`, `docs/design-status.md`):
+文書化され受容された制約(`docs/THREAT_MODEL.md`、`docs/DESIGN_STATUS.md` を参照):
 
-- Injection embedded in the **user's own prompt** (the prompt is trusted).
-- **Out-of-band execution** (a subprocess or direct network call that never
-  reaches the gateway). Network-plane out-of-band is *prevented* when the agent
-  runs as a dedicated **non-admin** user under the OS egress lockdown
-  (`gateway/deploy/egress_lockdown.sh`): non-gateway destinations are dropped by
-  the kernel. It remains possible only if the agent has admin privileges (it can
-  remove the rule) or the lockdown is not applied — then it is reported by
-  `protection_report()`, not prevented. **Non-network** side effects (local file
-  tampering) stay out of scope regardless; they need filesystem isolation.
-- **Over-rejection** (a legitimate action wrongly denied) — a usability issue,
-  recoverable by retry, not a security failure.
-- **Semantic intent faithfulness** of A1 beyond what the deterministic prechecks
-  cover — an open research area; the probabilistic judge is best-effort.
+- **ユーザー自身のプロンプト**に埋め込まれた注入(プロンプトは信頼される)。
+- **経路外実行**(ゲートウェイに一切到達しないサブプロセスや直接のネットワーク
+  呼び出し)。ネットワーク面の経路外実行は、エージェントが専用の**非管理者**
+  ユーザーとして OS 外向き通信ロックダウン
+  (`gateway/deploy/egress_lockdown.sh`)の下で動く場合には*防止*される:
+  ゲートウェイ以外の宛先はカーネルで遮断される。可能なのは、エージェントが管理者権限を
+  持つ(規則を削除できる)場合か、ロックダウンが適用されていない場合だけであり、
+  そのときは `protection_report()` によって報告されるのであって、防止されるのでは
+  ない。**非ネットワーク**の副作用(ローカルファイルの改ざん)はいずれにせよ対象外で
+  あり、ファイルシステムの分離が必要。
+- **過剰拒否**(正当な操作の誤った拒否) — 再試行で回復できる使い勝手の問題であり、
+  セキュリティ上の失敗ではない。
+- 決定的な事前検査が扱う範囲を超えた、A1 の**意味的な意図の忠実性** —
+  未解決の研究領域であり、確率的な判定器は最善努力にとどまる。
 
-## Response
+## 対応
 
-We aim to acknowledge a report within a few business days and to coordinate a
-fix and disclosure timeline with the reporter.
+報告には数営業日以内の確認応答を目指し、修正と開示の時期を報告者と調整する。

@@ -36,11 +36,14 @@ client-side, task-scoped firewall built on PAuth's algorithms.
 
 from __future__ import annotations
 
+import copy
 import dataclasses
+import math
+import struct
 from pathlib import Path
 from typing import Any, Callable
 
-from pauth import prepare
+from pauth import ExecutionPlan, prepare
 from pauth.enforcer import Enforcer
 from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.evaluator import wrap
@@ -84,6 +87,8 @@ from gateway.runtime.protection import (
     assess,
 )
 
+_MAX_PENDING_REAUTHORIZATIONS = 32
+
 
 def _confirm_key(value: Any) -> Any:
     """Hashable, TYPE-EXACT key identifying a confirmed operand value.
@@ -96,13 +101,66 @@ def _confirm_key(value: Any) -> Any:
     """
     if isinstance(value, bool):
         return ("bool", value)
-    if isinstance(value, (str, int, float)):
+    if isinstance(value, (str, int)):
         return (type(value).__name__, value)
+    if isinstance(value, float):
+        # Bind the IEEE-754 payload, not Python equality: 0.0 and -0.0 compare
+        # equal, and NaNs have unusual equality, but approval must match the
+        # exact operand bits the user saw.
+        return ("float64", struct.pack("!d", value))
+    if isinstance(value, bytes):
+        return ("bytes", value)
     try:
         hash(value)
         return ("obj", type(value).__name__, value)
     except TypeError:
         return ("repr", repr(value))
+
+
+def _typed_action_key(value: Any) -> Any:
+    """Canonical, type-exact key for a whole explicitly reauthorized action."""
+    if value is None:
+        return ("none",)
+    if isinstance(value, bool):
+        return ("bool", value)
+    if isinstance(value, (str, int)):
+        return (type(value).__name__, value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("non-finite floats cannot be reauthorized")
+        return ("float64", struct.pack("!d", value))
+    if isinstance(value, bytes):
+        return ("bytes", value)
+    if isinstance(value, list):
+        return ("list", tuple(_typed_action_key(v) for v in value))
+    if isinstance(value, tuple):
+        return ("tuple", tuple(_typed_action_key(v) for v in value))
+    if isinstance(value, dict):
+        pairs = [
+            (_typed_action_key(k), _typed_action_key(v)) for k, v in value.items()
+        ]
+        return ("dict", tuple(sorted(pairs, key=repr)))
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return (
+            "dataclass",
+            type(value).__module__,
+            type(value).__qualname__,
+            _typed_action_key(dataclasses.asdict(value)),
+        )
+    if hasattr(value, "model_dump"):
+        try:
+            return (
+                "model",
+                type(value).__module__,
+                type(value).__qualname__,
+                _typed_action_key(value.model_dump()),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+    raise TypeError(
+        "off-plan reauthorization supports only canonical JSON-like, "
+        "dataclass, or model operands"
+    )
 
 
 @dataclasses.dataclass
@@ -128,6 +186,19 @@ class CallResult:
     reason: str
     return_value: Any | None
     agent_reason: str | None = None
+    reauthorization_required: bool = False
+    reauthorized: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
+class PendingReauthorization:
+    """One known-suite, plan-external action held for a trusted user decision."""
+
+    reauthorization_id: str
+    tool: str
+    args: tuple[Any, ...]
+    plan_source_sha256: str
+    action_key: tuple[Any, ...] = dataclasses.field(repr=False)
 
 
 @dataclasses.dataclass
@@ -139,6 +210,8 @@ class _Session:
     runner: Callable[[str, dict[str, Any]], Any] | None
     tool_params: dict[str, list[str]]
     generated_code: str | None = None
+    execution_plan: ExecutionPlan | None = None
+    planner_metadata: dict[str, Any] | None = None
     # Confirmation-gated sinks (primary dangerous-flow closure) -- shared with _CompositeState so the
     # gate runs on the live session path, not only the composite path (S18/S19).
     source_trust: SourceTrust = dataclasses.field(default_factory=SourceTrust)
@@ -153,6 +226,12 @@ class _Session:
     confirm_seq: int = 0
     loop_counts: dict[str, int] = dataclasses.field(default_factory=dict)
     bulk_confirmed: set[str] = dataclasses.field(default_factory=set)
+    reauthorization_pending: dict[str, PendingReauthorization] = dataclasses.field(
+        default_factory=dict
+    )
+    reauthorization_grants: set[Any] = dataclasses.field(default_factory=set)
+    reauthorization_denied: set[Any] = dataclasses.field(default_factory=set)
+    reauthorization_seq: int = 0
 
 
 @dataclasses.dataclass
@@ -729,6 +808,8 @@ class Gateway:
             runner=runner,
             tool_params=suite.tool_params(),
             generated_code=draft.code if generated_code_on_success else None,
+            execution_plan=prepared.execution_plan,
+            planner_metadata=draft.planner_metadata,
             source_trust=self._source_trust,
             docs_by_name=docs_by_name,
             precheck_policy=self._precheck_policy,
@@ -849,6 +930,7 @@ class Gateway:
             "plan_active": plan_active,
             "rule_count": rule_count,
             "pending_confirmations": len(self.pending_confirmations()),
+            "pending_reauthorizations": len(self.pending_reauthorizations()),
             "audit_events": len(self._audit),
             "reason_code": reason_code,
             "protection": self.protection_report().to_dict(),
@@ -893,8 +975,32 @@ class Gateway:
                 return_value=None,
             )
 
+        reauthorization_key = self._reauthorization_key(session, tool, args)
+        if reauthorization_key in session.reauthorization_grants:
+            # Consume before executing. A crashing tool or interrupted caller
+            # must not turn a single-use grant into a reusable capability.
+            session.reauthorization_grants.remove(reauthorization_key)
+            result = self._execute_authorized_tool(
+                session,
+                tool,
+                args,
+                "explicit one-shot user reauthorization",
+            )
+            result.reauthorized = True
+            return result
+
         decision = session.enforcer.check(tool, args)
         if not decision.permit:
+            if classify_reason(decision.reason) == ReasonCode.NO_RULE:
+                held = self._hold_plan_external_call(
+                    session,
+                    tool,
+                    args,
+                    reauthorization_key,
+                    decision.reason,
+                )
+                if held is not None:
+                    return held
             return CallResult(permit=False, reason=decision.reason, return_value=None)
 
         gate = self._pre_execution_gate(session, decision.rule, tool, args)
@@ -908,6 +1014,86 @@ class Gateway:
         session.enforcer.record(decision.rule, wrap(result.return_value))
         return result
 
+    @staticmethod
+    def _reauthorization_key(
+        session: _Session,
+        tool: str,
+        args: list[Any],
+    ) -> tuple[Any, ...] | None:
+        source_sha256 = (
+            session.execution_plan.source_sha256
+            if session.execution_plan is not None
+            else ""
+        )
+        try:
+            typed_args = tuple(_typed_action_key(arg) for arg in args)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return (source_sha256, tool, typed_args)
+
+    def _hold_plan_external_call(
+        self,
+        session: _Session,
+        tool: str,
+        args: list[Any],
+        action_key: tuple[Any, ...] | None,
+        reason: str,
+    ) -> CallResult | None:
+        """Hold a known-suite off-plan action; never widen policy automatically."""
+        params = session.tool_params.get(tool)
+        if action_key is None or params is None or len(params) != len(args):
+            # Unknown tools and malformed calls are ordinary denials, not
+            # candidates a user should be prompted to bless.
+            return None
+        if action_key in session.reauthorization_denied:
+            return CallResult(
+                permit=False,
+                reason="explicit reauthorization previously denied (default-deny)",
+                return_value=None,
+            )
+        pending = next(
+            (
+                item
+                for item in session.reauthorization_pending.values()
+                if item.action_key == action_key
+            ),
+            None,
+        )
+        if pending is None:
+            if (
+                len(session.reauthorization_pending)
+                >= _MAX_PENDING_REAUTHORIZATIONS
+            ):
+                return CallResult(
+                    permit=False,
+                    reason="reauthorization queue is full (default-deny)",
+                    return_value=None,
+                )
+            reauthorization_id = f"r{session.reauthorization_seq}"
+            session.reauthorization_seq += 1
+            try:
+                args_snapshot = tuple(copy.deepcopy(args))
+            except Exception:  # noqa: BLE001 -- uncommon opaque SDK objects
+                args_snapshot = tuple(args)
+            pending = PendingReauthorization(
+                reauthorization_id=reauthorization_id,
+                tool=tool,
+                args=args_snapshot,
+                plan_source_sha256=(
+                    session.execution_plan.source_sha256
+                    if session.execution_plan is not None
+                    else ""
+                ),
+                action_key=action_key,
+            )
+            session.reauthorization_pending[reauthorization_id] = pending
+        return CallResult(
+            permit=False,
+            reason=reason,
+            return_value=None,
+            reauthorization_required=True,
+        )
+
     # ------------------------------------------------------------------
     # Introspection (for the experiment runner, not for the agent).
     # ------------------------------------------------------------------
@@ -917,6 +1103,23 @@ class Gateway:
         Exposed for the experiment runner only. The agent must not see this.
         """
         return self._session.run_doc if self._session else None
+
+    def current_execution_plan(self) -> dict[str, Any] | None:
+        """Return the deterministic Compiler-derived execution contract.
+
+        This is operator/experiment introspection. It is deliberately not
+        exposed through :class:`AgentChannel`, because the agent only needs the
+        permit/deny result, not the complete authorization surface.
+        """
+        if self._session is None or self._session.execution_plan is None:
+            return None
+        return self._session.execution_plan.to_dict()
+
+    def current_planner_metadata(self) -> dict[str, Any] | None:
+        """Return phase metrics for experiments, never for the agent context."""
+        if self._session is None or self._session.planner_metadata is None:
+            return None
+        return dict(self._session.planner_metadata)
 
     def current_code(self) -> str | None:
         """Return the active generated code (free-form path), or ``None``."""
@@ -932,6 +1135,57 @@ class Gateway:
     def _active_state(self) -> "_Session | _CompositeState | None":
         """The active plan state, whichever path is live (composite or session)."""
         return self._composite if self._composite is not None else self._session
+
+    def pending_reauthorizations(self) -> list[PendingReauthorization]:
+        """Known-suite off-plan actions awaiting a trusted user decision.
+
+        The full operands live only on this operator side channel. Agent-facing
+        responses expose the boolean ``reauthorization_required`` and a
+        value-free reason, never these values.
+        """
+        if self._composite is not None or self._session is None:
+            return []
+        return list(self._session.reauthorization_pending.values())
+
+    def reauthorize(self, reauthorization_id: str, approved: bool) -> bool:
+        """Resolve an off-plan action with an exact, single-use grant.
+
+        Approval does not mutate the plan or add a reusable rule. It authorizes
+        only a retry with the same tool, type-exact operands and plan digest.
+        This Python API is intentionally absent from ``AgentChannel``; only a
+        trusted user/operator integration may call it.
+        """
+        if self._composite is not None or self._session is None:
+            return False
+        session = self._session
+        pending = session.reauthorization_pending.pop(reauthorization_id, None)
+        if pending is None:
+            return False
+        current_digest = (
+            session.execution_plan.source_sha256
+            if session.execution_plan is not None
+            else ""
+        )
+        if pending.plan_source_sha256 != current_digest:
+            return False
+        action_key = pending.action_key
+        if approved:
+            session.reauthorization_grants.add(action_key)
+            decision = "accept"
+            reason = "exact off-plan action approved for one retry"
+        else:
+            session.reauthorization_denied.add(action_key)
+            decision = "reject"
+            reason = "off-plan action rejected by user"
+        self._audit.record(
+            "reauthorization",
+            decision,
+            tool=pending.tool,
+            reason_code="explicit_user_decision",
+            reason=reason,
+            args=list(pending.args),
+        )
+        return True
 
     def pending_confirmations(self) -> list[PendingConfirmation]:
         """Held sink calls awaiting user approval (for the side-channel UI)."""

@@ -19,7 +19,7 @@ from typing import Any
 @dataclasses.dataclass(frozen=True)
 class AuditEvent:
     seq: int                 # per-session ordinal (deterministic; no wall clock)
-    kind: str                # "submit" | "tool_call"
+    kind: str                # "submit" | "tool_call" | "reauthorization"
     decision: str            # "accept" | "reject" | "permit" | "deny" | "pending"
     tool: str | None         # tool name for tool_call events
     reason_code: str         # a feedback.ReasonCode value, or "accepted"/"rejected"

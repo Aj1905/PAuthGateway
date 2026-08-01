@@ -1,41 +1,39 @@
-# Changelog
+# 変更履歴
 
-All notable changes to PAuth Gateway are documented here. The format is based on
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project aims to
-follow [Semantic Versioning](https://semver.org/). Before 1.0, minor releases may
-include breaking changes.
+PAuth Gateway に対する重要な変更はすべてここに記録する。形式は
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) に基づき、本プロジェクトは
+[Semantic Versioning](https://semver.org/) に従うことを目指す。1.0 より前は、マイナーリリースにも破壊的変更が含まれうる。
 
 ## [Unreleased]
 
-Working toward the first tagged release, `0.1.0`.
+最初のタグ付きリリース `0.1.0` に向けて作業中。
 
 ### Added
-- OS egress lockdown script that forces a dedicated non-admin agent user's
-  outbound traffic through the gateway host only, so a `curl`/subprocess bypass
-  is dropped by the kernel rather than reaching an external service.
-- HTTP Bearer-token authentication (`--auth-token` / `--auth-tokens`) with
-  per-principal session ownership: every route except `GET /health` requires a
-  valid token, and a session can only be read, driven, or deleted by the
-  principal that created it. Open mode (no auth) warns and expects loopback.
-- File-backed audit trail (`--audit-log`, JSONL) and value-free health/status
-  endpoints (`GET /health`, `GET /sessions/<id>`).
-- Confirmation-gated sinks: an untrusted-derived control operand (recipient or
-  amount) is held for user confirmation before it can reach a side-effecting
-  tool.
-- `auto` planner strategy — the deterministic recognizer with an LLM free-form
-  fallback.
-- OpenAPI 3.x provider that reflects a spec document into task-scoped tools.
+- 専用の非管理者エージェントユーザーの外向き通信をゲートウェイホストのみに強制する
+  OS 外向き通信ロックダウンスクリプト。`curl`/サブプロセスによる迂回は、外部サービスに
+  到達する前にカーネルで遮断される。
+- HTTP Bearer トークン認証(`--auth-token` / `--auth-tokens`)と principal 単位の
+  セッション所有権: `GET /health` を除くすべてのルートで有効なトークンを要求し、
+  セッションの読み取り・操作・削除は、それを作成した principal だけが行える。
+  オープンモード(認証なし)は警告を出し、ループバックでの利用を前提とする。
+- ファイルに書き出す監査証跡(`--audit-log`、JSONL)と、値を含まない死活/状態
+  エンドポイント(`GET /health`、`GET /sessions/<id>`)。
+- 確認ゲート付きシンク: 信頼できない由来の制御オペランド(宛先または金額)は、
+  副作用を持つツールに到達する前にユーザー確認のため保留される。
+- `auto` planner 戦略 — 決定的な認識器に、LLM の自由形式フォールバックを
+  組み合わせたもの。
+- 仕様文書をタスク範囲のツール群へ反映する OpenAPI 3.x プロバイダ。
 
 ### Security
-- Fixed an SSRF / local-file-read in the OpenAPI provider: spec and reflected
-  tool-call URLs are restricted to http(s), and link-local (cloud-metadata)
-  hosts are refused.
-- The side-channel denylist now also matches namespaced tools (e.g.
-  `suite__bash`), so a merged-suite side channel cannot slip past the
-  exact-name gate.
-- Agent-facing denial feedback is value-free by construction: no operand value
-  can re-enter the agent's model context as an injection payload.
+- OpenAPI プロバイダの SSRF / ローカルファイル読み取りを修正: 仕様および反映された
+  ツール呼び出しの URL を http(s) に限定し、リンクローカル(クラウドメタデータ)
+  ホストを拒否する。
+- サイドチャネル拒否リストが名前空間付きツール(例:
+  `suite__bash`)にも一致するようになり、統合スイートのサイドチャネルが
+  完全一致ゲートをすり抜けられなくなった。
+- エージェント向けの拒否フィードバックは、構成上、値を含まない: いかなるオペランド値も
+  注入ペイロードとしてエージェントのモデル文脈に再流入できない。
 
 ### Changed
-- Consolidated design documentation under `docs/`; the repository root keeps
-  only the conventional meta files.
+- 設計文書を `docs/` 配下に集約。リポジトリ直下には慣例的なメタファイルだけを
+  残す。

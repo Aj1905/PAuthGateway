@@ -4,24 +4,28 @@ One UPPER_SNAKE_CASE name per metric, chosen so the name says what it measures.
 Each eval imports the names it reports from here (no ad-hoc keys), and the
 ``METRICS`` registry below documents every metric and which eval produces it.
 
-Metrics are grouped by the property they measure:
+The primary funnel does not put under-authorization under "availability" and
+over-authorization under "security". They are the two error directions of one
+REFERENCE_FIDELITY comparison. Feasibility, policy build, runtime reliability,
+plan/policy conformance, end-state outcome, cost, and labelled attack probes are
+reported separately.
 
-* SECURITY     -- did an unauthorized action get through? (lower is better; 0 is the bar)
-* AVAILABILITY -- was a legitimate action wrongly blocked? / how much got through
-* COST         -- machine time and human interruption the gateway adds
+Important scope boundary: the current benchmark compares a permitted concrete
+trace with a finite reference trace. It does *not* enumerate the compiled
+policy's history-dependent authorization relation, so it does not claim to
+measure POLICY_OVER_GRANT / POLICY_UNDER_GRANT / POLICY_EXACT_GRANT.
 """
 
 from __future__ import annotations
 
-# --- SECURITY: an unauthorized action got through (must be 0) --------------
+# --- legacy plan/enforcement diagnostics -----------------------------------
 OVER_AUTHORIZATION_ACCEPTS = "OVER_AUTHORIZATION_ACCEPTS"   # plan layer: a prompt that should be rejected was accepted (or accepted code calls a forbidden tool)
 PERMITTED_INJECTIONS = "PERMITTED_INJECTIONS"               # runtime: a forced injection / off-plan call was PERMITTED (paper FN)
 UNHELD_DANGEROUS_FLOWS = "UNHELD_DANGEROUS_FLOWS"           # confirmation gate: an untrusted value reached a control operand but was NOT held (grill FN)
 BLOCKED_INJECTIONS = "BLOCKED_INJECTIONS"                   # forced injections the gateway did NOT permit (defensive wins)
 TOTAL_INJECTIONS = "TOTAL_INJECTIONS"                       # forced injections attempted (denominator for BLOCKED_INJECTIONS)
 
-# --- AVAILABILITY: a legitimate action was blocked / coverage --------------
-OVER_REJECTIONS = "OVER_REJECTIONS"                         # a legitimate prompt/call was denied (recoverable; not a security failure)
+OVER_REJECTIONS = "OVER_REJECTIONS"                         # a legitimate prompt/call was rejected
 ACCEPTANCE_RATE = "ACCEPTANCE_RATE"                         # fraction of tasks whose plan was accepted (the Planner -> rules)
 OVER_GATED_SAFE_FLOWS = "OVER_GATED_SAFE_FLOWS"             # confirmation gate: a safe flow (trusted/content/constant) was needlessly held (grill FP)
 SUITE_FILTER_RECALL = "SUITE_FILTER_RECALL"                 # fraction of prompts whose needed suite the filter retained
@@ -47,44 +51,51 @@ PLAN_REJECTED = "PLAN_REJECTED"                            # plans denied at the
 PROMPT_TOKENS = "PROMPT_TOKENS"
 COMPLETION_TOKENS = "COMPLETION_TOKENS"
 
-# --- PAuth gate funnel (per-task; see eval/gates.py) ----------------------
-# The PREFIX names the axis (AVAIL / OUTCOME / SEC / COST) and the NUMBER shows
-# position in the nested chain, so containment is readable from the name:
-#   AVAIL_1_EXPRESSIBLE ⊇ AVAIL_2_PLAN_VALID ⊇ AVAIL_3_RAN_CLEAN ⊇ AVAIL_4_CALLS_MADE
-# (PAuth's mandate = the tool CALLS). OUTCOME_* is agent-inclusive and reported
-# apart (no number -> not in PAuth's chain). SEC_* / COST_* are orthogonal. These
-# are UNIVERSAL: any framework populates the subset its data supports.
-AVAIL_1_EXPRESSIBLE = "AVAIL_1_EXPRESSIBLE"       # intent writable in the restricted grammar
-AVAIL_2_PLAN_VALID = "AVAIL_2_PLAN_VALID"         # planner produced a grammar-valid plan
-AVAIL_3_RAN_CLEAN = "AVAIL_3_RAN_CLEAN"           # ran without a crash or false denial
-AVAIL_4_CALLS_MADE = "AVAIL_4_CALLS_MADE"         # deficiency-free: every needed tool call made
-OUTCOME_TASK_COMPLETED = "OUTCOME_TASK_COMPLETED"  # goal by intent (utility); AGENT-inclusive
-SEC_NO_EXCESS_CALLS = "SEC_NO_EXCESS_CALLS"       # least authority: nothing beyond ground truth
-SEC_INJECTIONS_DENIED = "SEC_INJECTIONS_DENIED"   # FN=0 (funnel view of PERMITTED_INJECTIONS)
-COST_TOOL_CALLS = "COST_TOOL_CALLS"               # enforced tool calls per task (cost proxy)
+# --- PAuth evaluation funnel (per-task; see eval/gates.py) -----------------
+# Preconditions / build.
+FEASIBILITY_EXPRESSIBLE = "FEASIBILITY_EXPRESSIBLE"
+SYNTHESIS_POLICY_COMPILED = "SYNTHESIS_POLICY_COMPILED"
 
-# --- framework-specific AUXILIARY metrics (AUX_ prefix; only one framework can
-# populate each). Leading underscore is avoided -- in Python that means "private",
-# not "auxiliary"; AUX_ says auxiliary without clashing with that convention.
+# Diagnostics with deliberately narrow claims. Runtime crash probing is
+# permissive (no Enforcer), while conformance is measured only on the one
+# concrete generated-plan trace executed by the benchmark.
+RELIABILITY_RUNTIME_CRASH_FREE = "RELIABILITY_RUNTIME_CRASH_FREE"
+CONFORMANCE_PLAN_TRACE_PERMITTED = "CONFORMANCE_PLAN_TRACE_PERMITTED"
+
+# One reference-fidelity plane. Both halves use the same tool+control-operand
+# matcher; EXACT is their conjunction. These are about the permitted concrete
+# trace, not the complete compiled-policy relation.
+REF_REQUIRED_CALLS_PERMITTED = "REF_REQUIRED_CALLS_PERMITTED"
+REF_NO_EXCESS_CALLS_PERMITTED = "REF_NO_EXCESS_CALLS_PERMITTED"
+REF_EXACT_AUTHORIZATION = "REF_EXACT_AUTHORIZATION"
+
+OUTCOME_TASK_COMPLETED = "OUTCOME_TASK_COMPLETED"  # post-state utility; reported apart
+COST_TOOL_CALLS = "COST_TOOL_CALLS"               # permitted calls per compiled plan
+
+# --- AUXILIARY diagnostics --------------------------------------------------
+# Leading underscore is avoided -- in Python that means "private", not
+# "auxiliary"; AUX_ says auxiliary without clashing with that convention.
+AUX_INJECTIONS_DENIED = "AUX_INJECTIONS_DENIED"  # labelled forced-attack calls denied;
+                                                 # stress-test evidence, not a universal guarantee
 AUX_TAU_REWARD = "AUX_TAU_REWARD"               # tau-bench native success (final DB state +
                                                 # required outputs); fills TASK_COMPLETED where
                                                 # a framework ships no utility()
 AUX_INJEC_ATTACK_CATEGORY = "AUX_INJEC_ATTACK_CATEGORY"  # InjecAgent direct-harm vs data-stealing
-                                                # split of the denials (INJECTIONS_DENIED breakdown)
+                                                # split of AUX_INJECTIONS_DENIED
 
 
 # name -> (property, one-line description, produced-by evals)
 METRICS: dict[str, tuple[str, str, str]] = {
-    OVER_AUTHORIZATION_ACCEPTS: ("SECURITY", "bad prompt accepted at the plan layer", "fpfn, freeform"),
-    PERMITTED_INJECTIONS: ("SECURITY", "forced injection / off-plan call permitted at runtime", "fpfn, l2_replay, unexpected_attacks"),
-    UNHELD_DANGEROUS_FLOWS: ("SECURITY", "untrusted->control call not held by the gate", "grill_eval, grill_scenario"),
-    BLOCKED_INJECTIONS: ("SECURITY", "forced injections the gateway blocked", "toolcall_eval, e2e_eval"),
-    TOTAL_INJECTIONS: ("SECURITY", "forced injections attempted", "toolcall_eval, e2e_eval"),
-    OVER_REJECTIONS: ("AVAILABILITY", "legitimate prompt/call wrongly denied", "fpfn, freeform, l2_replay"),
-    ACCEPTANCE_RATE: ("AVAILABILITY", "fraction of tasks whose plan was accepted", "fpfn, freeform"),
-    OVER_GATED_SAFE_FLOWS: ("AVAILABILITY", "safe flow needlessly held for confirmation", "grill_eval"),
-    SUITE_FILTER_RECALL: ("AVAILABILITY", "fraction of prompts whose needed suite was kept", "filter_recall"),
-    DROPPED_NEEDED_SUITES: ("AVAILABILITY", "prompts whose needed suite was dropped", "filter_recall"),
+    OVER_AUTHORIZATION_ACCEPTS: ("PLAN_FIDELITY", "bad prompt accepted at the plan layer", "fpfn, freeform"),
+    PERMITTED_INJECTIONS: ("ADVERSARIAL_ROBUSTNESS", "forced injection / off-plan call permitted at runtime", "fpfn, l2_replay, unexpected_attacks"),
+    UNHELD_DANGEROUS_FLOWS: ("ENFORCEMENT_FIDELITY", "untrusted->control call not held by the gate", "grill_eval, grill_scenario"),
+    BLOCKED_INJECTIONS: ("ADVERSARIAL_ROBUSTNESS", "forced injections the gateway blocked", "toolcall_eval, e2e_eval"),
+    TOTAL_INJECTIONS: ("ADVERSARIAL_ROBUSTNESS", "forced injections attempted", "toolcall_eval, e2e_eval"),
+    OVER_REJECTIONS: ("AUTHORIZATION_FIDELITY", "legitimate prompt/call wrongly denied", "fpfn, freeform, l2_replay"),
+    ACCEPTANCE_RATE: ("SYNTHESIS", "fraction of tasks whose plan was accepted", "fpfn, freeform"),
+    OVER_GATED_SAFE_FLOWS: ("ENFORCEMENT_FIDELITY", "safe flow needlessly held for confirmation", "grill_eval"),
+    SUITE_FILTER_RECALL: ("ROUTING", "fraction of prompts whose needed suite was kept", "filter_recall"),
+    DROPPED_NEEDED_SUITES: ("ROUTING", "prompts whose needed suite was dropped", "filter_recall"),
     TOTAL_TOOL_CALLS: ("COST", "tool calls routed through the gateway", "toolcall_eval, e2e_eval"),
     SIDE_EFFECTING_CALLS: ("COST", "writes/sinks among the calls", "toolcall_eval, e2e_eval"),
     UPFRONT_CONFIRMATIONS: ("COST", "confirmations hoistable to the initial grill", "toolcall_eval, e2e_eval"),
@@ -96,27 +107,47 @@ METRICS: dict[str, tuple[str, str, str]] = {
     PLAN_SETUP_MS: ("COST", "one-time prompt->rules cost per task", "e2e_eval"),
     PROMPT_TOKENS: ("COST", "the Planner prompt tokens", "fpfn"),
     COMPLETION_TOKENS: ("COST", "the Planner completion tokens", "fpfn"),
-    VALUE_LEAK_COUNT: ("CORRECTNESS", "untrusted value handed back to the agent", "grill_eval"),
-    OFF_INTENT_COUNT: ("CORRECTNESS", "accepted plan called the wrong tools", "freeform"),
-    PLAN_REJECTED: ("CORRECTNESS", "plans denied at the plan layer", "grill_eval, fpfn"),
-    # PAuth gate funnel (universal; each framework populates its measurable subset).
-    # AVAIL_1..4 is a nested chain (⊇); OUTCOME is agent-inclusive, reported apart.
-    AVAIL_1_EXPRESSIBLE: ("AVAILABILITY", "intent writable in the restricted grammar", "gates"),
-    AVAIL_2_PLAN_VALID: ("AVAILABILITY", "planner produced a grammar-valid plan", "gates, tau, injecagent"),
-    AVAIL_3_RAN_CLEAN: ("AVAILABILITY", "ran without a crash or false denial", "gates, tau, injecagent"),
-    AVAIL_4_CALLS_MADE: ("AVAILABILITY", "deficiency-free: every needed call made", "gates, tau"),
-    OUTCOME_TASK_COMPLETED: ("OUTCOME", "goal reached by intent (utility); agent-inclusive", "gates"),
-    SEC_NO_EXCESS_CALLS: ("SECURITY", "least authority: nothing beyond ground truth", "gates, tau"),
-    SEC_INJECTIONS_DENIED: ("SECURITY", "FN=0 funnel view (all injections denied)", "gates, tau, injecagent"),
-    COST_TOOL_CALLS: ("COST", "enforced tool calls per task (cost proxy)", "gates, tau, injecagent"),
+    VALUE_LEAK_COUNT: ("INTEGRITY", "untrusted value handed back to the agent", "grill_eval"),
+    OFF_INTENT_COUNT: ("PLAN_FIDELITY", "accepted plan called the wrong tools", "freeform"),
+    PLAN_REJECTED: ("SYNTHESIS", "plans denied at the plan layer", "grill_eval, fpfn"),
+    # Primary PAuth funnel. Under/excess are one reference-fidelity comparison.
+    FEASIBILITY_EXPRESSIBLE: (
+        "FEASIBILITY", "control operands representable by the restricted mechanisms", "gates"
+    ),
+    SYNTHESIS_POLICY_COMPILED: (
+        "SYNTHESIS", "generated code validated and compiled into policy rules", "gates, tau, injecagent"
+    ),
+    RELIABILITY_RUNTIME_CRASH_FREE: (
+        "RELIABILITY", "generated plan completed a permissive mock run without a code crash", "gates, tau, injecagent"
+    ),
+    CONFORMANCE_PLAN_TRACE_PERMITTED: (
+        "CONFORMANCE", "the compiled policy denied no call on the observed generated-plan trace", "gates, tau, injecagent"
+    ),
+    REF_REQUIRED_CALLS_PERMITTED: (
+        "REFERENCE_FIDELITY", "no required reference call missing from the permitted trace", "gates, tau"
+    ),
+    REF_NO_EXCESS_CALLS_PERMITTED: (
+        "REFERENCE_FIDELITY", "no non-reference call present in the permitted trace", "gates, tau"
+    ),
+    REF_EXACT_AUTHORIZATION: (
+        "REFERENCE_FIDELITY", "required-call coverage and no-excess both pass", "gates, tau"
+    ),
+    OUTCOME_TASK_COMPLETED: ("OUTCOME", "post-state utility reached in the plan simulation", "gates"),
+    AUX_INJECTIONS_DENIED: ("ADVERSARIAL_ROBUSTNESS", "labelled forced-attack calls denied; tested-set stress result", "gates, tau, injecagent"),
+    COST_TOOL_CALLS: ("COST", "permitted tool calls per compiled plan", "gates, tau, injecagent"),
     # framework-specific auxiliaries (AUX_ prefix)
     AUX_TAU_REWARD: ("OUTCOME", "tau-bench native success (DB state + outputs)", "tau [aux]"),
-    AUX_INJEC_ATTACK_CATEGORY: ("SECURITY", "InjecAgent direct-harm vs data-steal split", "injecagent [aux]"),
+    AUX_INJEC_ATTACK_CATEGORY: ("ADVERSARIAL_ROBUSTNESS", "InjecAgent direct-harm vs data-steal split", "injecagent [aux]"),
 }
 
 
 if __name__ == "__main__":  # print the glossary grouped by property
-    for prop in ("SECURITY", "AVAILABILITY", "COST", "CORRECTNESS"):
+    properties = (
+        "FEASIBILITY", "SYNTHESIS", "PLAN_FIDELITY", "RELIABILITY",
+        "CONFORMANCE", "AUTHORIZATION_FIDELITY", "ENFORCEMENT_FIDELITY", "REFERENCE_FIDELITY",
+        "OUTCOME", "ADVERSARIAL_ROBUSTNESS", "ROUTING", "INTEGRITY", "COST",
+    )
+    for prop in properties:
         print(f"\n== {prop} ==")
         for name, (p, desc, by) in METRICS.items():
             if p == prop:

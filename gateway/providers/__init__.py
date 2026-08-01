@@ -1,1 +1,1 @@
-"""gateway.providers — see docs/architecture.md §1.1 boundaries."""
+"""gateway.providers — see docs/ARCHITECTURE.md §1.1 boundaries."""

@@ -108,7 +108,7 @@ class AgenticCodegenResult:
     code: str
     prompt_tokens: int
     completion_tokens: int
-    cost_usd: float
+    cost_usd: float | None
     cached: bool
     model: str
     attempts: int               # total generation rounds (1 = first try succeeded)
@@ -515,7 +515,7 @@ def _read_cached(cache_path: Path, model: str) -> AgenticCodegenResult | None:
 
 def _write_cache(
     cache_path: Path, code: str, model: str, prompt_tokens: int,
-    completion_tokens: int, cost: float, attempts: int,
+    completion_tokens: int, cost: float | None, attempts: int,
     failure_history: list[str], judge_verdicts: list[JudgeVerdict],
 ) -> None:
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -548,6 +548,8 @@ def generate_code_with_self_repair(
     judge_client: Any | None = None,
     precheck_policy: PrecheckPolicy | None = None,
     executor: Any | None = None,
+    initial_system_prompt: str | None = None,
+    initial_user_prompt: str | None = None,
 ) -> AgenticCodegenResult:
     """Generate restricted-grammar code with grammar + semantic self-repair.
 
@@ -567,6 +569,11 @@ def generate_code_with_self_repair(
     reject sentinel. Benchmark callers pass a mock-env probe; live deployments
     that lack a safe sim env leave it None.
 
+    ``initial_system_prompt`` and ``initial_user_prompt`` let an opt-in planner
+    specialize the first generation round while reusing the same
+    grammar/precheck/runtime repair loop. They default to the historical
+    one-stage prompts, so existing planner behavior is unchanged.
+
     The cache key (controlled by the caller via ``cache_path``) should
     reflect ``model``, ``max_retries``, ``enable_judge``, and ``judge_model``
     so different configurations do not contaminate each other's results.
@@ -581,8 +588,11 @@ def generate_code_with_self_repair(
         judge_client = _get_judge_client(judge_model, client)
 
     messages: list[dict[str, str]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": build_user_prompt(task, tools)},
+        {"role": "system", "content": initial_system_prompt or SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": initial_user_prompt or build_user_prompt(task, tools),
+        },
     ]
 
     total_prompt_tokens = 0

@@ -148,6 +148,14 @@ def execute_with_batched_confirmation(
                        act.args[act.gated_indices[0]], source=act.sources))
         act.approved = bool(confirmer.confirm(pending))
 
+    # ---- handover: the barrier has decided everything; confirm() is never
+    # called again below, so a human-facing confirmer may announce that no
+    # further confirmation will occur before the unattended commit begins.
+    announce = getattr(confirmer, "announce_handover", None)
+    if deferred and callable(announce):
+        approved_count = sum(1 for act in deferred if act.approved)
+        announce(approved_count, len(deferred) - approved_count)
+
     # ---- commit: execute approved actions in program order ----
     for act in deferred:
         if not act.approved:

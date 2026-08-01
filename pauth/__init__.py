@@ -22,7 +22,7 @@ from .grammar import (
     strip_dead_code,
     validate_semantics,
 )
-from .pipeline import PreparedTask, prepare
+from .pipeline import ExecutionPlan, ExecutionStep, PreparedTask, prepare
 from .rules import Rule, compile_rules
 from .slicing import Slice, derive_slices
 
@@ -33,6 +33,8 @@ __all__ = [
     "Envelope",
     "EnvelopeStore",
     "Evaluator",
+    "ExecutionPlan",
+    "ExecutionStep",
     "ExecReport",
     "KeyRing",
     "NotConcretizable",

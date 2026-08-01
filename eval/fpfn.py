@@ -86,7 +86,7 @@ class TaskResult:
     planner_cached: bool
     prompt_tokens: int
     completion_tokens: int
-    cost_usd: float
+    cost_usd: float | None
     slices: str
     benign_calls: int
     benign_denied: list[str]
@@ -410,13 +410,27 @@ def print_report(results: list[TaskResult]) -> dict[str, Any]:
                 print(f"  [plan-deny] {r.task_id}: {r.plan_denied}")
 
     # Token-cost report (cf. paper Figure 10).
-    priced = [r for r in results if r.usable and not r.planner_cached and r.cost_usd > 0]
+    priced = [
+        r
+        for r in results
+        if r.usable
+        and not r.planner_cached
+        and r.cost_usd is not None
+        and r.cost_usd > 0
+    ]
     if priced:
         print("\n" + "-" * 72)
         print("LLM token cost (newly generated tasks only; cf. paper Figure 10)")
         print("-" * 72)
         for suite_name, suite_results in by_suite.items():
-            sp = [r for r in suite_results if r.usable and not r.planner_cached and r.cost_usd > 0]
+            sp = [
+                r
+                for r in suite_results
+                if r.usable
+                and not r.planner_cached
+                and r.cost_usd is not None
+                and r.cost_usd > 0
+            ]
             if sp:
                 avg = sum(r.cost_usd for r in sp) / len(sp)
                 avg_tok = sum(r.prompt_tokens + r.completion_tokens for r in sp) / len(sp)

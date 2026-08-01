@@ -109,6 +109,7 @@ class ToolCallResponse:
     permit: bool = False
     reason: str = ""
     return_value: Any | None = None
+    reauthorization_required: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -290,7 +291,12 @@ class AgentChannel:
         # ``reason`` (which may quote an operand value). This is the channel
         # that re-enters the agent's model context.
         wire_reason = result.agent_reason if result.agent_reason is not None else result.reason
-        return ToolCallResponse(permit=result.permit, reason=wire_reason, return_value=rv)
+        return ToolCallResponse(
+            permit=result.permit,
+            reason=wire_reason,
+            return_value=rv,
+            reauthorization_required=result.reauthorization_required,
+        )
 
 
 def _to_wire(value: Any) -> Any:

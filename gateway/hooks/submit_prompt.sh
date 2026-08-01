@@ -8,8 +8,9 @@
 # Env vars (optional):
 #   GATEWAY_URL              base URL of gateway/serving/http_server.py (default: http://127.0.0.1:8081)
 #   GATEWAY_MODE             "strict" (block on gateway reject) or "log" (log only).
-#   PAUTH_PLANNER_STRATEGY   deterministic / llm-freeform / interactive-structuring /
-#                            specialized-codegen / formal-semantic
+#   PAUTH_PLANNER_STRATEGY   deterministic / llm-freeform / auto / sufficiency-tightness /
+#                            interactive-structuring / specialized-codegen / formal-semantic
+#                            (default: auto, resolved by AgentChannel)
 #   PAUTH_PLANNER_SUITE      suite name required by llm-freeform, e.g. shopping
 #   PAUTH_PLANNER_MODEL      model id for LLM-backed strategies
 #   PAUTH_PLANNER_MAX_RETRIES retry budget for validator feedback loops

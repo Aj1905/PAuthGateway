@@ -1,53 +1,51 @@
-# run() gate experiment
+# run() ゲート実験
 
-This directory is intentionally kept separate from the existing PAuth precision
-experiment and the prompt-injection experiment.
+このディレクトリは、既存の PAuth 精度実験および prompt injection 実験とは
+意図的に分離して保たれている。
 
-This experiment validates a conservative front gate for the permission
-description language run() that an LLM generates. This gate does not attempt to
-solve arbitrary natural-language understanding. Instead, it accepts only prompts
-that belong to a small, deterministically recognizable subset, derives a
-canonical run() from that subset, and accepts only when the LLM's output exactly
-matches the canonical run().
+この実験は、LLM が生成する権限記述言語 run() に対する保守的な前段ゲートを
+検証する。このゲートは任意の自然言語理解を解こうとはしない。代わりに、小さく
+決定的に認識可能な部分集合に属する prompt だけを受理し、その部分集合から
+正準の run() を導出し、LLM の出力がその正準 run() と完全一致する場合にのみ
+受理する。
 
-This is the only reliable way to aim for zero false accept. The cost is a high
-false-reject rate. Ambiguous prompts are rejected even in cases where a human
-could reasonably infer the intent.
+これが偽受理ゼロを狙える唯一の信頼できる方法である。その代償は高い偽拒否率で
+ある。曖昧な prompt は、人間なら意図を合理的に推測できる場合であっても拒否
+される。
 
-## Running
+## 実行方法
 
-Offline deterministic fixture translator:
+オフラインの決定的 fixture 変換器:
 
 ```bash
 .venv/bin/python -m tests.test_recognizer --backend fixture
 ```
 
-Optional LLM translator:
+任意で使える LLM 変換器:
 
 ```bash
 .venv/bin/python -m tests.test_recognizer --backend llm --model gpt-4.1-mini --temperature 0.2
 ```
 
-This runner does the following:
+この runner は次を行う:
 
-- prepares several natural-language task prompts;
-- has the translator generate run() JSON;
-- if the deterministic gate rejects a result, retries the same prompt until it
-  becomes OK or a safety cap is reached;
-- verifies that unsupported or injected prompts are rejected;
-- mutates an accepted run() document and verifies that all mutations are
-  rejected;
-- converts an accepted run() document into PAuth-style `run()` code, runs
-  `pauth.prepare()`, and confirms that the accepted case proceeds to slice/rule
-  generation.
+- 自然言語のタスク prompt を複数用意する;
+- 変換器に run() JSON を生成させる;
+- 決定的ゲートが結果を拒否した場合、OK になるか安全上限に達するまで同じ
+  prompt で再試行する;
+- 未対応の prompt や injection を含む prompt が拒否されることを検証する;
+- 受理された run() 文書に変異を加え、すべての変異が拒否されることを検証する;
+- 受理された run() 文書を PAuth 形式の `run()` コードに変換して
+  `pauth.prepare()` を実行し、受理ケースがスライス／ルール生成まで進むことを
+  確認する。
 
-## Interpretation
+## 解釈
 
-This is not a proof that arbitrary NL-to-run() conversion can be done safely. It
-demonstrates a narrower claim:
+これは、任意の自然言語から run() への変換を安全に行えることの証明ではない。
+より狭い主張を実証するものである:
 
-> If a user prompt belongs to a deterministic, auditable subset, and the run()
-> output exactly matches the canonical run() derived by the verifier, then the
-> verifier can avoid accepting a misconversion within that subset.
+> ユーザーの prompt が決定的で監査可能な部分集合に属し、run() 出力が検証器の
+> 導出した正準 run() と完全一致するならば、検証器はその部分集合の内部での
+> 誤変換の受理を回避できる。
 
-Everything outside the subset is rejected.
+部分集合の外側はすべて拒否される。

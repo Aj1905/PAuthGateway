@@ -1,0 +1,2882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auto-Authorizing AI Gateway - Lab Meeting 2026-07-24</title>
+<style>
+  :root {
+    --bg: #f8f6f1;
+    --bg-card: #ffffff;
+    --fg: #1c1c1e;
+    --fg-dim: #6b6b70;
+    --accent: #0d5b5b;
+    --accent-soft: #b8d4cf;
+    --warn: #b35900;
+    --border: #e3dfd6;
+    --shadow: 0 1px 0 rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.04);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--accent);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Hiragino Sans",
+                 "Hiragino Kaku Gothic ProN", "Yu Gothic", "Yu Gothic Medium",
+                 "Noto Sans JP", "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .deck {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .slide {
+    position: absolute;
+    inset: 0;
+    padding: 80px 110px 90px 110px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 360ms ease, transform 360ms ease;
+    pointer-events: none;
+  }
+  .slide.active {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .chapter {
+    font-size: 13px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 36px;
+  }
+  h1 {
+    font-size: 64px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    color: var(--fg);
+    margin-bottom: 28px;
+    max-width: 1100px;
+    text-wrap: balance;
+  }
+  h2 {
+    font-size: 40px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    color: var(--fg);
+    margin-bottom: 28px;
+    max-width: 1100px;
+    text-wrap: balance;
+  }
+  h3 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--fg);
+    margin-bottom: 8px;
+    letter-spacing: 0;
+  }
+  p, li {
+    font-size: 23px;
+    color: var(--fg);
+    max-width: 1000px;
+  }
+  .lead {
+    font-size: 25px;
+    color: var(--fg);
+    line-height: 1.6;
+    max-width: 1050px;
+  }
+  .subtitle {
+    font-size: 24px;
+    color: var(--fg-dim);
+    max-width: 950px;
+    line-height: 1.6;
+    margin-top: 6px;
+  }
+  .note {
+    font-size: 18px;
+    color: var(--fg-dim);
+    margin-top: 28px;
+    max-width: 900px;
+    line-height: 1.7;
+  }
+  ul {
+    margin-left: 0;
+    list-style: none;
+  }
+  li {
+    padding-left: 28px;
+    position: relative;
+    margin-bottom: 16px;
+    font-size: 22px;
+  }
+  li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 16px;
+    width: 14px;
+    height: 2px;
+    background: var(--accent);
+  }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+    margin-top: 12px;
+    max-width: 1100px;
+  }
+  .grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 22px;
+    margin-top: 12px;
+    max-width: 1100px;
+  }
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 28px;
+    box-shadow: var(--shadow);
+  }
+  .card h3 {
+    color: var(--accent);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    margin-bottom: 14px;
+  }
+  .card p, .card li {
+    font-size: 18px;
+    color: var(--fg);
+    line-height: 1.6;
+  }
+  .case-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 30px 36px;
+    margin-top: 8px;
+    max-width: 1100px;
+    box-shadow: var(--shadow);
+  }
+  .case-row {
+    font-size: 18px;
+    color: var(--fg);
+    line-height: 1.6;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .case-row:first-child {
+    padding-top: 0;
+  }
+  .case-row:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+  .paper-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 30px 36px;
+    margin-top: 20px;
+    max-width: 1100px;
+    box-shadow: var(--shadow);
+  }
+  .paper-row {
+    display: grid;
+    grid-template-columns: 130px minmax(0, 1fr);
+    gap: 0;
+    align-items: baseline;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 18px;
+    color: var(--fg);
+    line-height: 1.6;
+  }
+  .paper-row:first-child {
+    padding-top: 0;
+  }
+  .paper-row:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+  .paper-label {
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+  .paper-meta em {
+    color: var(--fg-dim);
+    font-size: 15px;
+  }
+  .paper-link {
+    color: var(--fg);
+    font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 17px;
+    text-decoration: none;
+    border-bottom: 1px solid var(--accent-soft);
+  }
+  .paper-link:hover {
+    border-color: var(--accent);
+  }
+  .overview-lead {
+    font-size: 23px;
+    color: var(--fg);
+    max-width: 1120px;
+    line-height: 1.55;
+    margin-bottom: 18px;
+  }
+  .overview-lead strong {
+    color: var(--accent);
+  }
+  .contribution-compare {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 52px minmax(0, 1fr);
+    gap: 18px;
+    align-items: stretch;
+    width: 100%;
+    max-width: 1120px;
+    margin-top: 8px;
+  }
+  .contribution-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 28px;
+    box-shadow: var(--shadow);
+  }
+  .contribution-card.work {
+    border: 2px solid var(--accent);
+    background: rgba(13, 91, 91, 0.05);
+  }
+  .contribution-kicker {
+    color: var(--fg-dim);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .contribution-card.work .contribution-kicker {
+    color: var(--accent);
+  }
+  .contribution-card h3 {
+    font-size: 25px;
+    line-height: 1.25;
+    margin-bottom: 10px;
+  }
+  .contribution-card p {
+    color: var(--fg-dim);
+    font-size: 18px;
+    line-height: 1.5;
+  }
+  .contribution-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    font-size: 36px;
+    font-weight: 500;
+  }
+  .contribution-points {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    width: 100%;
+    max-width: 1120px;
+    margin-top: 20px;
+  }
+  .contribution-point {
+    border-top: 2px solid var(--accent);
+    padding: 12px 4px 0;
+  }
+  .contribution-point strong {
+    display: block;
+    color: var(--accent);
+    font-size: 14px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .contribution-point span {
+    color: var(--fg);
+    font-size: 18px;
+    line-height: 1.4;
+  }
+  .bridge-flow {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 22px;
+    align-items: stretch;
+    max-width: 1120px;
+    margin-top: 12px;
+  }
+  .bridge-step {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 24px 26px;
+    min-height: 260px;
+  }
+  .bridge-step h3 {
+    color: var(--fg);
+    font-size: 26px;
+    line-height: 1.2;
+    margin-bottom: 16px;
+  }
+  .bridge-step p {
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--fg-dim);
+  }
+  .term-example {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    font-size: 16px;
+    color: var(--fg);
+    line-height: 1.45;
+  }
+  .bridge-number {
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .bridge-arrow {
+    align-self: center;
+    color: var(--accent);
+    font-size: 32px;
+    font-weight: 700;
+    text-align: center;
+  }
+  .bridge-takeaway {
+    font-size: 22px;
+    color: var(--fg);
+    line-height: 1.55;
+    max-width: 1080px;
+    margin-top: 28px;
+  }
+  .bridge-takeaway strong {
+    color: var(--accent);
+  }
+  .primary-gap {
+    background: var(--bg-card);
+    border: 2px solid var(--accent);
+    border-radius: 16px;
+    padding: 28px 34px 30px;
+    max-width: 1120px;
+    box-shadow: var(--shadow);
+    margin-bottom: 30px;
+  }
+  .primary-gap-label {
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .primary-gap-title {
+    font-size: 38px;
+    font-weight: 700;
+    color: var(--fg);
+    line-height: 1.25;
+    margin-bottom: 8px;
+  }
+  .primary-gap-text {
+    font-size: 24px;
+    color: var(--fg-dim);
+    line-height: 1.45;
+    max-width: 1000px;
+  }
+  .secondary-gaps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    max-width: 1120px;
+  }
+  .secondary-gap {
+    background: transparent;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+  .secondary-gap h3 {
+    color: var(--accent);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    margin-bottom: 8px;
+  }
+  .secondary-gap p {
+    font-size: 18px;
+    color: var(--fg);
+    line-height: 1.55;
+  }
+  .phase-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 34px;
+    max-width: 1120px;
+  }
+  .phase-card,
+  .mapping-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+  }
+  .phase-card {
+    padding: 26px 30px;
+  }
+  .phase-card h3,
+  .mapping-card h3 {
+    color: var(--accent);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    margin-bottom: 18px;
+  }
+  .phase-card p {
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--fg);
+  }
+  .flow-stack {
+    max-width: 1120px;
+    margin-top: 12px;
+  }
+  .flow-row {
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr);
+    gap: 28px;
+    align-items: baseline;
+    padding: 18px 0;
+    border-top: 1px solid var(--border);
+  }
+  .flow-row:first-child {
+    border-top: none;
+    padding-top: 4px;
+  }
+  .flow-label {
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .flow-row h3 {
+    font-size: 24px;
+    line-height: 1.25;
+    color: var(--fg);
+    margin-bottom: 5px;
+  }
+  .flow-row p {
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--fg-dim);
+    max-width: 860px;
+  }
+  .flow-row strong {
+    color: var(--accent);
+  }
+  .analogy-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.85fr);
+    gap: 48px;
+    align-items: center;
+    max-width: 1120px;
+    margin-top: 12px;
+  }
+  .delivery-map {
+    width: 100%;
+    max-width: 620px;
+    justify-self: center;
+  }
+  .mapping-card {
+    padding: 20px 24px;
+  }
+  .mapping-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 16px;
+    color: var(--fg-dim);
+  }
+  .mapping-row:last-child {
+    border-bottom: none;
+  }
+  .mapping-arrow,
+  .mapping-value {
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .strong {
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .figure {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 12px auto;
+    max-width: 1100px;
+    min-height: 0;
+  }
+  .figure img {
+    display: block;
+    max-width: 100%;
+    max-height: 48vh;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+  }
+  .task-example {
+    margin-top: 12px;
+    max-width: 1100px;
+  }
+  .task-prompt {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 24px;
+    margin-bottom: 14px;
+    font-size: 21px;
+    color: var(--fg);
+    line-height: 1.5;
+    box-shadow: var(--shadow);
+  }
+  .task-prompt .label {
+    display: inline-block;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+    margin-right: 12px;
+    vertical-align: middle;
+  }
+  .task-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 22px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+  }
+  .task-row.allowed {
+    border-color: var(--accent-soft);
+    background: rgba(13, 91, 91, 0.05);
+  }
+  .task-row.rejected {
+    border-color: rgba(179, 89, 0, 0.35);
+    background: rgba(179, 89, 0, 0.04);
+  }
+  .task-mark {
+    font-size: 26px;
+    font-weight: 700;
+    width: 28px;
+    flex-shrink: 0;
+    text-align: center;
+    line-height: 1;
+  }
+  .task-mark.ok { color: var(--accent); }
+  .task-mark.x { color: var(--warn); }
+  .task-row > code {
+    flex: 1;
+    font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 16px;
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow-x: auto;
+  }
+  .task-row .ok-arg { color: var(--accent); font-weight: 700; }
+  .task-row .bad-arg {
+    background: rgba(179, 89, 0, 0.14);
+    color: var(--warn);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+  }
+  .task-row .reason {
+    font-size: 14px;
+    color: var(--warn);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+  .lead-block {
+    display: block;
+    margin: 16px 0;
+    padding: 14px 26px;
+    background: rgba(13, 91, 91, 0.07);
+    border: 1px solid var(--accent-soft);
+    border-radius: 10px;
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 23px;
+    max-width: 900px;
+  }
+  .closing-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    gap: 48px;
+    align-items: center;
+    max-width: 1200px;
+    margin: 0;
+  }
+  .closing-illustration {
+    width: 100%;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 6px 28px rgba(0,0,0,0.08);
+  }
+  .closing-illustration img {
+    width: 100%;
+    height: auto;
+    display: block;
+    max-height: 520px;
+    object-fit: cover;
+  }
+  .github-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 24px;
+    color: var(--accent);
+    font-size: 18px;
+    font-weight: 700;
+    text-decoration: none;
+    border-bottom: 2px solid var(--accent-soft);
+    padding-bottom: 3px;
+    overflow-wrap: anywhere;
+  }
+  .github-link:hover {
+    border-color: var(--accent);
+  }
+  .github-slide .lead {
+    color: var(--fg-dim);
+  }
+  .github-slide .github-link {
+    align-self: flex-start;
+    width: fit-content;
+    margin-top: 34px;
+    font-size: 26px;
+  }
+  .scenario {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 32px;
+    margin-top: 14px;
+    max-width: 1100px;
+    box-shadow: var(--shadow);
+  }
+  .scenario .step {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .scenario .step:last-child { border-bottom: none; }
+  .scenario .step-label {
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .scenario .step-body {
+    font-size: 19px;
+    color: var(--fg);
+    line-height: 1.6;
+  }
+  .scenario .step-body .danger { color: var(--warn); font-weight: 700; }
+  .scenario .step-body code {
+    font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 16px;
+    background: rgba(13, 91, 91, 0.07);
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: var(--accent);
+  }
+  .theorem-block {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 28px;
+    margin-bottom: 14px;
+    max-width: 1050px;
+    box-shadow: var(--shadow);
+  }
+  .theorem-block:last-child { margin-bottom: 0; }
+  .theorem-label {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--accent-soft);
+  }
+  .theorem-block .theorem-body {
+    font-size: 19px;
+    color: var(--fg);
+    line-height: 1.6;
+    margin-bottom: 14px;
+  }
+  .theorem-block .stat {
+    margin-top: 4px;
+    gap: 60px;
+    justify-content: center;
+  }
+  .results-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 24px;
+    max-width: 1120px;
+    margin-top: 8px;
+  }
+  .results-grid.three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    max-width: 1180px;
+    gap: 18px;
+  }
+  .results-grid.three .result-card {
+    padding: 18px 20px;
+  }
+  .results-grid.three .result-card p {
+    font-size: 15px;
+  }
+  .results-grid.three .metric-row {
+    font-size: 14.5px;
+    padding: 8px 0;
+  }
+  .results-grid.three .metric-row strong {
+    font-size: 19px;
+  }
+  .metric-defs {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 18px;
+    max-width: 1120px;
+    margin: 8px 0 20px;
+  }
+  .metric-def {
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  .metric-def strong {
+    color: var(--accent);
+    font-size: 18px;
+  }
+  .metric-def span {
+    display: block;
+    color: var(--fg-dim);
+    font-size: 17px;
+    line-height: 1.45;
+    margin-top: 4px;
+  }
+  .metric-risk {
+    grid-column: 1 / -1;
+    color: var(--fg);
+    font-size: 18px;
+    line-height: 1.45;
+    padding-top: 6px;
+  }
+  .metric-risk strong {
+    color: var(--accent);
+  }
+  .result-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 26px;
+    box-shadow: var(--shadow);
+  }
+  .result-card h3 {
+    color: var(--accent);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    margin-bottom: 12px;
+  }
+  .result-card p {
+    font-size: 17px;
+    color: var(--fg-dim);
+    line-height: 1.5;
+    margin-bottom: 10px;
+  }
+  .metric-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    align-items: baseline;
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+    font-size: 16px;
+    color: var(--fg);
+  }
+  .metric-row strong {
+    color: var(--accent);
+    font-size: 22px;
+  }
+  .gates {
+    display: flex;
+    align-items: stretch;
+    max-width: 1220px;
+    margin-top: 10px;
+  }
+  .gate-node {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 15px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .gate-id {
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .gate-rate {
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--fg);
+    line-height: 1.1;
+  }
+  .gate-rate span {
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--fg-dim);
+    margin-left: 6px;
+  }
+  .gate-q {
+    font-size: 14px;
+    color: var(--fg);
+    line-height: 1.45;
+  }
+  .gate-fail {
+    font-size: 12.5px;
+    color: var(--fg-dim);
+    line-height: 1.45;
+    margin-top: auto;
+    border-top: 1px solid var(--border);
+    padding-top: 7px;
+  }
+  .gate-arrow {
+    align-self: center;
+    padding: 0 7px;
+    font-size: 24px;
+    color: var(--fg-dim);
+    flex: 0 0 auto;
+  }
+  .gate-node.hot {
+    border: 2px solid var(--warn);
+    background: rgba(179, 89, 0, 0.05);
+  }
+  .gate-node.hot .gate-id,
+  .gate-node.hot .gate-rate { color: var(--warn); }
+  .gate-security {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 24px;
+    max-width: 1220px;
+    margin-top: 16px;
+    padding: 12px 22px;
+    border: 1.5px solid var(--accent);
+    border-radius: 12px;
+    background: rgba(13, 91, 91, 0.06);
+    font-size: 15px;
+    color: var(--fg);
+  }
+  .gate-security strong { color: var(--accent); font-size: 22px; white-space: nowrap; }
+  .pipeline {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    gap: 0;
+    margin: 18px 0;
+    max-width: 1100px;
+  }
+  .pipeline-node {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 18px;
+    text-align: center;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+  .pipeline-label {
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .pipeline-title {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--fg);
+    line-height: 1.4;
+    text-wrap: balance;
+  }
+  .pipeline-edge {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0 14px;
+    min-width: 80px;
+  }
+  .pipeline-arrow {
+    font-size: 38px;
+    line-height: 1;
+    color: var(--fg-dim);
+    font-weight: 300;
+  }
+  .pipeline-node.highlight {
+    background: rgba(13, 91, 91, 0.08);
+    border-color: var(--accent);
+    border-width: 2px;
+  }
+  .pipeline-node.highlight .pipeline-label,
+  .pipeline-node.highlight .pipeline-title { color: var(--accent); }
+  .pipeline-note {
+    width: 100%;
+    max-width: 1100px;
+    margin-top: 18px;
+    text-align: left;
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 1.6;
+    color: var(--fg-dim);
+  }
+  .architecture-slide .chapter {
+    margin-bottom: 18px;
+  }
+  .architecture-slide h2 {
+    margin-bottom: 18px;
+  }
+  .architecture-diagram {
+    display: block;
+    width: 100%;
+    max-width: 1100px;
+    height: auto;
+  }
+  .baseline-slide .chapter {
+    margin-bottom: 18px;
+  }
+  .baseline-slide h2 {
+    margin-bottom: 18px;
+  }
+  .baseline-diagram {
+    display: block;
+    width: 100%;
+    max-width: 1100px;
+    height: auto;
+  }
+  .baseline-diagram text {
+    font-family: inherit;
+  }
+  .baseline-muted {
+    opacity: 0.14;
+  }
+  .baseline-direct-call,
+  .baseline-direct-result {
+    fill: none;
+    stroke-width: 4;
+  }
+  .baseline-direct-call {
+    stroke: var(--accent);
+  }
+  .baseline-direct-result {
+    stroke: var(--warn);
+  }
+  .baseline-direct-label {
+    font-size: 16px;
+    font-weight: 700;
+    text-anchor: middle;
+  }
+  .baseline-direct-label-call {
+    fill: var(--accent);
+  }
+  .baseline-direct-label-result {
+    fill: var(--warn);
+  }
+  .architecture-diagram text {
+    font-family: inherit;
+  }
+  .arch-lane-plan {
+    fill: rgba(13, 91, 91, 0.045);
+    stroke: var(--accent-soft);
+    stroke-width: 1.5;
+  }
+  .arch-lane-runtime {
+    fill: rgba(179, 89, 0, 0.035);
+    stroke: rgba(179, 89, 0, 0.28);
+    stroke-width: 1.5;
+  }
+  .arch-box {
+    fill: var(--bg-card);
+    stroke: var(--border);
+    stroke-width: 1.5;
+  }
+  .arch-box-enforcer {
+    fill: var(--bg-card);
+    stroke: var(--accent);
+    stroke-width: 2.5;
+  }
+  .arch-box-policy {
+    fill: var(--accent);
+    stroke: var(--accent);
+    stroke-width: 1.5;
+  }
+  .arch-lane-label {
+    fill: var(--accent);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 2.8px;
+  }
+  .arch-lane-label-runtime {
+    fill: var(--warn);
+  }
+  .arch-box-title {
+    fill: var(--fg);
+    font-size: 22px;
+    font-weight: 700;
+    text-anchor: middle;
+  }
+  .arch-box-subtitle {
+    fill: var(--fg-dim);
+    font-size: 15px;
+    font-weight: 400;
+    text-anchor: middle;
+  }
+  .arch-box-subtitle-warn {
+    fill: var(--warn);
+  }
+  .arch-box-subtitle-light {
+    fill: rgba(255, 255, 255, 0.82);
+  }
+  .arch-box-title-light {
+    fill: #fff;
+  }
+  .arch-flow-label {
+    fill: var(--fg-dim);
+    font-size: 15px;
+    font-weight: 600;
+    text-anchor: middle;
+  }
+  .arch-flow-label-accent {
+    fill: var(--accent);
+  }
+  .arch-flow-label-warn {
+    fill: var(--warn);
+  }
+  .arch-arrow {
+    fill: none;
+    stroke: var(--fg-dim);
+    stroke-width: 2.5;
+  }
+  .arch-arrow-accent {
+    stroke: var(--accent);
+    stroke-width: 3;
+  }
+  .arch-arrow-warn {
+    stroke: var(--warn);
+  }
+  .arch-arrow-dashed {
+    stroke-dasharray: 8 7;
+  }
+  .timeline-slide .chapter {
+    margin-bottom: 18px;
+  }
+  .timeline-slide h2 {
+    margin-bottom: 14px;
+    max-width: none;
+    white-space: nowrap;
+  }
+  .chrono-diagram {
+    display: block;
+    width: 100%;
+    max-width: 1100px;
+    height: auto;
+  }
+  .chrono-diagram text {
+    font-family: inherit;
+  }
+  .chrono-phase {
+    fill: rgba(13, 91, 91, 0.035);
+    stroke: var(--accent-soft);
+    stroke-width: 1.5;
+  }
+  .chrono-lane-plan {
+    fill: var(--bg-card);
+    stroke: var(--accent);
+    stroke-width: 1.5;
+  }
+  .chrono-lane-exec {
+    fill: rgba(179, 89, 0, 0.035);
+    stroke: rgba(179, 89, 0, 0.36);
+    stroke-width: 1.5;
+  }
+  .chrono-axis {
+    fill: none;
+    stroke: var(--fg-dim);
+    stroke-width: 3;
+  }
+  .chrono-node {
+    fill: var(--bg-card);
+    stroke: var(--accent);
+    stroke-width: 3;
+  }
+  .chrono-node-warn {
+    fill: var(--warn);
+    stroke: var(--warn);
+  }
+  .chrono-node-accent {
+    fill: var(--accent);
+    stroke: var(--accent);
+  }
+  .chrono-kicker {
+    fill: var(--accent);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 2.4px;
+  }
+  .chrono-kicker-warn {
+    fill: var(--warn);
+  }
+  .chrono-title {
+    fill: var(--fg);
+    font-size: 23px;
+    font-weight: 700;
+  }
+  .chrono-copy {
+    fill: var(--fg-dim);
+    font-size: 16px;
+    font-weight: 400;
+  }
+  .chrono-milestone {
+    fill: var(--fg);
+    font-size: 20px;
+    font-weight: 700;
+    text-anchor: middle;
+  }
+  .chrono-milestone-copy {
+    fill: var(--fg-dim);
+    font-size: 15px;
+    font-weight: 400;
+    text-anchor: middle;
+  }
+  .chrono-time-label {
+    fill: var(--fg-dim);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+  }
+  .chrono-takeaway {
+    fill: var(--fg);
+    font-size: 22px;
+    font-weight: 700;
+    text-anchor: middle;
+  }
+  .chrono-takeaway-accent {
+    fill: var(--accent);
+  }
+  .chrono-card {
+    fill: var(--bg-card);
+    stroke: #ddd7cc;
+    stroke-width: 1.5;
+  }
+  .chrono-card-plan {
+    stroke: var(--accent);
+  }
+  .chrono-card-confirm {
+    fill: rgba(179, 89, 0, 0.035);
+    stroke: rgba(179, 89, 0, 0.55);
+  }
+  .chrono-card-run {
+    fill: rgba(13, 91, 91, 0.035);
+    stroke: var(--accent);
+  }
+  .chrono-row-label {
+    fill: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+  }
+  .chrono-row-copy {
+    fill: var(--fg);
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .chrono-barrier-copy {
+    fill: var(--warn);
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .chrono-stage-number {
+    fill: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+  }
+  .chrono-stage-number-warn {
+    fill: var(--warn);
+  }
+  .chrono-stage-title {
+    fill: var(--fg);
+    font-size: 24px;
+    font-weight: 700;
+  }
+  .chrono-stage-copy {
+    fill: var(--fg-dim);
+    font-size: 16px;
+    font-weight: 400;
+  }
+  .gantt-grid {
+    stroke: #ddd7cc;
+    stroke-width: 1.2;
+  }
+  .gantt-boundary {
+    stroke: var(--fg-dim);
+    stroke-width: 1.4;
+    stroke-dasharray: 5 5;
+  }
+  .gantt-axis {
+    stroke: var(--fg-dim);
+    stroke-width: 2;
+  }
+  .gantt-row-label {
+    fill: var(--fg);
+    font-size: 20px;
+    font-weight: 700;
+  }
+  .gantt-row-note {
+    fill: var(--fg-dim);
+    font-size: 13px;
+    font-weight: 400;
+  }
+  .gantt-tick {
+    fill: var(--fg-dim);
+    font-size: 13px;
+    font-weight: 700;
+    text-anchor: middle;
+  }
+  .gantt-bar-plan {
+    fill: var(--accent);
+  }
+  .gantt-bar-confirm {
+    fill: var(--warn);
+  }
+  .gantt-bar-wait {
+    fill: rgba(179, 89, 0, 0.08);
+    stroke: var(--warn);
+    stroke-width: 1.5;
+  }
+  .gantt-bar-run {
+    fill: rgba(13, 91, 91, 0.10);
+    stroke: var(--accent);
+    stroke-width: 1.5;
+  }
+  .gantt-bar-untrusted {
+    fill: rgba(179, 89, 0, 0.08);
+    stroke: var(--warn);
+    stroke-width: 1.5;
+  }
+  .gantt-bar-grant {
+    fill: var(--accent);
+  }
+  .gantt-bar-pauth {
+    fill: var(--accent);
+  }
+  .gantt-bar-agent {
+    fill: var(--warn);
+  }
+  .gantt-bar-saas {
+    fill: #9b3535;
+  }
+  .gantt-legend-label {
+    fill: var(--fg-dim);
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .gantt-legend-pauth {
+    fill: var(--accent);
+  }
+  .gantt-legend-agent {
+    fill: var(--warn);
+  }
+  .gantt-legend-saas {
+    fill: #9b3535;
+  }
+  .gantt-row-rule {
+    stroke: #ebe6dd;
+    stroke-width: 1;
+  }
+  .gantt-bar-text-light {
+    fill: #fff;
+    font-size: 18px;
+    font-weight: 700;
+    text-anchor: middle;
+  }
+  .gantt-bar-text {
+    fill: var(--fg);
+    font-size: 17px;
+    font-weight: 700;
+    text-anchor: middle;
+  }
+  .gantt-bar-subtext {
+    fill: var(--fg-dim);
+    font-size: 13px;
+    font-weight: 400;
+    text-anchor: middle;
+  }
+  .gantt-bar-subtext-warn {
+    fill: var(--warn);
+    font-size: 13px;
+    font-weight: 600;
+    text-anchor: middle;
+  }
+  .gantt-bar-text-small {
+    font-size: 14px;
+  }
+  .gantt-bar-text-xs {
+    font-size: 12px;
+  }
+  .gantt-brace-label {
+    fill: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-anchor: middle;
+  }
+  .gantt-interval-line {
+    fill: none;
+    stroke: var(--warn);
+    stroke-width: 1.8;
+  }
+  .gantt-interval-box {
+    fill: rgba(179, 89, 0, 0.08);
+    stroke: var(--warn);
+    stroke-width: 1.5;
+  }
+  .gantt-interval-kicker {
+    fill: var(--warn);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-anchor: middle;
+  }
+  .gantt-interval-copy {
+    fill: var(--fg);
+    font-size: 13px;
+    font-weight: 700;
+    text-anchor: middle;
+  }
+  .claim-diagram {
+    display: block;
+    width: 100%;
+    max-width: 1100px;
+    height: auto;
+  }
+  .claim-diagram text {
+    font-family: inherit;
+  }
+  .claim-lane-label {
+    fill: var(--accent);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 2.2px;
+  }
+  .claim-node {
+    fill: var(--bg-card);
+    stroke: #ddd7cc;
+    stroke-width: 1.5;
+  }
+  .claim-node-core {
+    fill: rgba(13, 91, 91, 0.06);
+    stroke: var(--accent);
+    stroke-width: 2;
+  }
+  .claim-zone {
+    fill: rgba(13, 91, 91, 0.025);
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    stroke-dasharray: 7 6;
+  }
+  .claim-zone-label {
+    fill: var(--accent);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.8px;
+    text-anchor: middle;
+  }
+  .claim-node-title {
+    fill: var(--fg);
+    font-size: 20px;
+    font-weight: 700;
+    text-anchor: middle;
+  }
+  .claim-node-copy {
+    fill: var(--fg-dim);
+    font-size: 14px;
+    font-weight: 400;
+    text-anchor: middle;
+  }
+  .claim-flow {
+    fill: none;
+    stroke: var(--fg-dim);
+    stroke-width: 2.5;
+  }
+  .claim-flow-core {
+    stroke: var(--accent);
+    stroke-width: 3;
+  }
+  .claim-metric {
+    fill: var(--fg);
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .claim-metric-key {
+    fill: var(--accent);
+    font-size: 22px;
+    font-weight: 800;
+  }
+  .claim-limit {
+    fill: var(--fg-dim);
+    font-size: 15px;
+    font-weight: 500;
+    text-anchor: middle;
+  }
+  .arch-paper-outline {
+    fill: none;
+    stroke: #4b3fbf;
+    stroke-width: 4;
+  }
+  .arch-paper-zone-fill {
+    fill: rgba(75, 63, 191, 0.10);
+  }
+  .arch-paper-zone-connector {
+    fill: none;
+    stroke: rgba(75, 63, 191, 0.18);
+    stroke-width: 34;
+    stroke-linecap: round;
+  }
+  .arch-paper-label {
+    fill: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-anchor: middle;
+  }
+  .arch-paper-label-bg {
+    fill: #4b3fbf;
+  }
+  .arch-paper-metric {
+    fill: var(--fg);
+    font-size: 17px;
+    font-weight: 600;
+    text-anchor: middle;
+  }
+  .arch-paper-metric-key {
+    fill: var(--accent);
+    font-size: 21px;
+    font-weight: 800;
+  }
+  .arch-paper-limit {
+    fill: var(--fg-dim);
+    font-size: 14px;
+    font-weight: 500;
+    text-anchor: middle;
+  }
+  .arch-paper-summary-box {
+    fill: rgba(75, 63, 191, 0.035);
+    stroke: #4b3fbf;
+    stroke-width: 1.5;
+  }
+  .contrib-card {
+    fill: var(--bg-card);
+    stroke: #ddd7cc;
+    stroke-width: 1.5;
+  }
+  .contrib-card-baseline {
+    fill: rgba(107, 107, 112, 0.035);
+  }
+  .contrib-card-result {
+    fill: rgba(13, 91, 91, 0.04);
+    stroke: var(--accent);
+  }
+  .contrib-kicker {
+    fill: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+  }
+  .contrib-title {
+    fill: var(--fg);
+    font-size: 23px;
+    font-weight: 700;
+  }
+  .contrib-copy {
+    fill: var(--fg-dim);
+    font-size: 15px;
+    font-weight: 400;
+  }
+  .contrib-metric-big {
+    fill: var(--fg);
+    font-size: 32px;
+    font-weight: 800;
+  }
+  .contrib-metric-label {
+    fill: var(--fg-dim);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .contrib-addition {
+    fill: rgba(13, 91, 91, 0.035);
+    stroke: var(--accent-soft);
+    stroke-width: 1.2;
+  }
+  .contrib-addition-key {
+    fill: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+  }
+  .contrib-addition-title {
+    fill: var(--fg);
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .contrib-addition-copy {
+    fill: var(--fg-dim);
+    font-size: 14px;
+    font-weight: 400;
+  }
+  .contrib-arrow {
+    fill: var(--fg-dim);
+    font-size: 32px;
+    font-weight: 400;
+    text-anchor: middle;
+  }
+  .contrib-caveat {
+    fill: rgba(179, 89, 0, 0.04);
+    stroke: rgba(179, 89, 0, 0.55);
+    stroke-width: 1.4;
+  }
+  .contrib-caveat-text {
+    fill: var(--fg);
+    font-size: 16px;
+    font-weight: 600;
+    text-anchor: middle;
+  }
+  .contrib-caveat-key {
+    fill: var(--warn);
+    font-weight: 800;
+  }
+  .eval-source {
+    fill: rgba(13, 91, 91, 0.04);
+    stroke: var(--accent-soft);
+    stroke-width: 1.3;
+  }
+  .eval-source-key {
+    fill: var(--accent);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1.8px;
+  }
+  .eval-source-copy {
+    fill: var(--fg);
+    font-size: 17px;
+    font-weight: 600;
+  }
+  .eval-panel {
+    fill: var(--bg-card);
+    stroke: #ddd7cc;
+    stroke-width: 1.5;
+  }
+  .eval-panel-security {
+    fill: rgba(13, 91, 91, 0.035);
+    stroke: var(--accent);
+  }
+  .eval-kicker {
+    fill: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+  }
+  .eval-panel-title {
+    fill: var(--fg);
+    font-size: 22px;
+    font-weight: 700;
+  }
+  .eval-stage {
+    fill: rgba(13, 91, 91, 0.025);
+    stroke: var(--accent-soft);
+    stroke-width: 1.2;
+  }
+  .eval-stage-hot {
+    fill: rgba(13, 91, 91, 0.09);
+    stroke: var(--accent);
+  }
+  .eval-stage-id {
+    fill: var(--accent);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.1px;
+    text-anchor: middle;
+  }
+  .eval-stage-title {
+    fill: var(--fg);
+    font-size: 16px;
+    font-weight: 700;
+    text-anchor: middle;
+  }
+  .eval-stage-copy {
+    fill: var(--fg-dim);
+    font-size: 12px;
+    font-weight: 400;
+    text-anchor: middle;
+  }
+  .eval-flow-arrow {
+    fill: var(--fg-dim);
+    font-size: 24px;
+    font-weight: 400;
+    text-anchor: middle;
+  }
+  .eval-metric-name {
+    fill: var(--fg);
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .eval-metric-copy {
+    fill: var(--fg-dim);
+    font-size: 13px;
+    font-weight: 400;
+  }
+  .eval-metric-value {
+    fill: var(--accent);
+    font-size: 22px;
+    font-weight: 800;
+    text-anchor: end;
+  }
+  .eval-divider {
+    stroke: #ddd7cc;
+    stroke-width: 1.2;
+  }
+  .eval-summary {
+    fill: rgba(179, 89, 0, 0.04);
+    stroke: rgba(179, 89, 0, 0.55);
+    stroke-width: 1.4;
+  }
+  .eval-summary-text {
+    fill: var(--fg);
+    font-size: 16px;
+    font-weight: 600;
+    text-anchor: middle;
+  }
+  .eval-summary-key {
+    fill: var(--warn);
+    font-weight: 800;
+  }
+  .metric-catalog {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin-top: 24px;
+  }
+  .metric-category {
+    min-height: 168px;
+    padding: 22px 26px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--bg-card);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.035);
+  }
+  .metric-category h3 {
+    margin: 0 0 14px;
+    color: var(--accent);
+    font-size: 14px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  .metric-catalog-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 18px;
+    padding: 7px 0;
+    border-top: 1px solid rgba(107, 107, 112, 0.16);
+  }
+  .metric-catalog-row:first-of-type {
+    border-top: 0;
+    padding-top: 0;
+  }
+  .metric-catalog-row code {
+    padding: 0;
+    background: none;
+    color: var(--fg);
+    font-size: 15px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .metric-catalog-row span {
+    color: var(--fg-dim);
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .metric-catalog-row.metric-highlight code,
+  .metric-catalog-row.metric-highlight span {
+    color: #a83232;
+  }
+  .metric-catalog-note {
+    margin-top: 18px;
+    color: var(--fg-dim);
+    font-size: 16px;
+    text-align: left;
+  }
+  .future-goal-statement {
+    max-width: 900px;
+    margin-top: 8px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--fg-dim);
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 1.7;
+    box-shadow: none;
+  }
+  .footer {
+    position: absolute;
+    bottom: 30px;
+    left: 110px;
+    right: 110px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    color: var(--fg-dim);
+    letter-spacing: 0.06em;
+  }
+  .progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 2px;
+    background: var(--accent);
+    transition: width 320ms ease;
+  }
+  .key-hint {
+    font-size: 12px;
+    color: var(--fg-dim);
+  }
+  .stat {
+    display: flex;
+    gap: 60px;
+    margin-top: 24px;
+    flex-wrap: wrap;
+  }
+  .stat-item .num {
+    font-size: 52px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  .stat-item .label {
+    font-size: 15px;
+    color: var(--fg-dim);
+    margin-top: 10px;
+    max-width: 220px;
+    line-height: 1.5;
+  }
+  .agentdojo-framework-slide .chapter {
+    margin-bottom: 28px;
+  }
+  .agentdojo-framework-slide h2 {
+    margin-bottom: 10px;
+  }
+  .agentdojo-framework-lead {
+    color: var(--fg);
+    font-size: 21px;
+    line-height: 1.5;
+    max-width: 1080px;
+  }
+  .agentdojo-framework-flow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr) 44px minmax(0, 1fr);
+    gap: 18px;
+    align-items: stretch;
+    max-width: 1120px;
+    margin-top: 30px;
+  }
+  .agentdojo-framework-step {
+    border-top: 3px solid var(--accent);
+    padding: 18px 8px 6px;
+  }
+  .agentdojo-framework-count {
+    color: var(--accent);
+    font-size: 64px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+  .agentdojo-framework-label {
+    color: var(--fg);
+    font-size: 23px;
+    font-weight: 700;
+    margin-top: 12px;
+  }
+  .agentdojo-framework-note {
+    color: var(--fg-dim);
+    font-size: 17px;
+    line-height: 1.45;
+    margin-top: 6px;
+  }
+  .agentdojo-suite-list {
+    color: var(--fg-dim);
+    font-size: 15px;
+    line-height: 1.45;
+    margin: 8px 0 0;
+    padding-left: 20px;
+  }
+  .agentdojo-suite-list li::marker {
+    color: var(--accent);
+  }
+  .agentdojo-framework-operator {
+    align-self: start;
+    color: var(--fg-dim);
+    font-size: 48px;
+    font-weight: 500;
+    line-height: 1;
+    margin-top: 28px;
+    text-align: center;
+  }
+  .agentdojo-eval-slide .chapter {
+    margin-bottom: 42px;
+  }
+  .agentdojo-eval-slide .agentdojo-security-title {
+    color: var(--fg);
+    font-size: 48px;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    margin-bottom: 18px;
+    max-width: 1100px;
+  }
+  .agentdojo-eval-slide .agentdojo-security-number {
+    display: inline-block;
+    width: fit-content;
+    color: var(--accent);
+    font-size: 56px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    padding: 10px 18px 12px;
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    margin-bottom: 18px;
+    max-width: 1100px;
+  }
+  .agentdojo-security-caption {
+    color: var(--fg);
+    font-size: 28px;
+    font-weight: 300;
+    line-height: 1.4;
+    max-width: 1100px;
+  }
+  .agentdojo-security-method {
+    color: var(--fg-dim);
+    font-size: 17px;
+    line-height: 1.45;
+    margin-top: 22px;
+    max-width: 1100px;
+  }
+  .cost-slide h2 {
+    margin-bottom: 14px;
+  }
+  .cost-assumption {
+    color: var(--fg-dim);
+    font-size: 17px;
+    margin-top: 14px;
+  }
+  .cost-table {
+    display: grid;
+    gap: 0;
+    max-width: 1100px;
+  }
+  .cost-table-header,
+  .cost-row {
+    display: grid;
+    grid-template-columns: 170px 190px 82px minmax(230px, 1fr) 90px;
+    column-gap: 18px;
+    align-items: center;
+  }
+  .cost-table-header {
+    color: var(--fg-dim);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    padding: 0 14px 8px;
+    text-transform: uppercase;
+  }
+  .cost-row {
+    border-top: 1px solid var(--border);
+    padding: 16px 14px;
+  }
+  .cost-row.premium {
+    background: rgba(179, 89, 0, 0.05);
+    border-left: 3px solid var(--warn);
+  }
+  .cost-model {
+    font-size: 20px;
+    font-weight: 700;
+  }
+  .cost-price {
+    color: var(--fg-dim);
+    font-size: 16px;
+  }
+  .cost-price strong {
+    color: var(--fg);
+  }
+  .cost-avail {
+    color: var(--accent);
+    font-size: 22px;
+    font-weight: 700;
+  }
+  .cost-bar-wrap {
+    align-items: center;
+    display: flex;
+    gap: 14px;
+  }
+  .cost-track {
+    background: #e9e5dc;
+    border-radius: 999px;
+    flex: 1;
+    height: 12px;
+    overflow: hidden;
+  }
+  .cost-fill {
+    background: var(--accent);
+    border-radius: inherit;
+    height: 100%;
+  }
+  .cost-row.premium .cost-fill {
+    background: var(--warn);
+  }
+  .cost-normalized {
+    font-size: 18px;
+    font-weight: 700;
+    min-width: 68px;
+    text-align: right;
+  }
+  .cost-ratio {
+    color: var(--accent);
+    font-size: 24px;
+    font-weight: 700;
+    text-align: right;
+  }
+  .presenter {
+    margin-top: 56px;
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+  }
+  .presenter-name {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--fg);
+  }
+  .presenter-affil {
+    font-size: 18px;
+    color: var(--fg-dim);
+  }
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+<!-- 1. Title -->
+<section class="slide">
+  <div class="chapter">Lab Meeting &middot; 24 Jul 2026</div>
+  <h1>Auto-Authorizing AI Gateway</h1>
+  <p class="subtitle">Progress report: from proposal to a measured system.</p>
+  <div class="presenter">
+    <span class="presenter-name">Jun Akita</span>
+  </div>
+</section>
+
+<!-- 2. Recap: main RQ -->
+<section class="slide">
+  <div class="chapter">Recap &middot; Main research question</div>
+  <h1 style="font-size: clamp(36px, 4.05vw, 54px); max-width: none; white-space: nowrap;">
+    Can granting permissions be <span class="strong">automated</span>?
+  </h1>
+  <p class="subtitle" style="margin-top: 18px;">
+    If yes, automating PC tasks reduces to waiting for LLM capability<br>
+    &mdash; capability scales with the model; trust does not.
+  </p>
+</section>
+
+<!-- 3. Recap: premise -->
+<section class="slide">
+  <div class="chapter">Recap</div>
+  <h2>Agent Gateway as a Proxy</h2>
+  <div class="pipeline">
+    <div class="pipeline-node">
+      <div class="pipeline-label">Unmodified</div>
+      <div class="pipeline-title">Agent<br>(Claude Code etc.)</div>
+    </div>
+    <div class="pipeline-edge"><div class="pipeline-arrow">&rarr;</div></div>
+    <div class="pipeline-node highlight">
+      <div class="pipeline-label">This work</div>
+      <div class="pipeline-title">Authorization<br>Gateway</div>
+    </div>
+    <div class="pipeline-edge"><div class="pipeline-arrow">&rarr;</div></div>
+    <div class="pipeline-node">
+      <div class="pipeline-label">Unmodified</div>
+      <div class="pipeline-title">External tools<br>(SaaS MCP)</div>
+    </div>
+  </div>
+  <p class="pipeline-note">No changes are required to the existing ecosystem.</p>
+</section>
+
+<!-- 4. Existing path: Agent to SaaS MCP -->
+<section class="slide baseline-slide">
+  <div class="chapter">Architecture comparison &middot; Before</div>
+  <h2>Before: Agent talks directly to SaaS MCP.</h2>
+
+  <svg class="baseline-diagram" viewBox="0 0 1100 470" role="img"
+       aria-label="The Agent and SaaS MCP nodes remain prominent and communicate directly; the future PAuth components are faded.">
+    <defs>
+      <filter id="baseline-shadow" x="-20%" y="-30%" width="140%" height="170%">
+        <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#000" flood-opacity="0.06"/>
+      </filter>
+      <marker id="baseline-call-arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+        <path d="M0,0 L8,4.5 L0,9 Z" fill="#0d5b5b"/>
+      </marker>
+      <marker id="baseline-result-arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+        <path d="M0,0 L8,4.5 L0,9 Z" fill="#b35900"/>
+      </marker>
+    </defs>
+
+    <g class="baseline-muted">
+      <rect class="arch-lane-plan" x="0" y="0" width="1100" height="165" rx="18"/>
+      <text class="arch-lane-label" x="28" y="33">PLAN-TIME · TRUSTED</text>
+
+      <rect class="arch-box" x="50" y="55" width="170" height="82" rx="12"/>
+      <text class="arch-box-title" x="135" y="91">User prompt</text>
+      <text class="arch-box-subtitle" x="135" y="116">trusted input</text>
+      <path class="arch-arrow arch-arrow-accent" d="M232 96 H263"/>
+
+      <rect class="arch-box" x="275" y="55" width="185" height="82" rx="12"/>
+      <text class="arch-box-title" x="367.5" y="91">Planner</text>
+      <text class="arch-box-subtitle" x="367.5" y="116">LLM</text>
+      <path class="arch-arrow arch-arrow-accent" d="M472 96 H503"/>
+
+      <rect class="arch-box" x="515" y="55" width="220" height="82" rx="12"/>
+      <text class="arch-box-title" x="625" y="88">Compiler</text>
+      <text class="arch-box-subtitle" x="625" y="114">deterministic</text>
+      <path class="arch-arrow arch-arrow-accent" d="M747 96 H778"/>
+
+      <rect class="arch-box-policy" x="790" y="55" width="255" height="82" rx="12"/>
+      <text class="arch-box-title arch-box-title-light" x="917.5" y="91">Enforcer</text>
+      <text class="arch-box-subtitle arch-box-subtitle-light" x="917.5" y="116">compiled rules loaded</text>
+
+      <rect class="arch-lane-runtime" x="0" y="235" width="1100" height="220" rx="18"/>
+      <text class="arch-lane-label arch-lane-label-runtime" x="28" y="269">RUN-TIME · UNTRUSTED</text>
+
+      <rect class="arch-box-enforcer" x="405" y="295" width="290" height="90" rx="12"/>
+      <text class="arch-box-title" x="550" y="335">PAuth Gateway</text>
+      <text class="arch-box-subtitle" x="550" y="361">Ingress hook · tool proxy</text>
+    </g>
+
+    <rect class="arch-box" x="50" y="295" width="190" height="90" rx="12" filter="url(#baseline-shadow)"/>
+    <text class="arch-box-title" x="145" y="335">Agent</text>
+    <text class="arch-box-subtitle arch-box-subtitle-warn" x="145" y="361">untrusted</text>
+
+    <rect class="arch-box" x="860" y="295" width="190" height="90" rx="12" filter="url(#baseline-shadow)"/>
+    <text class="arch-box-title" x="955" y="349">SaaS MCP</text>
+
+    <path class="baseline-direct-call" d="M252 326 H848" marker-end="url(#baseline-call-arrow)"/>
+    <rect x="488" y="302" width="124" height="28" rx="14" fill="var(--bg)"/>
+    <text class="baseline-direct-label baseline-direct-label-call" x="550" y="321">tool call</text>
+
+    <path class="baseline-direct-result" d="M848 374 H252" marker-end="url(#baseline-result-arrow)"/>
+    <rect x="480" y="371" width="140" height="28" rx="14" fill="var(--bg)"/>
+    <text class="baseline-direct-label baseline-direct-label-result" x="550" y="391">tool result</text>
+  </svg>
+</section>
+
+<!-- 5. Architecture: information flow -->
+<section class="slide architecture-slide">
+  <div class="chapter">Architecture comparison &middot; After</div>
+  <h2>After: PAuthGateway mediates every tool call.</h2>
+
+  <svg class="architecture-diagram" viewBox="0 0 1100 470" role="img"
+       aria-label="The trusted prompt configures the Enforcer at plan-time; at run-time PAuth Gateway captures the prompt, hooks tool calls, and consults the Enforcer.">
+    <defs>
+      <filter id="arch-shadow" x="-20%" y="-30%" width="140%" height="170%">
+        <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#000" flood-opacity="0.06"/>
+      </filter>
+      <marker id="arch-arrow-gray" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+        <path d="M0,0 L8,4.5 L0,9 Z" fill="#6b6b70"/>
+      </marker>
+      <marker id="arch-arrow-accent" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+        <path d="M0,0 L8,4.5 L0,9 Z" fill="#0d5b5b"/>
+      </marker>
+      <marker id="arch-arrow-warn" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+        <path d="M0,0 L8,4.5 L0,9 Z" fill="#b35900"/>
+      </marker>
+    </defs>
+
+    <rect class="arch-lane-plan" x="0" y="0" width="1100" height="165" rx="18"/>
+    <text class="arch-lane-label" x="28" y="33">PLAN-TIME · TRUSTED</text>
+
+    <rect class="arch-box" x="50" y="55" width="170" height="82" rx="12" filter="url(#arch-shadow)"/>
+    <text class="arch-box-title" x="135" y="91">User prompt</text>
+    <text class="arch-box-subtitle" x="135" y="116">trusted input</text>
+
+    <path class="arch-arrow arch-arrow-accent" d="M232 96 H263" marker-end="url(#arch-arrow-accent)"/>
+
+    <rect class="arch-box" x="275" y="55" width="185" height="82" rx="12" filter="url(#arch-shadow)"/>
+    <text class="arch-box-title" x="367.5" y="91">Planner</text>
+    <text class="arch-box-subtitle" x="367.5" y="116">LLM</text>
+
+    <path class="arch-arrow arch-arrow-accent" d="M472 96 H503" marker-end="url(#arch-arrow-accent)"/>
+
+    <rect class="arch-box" x="515" y="55" width="220" height="82" rx="12" filter="url(#arch-shadow)"/>
+    <text class="arch-box-title" x="625" y="88">Compiler</text>
+    <text class="arch-box-subtitle" x="625" y="114">deterministic</text>
+
+    <path class="arch-arrow arch-arrow-accent" d="M747 96 H778" marker-end="url(#arch-arrow-accent)"/>
+
+    <rect class="arch-box-policy" x="790" y="55" width="255" height="82" rx="12" filter="url(#arch-shadow)"/>
+    <text class="arch-box-title arch-box-title-light" x="917.5" y="91">Enforcer</text>
+    <text class="arch-box-subtitle arch-box-subtitle-light" x="917.5" y="116">compiled rules loaded</text>
+
+    <rect class="arch-lane-runtime" x="0" y="235" width="1100" height="220" rx="18"/>
+    <text class="arch-lane-label arch-lane-label-runtime" x="28" y="269">RUN-TIME · UNTRUSTED</text>
+
+    <path class="arch-arrow arch-arrow-accent"
+          d="M535 292 C358 218 182 194 182 139"
+          marker-end="url(#arch-arrow-accent)"/>
+    <rect x="235" y="187" width="190" height="28" rx="14" fill="var(--bg)"/>
+    <text class="arch-flow-label arch-flow-label-accent" x="330" y="206">capture clean prompt</text>
+
+    <path class="arch-arrow arch-arrow-accent"
+          d="M918 139 C918 194 742 218 565 292"
+          marker-start="url(#arch-arrow-accent)"
+          marker-end="url(#arch-arrow-accent)"/>
+    <rect x="680" y="187" width="180" height="28" rx="14" fill="var(--bg)"/>
+    <text class="arch-flow-label arch-flow-label-accent" x="770" y="206">check / decision</text>
+
+    <rect class="arch-box" x="50" y="295" width="190" height="90" rx="12" filter="url(#arch-shadow)"/>
+    <text class="arch-box-title" x="145" y="335">Agent</text>
+    <text class="arch-box-subtitle arch-box-subtitle-warn" x="145" y="361">untrusted</text>
+
+    <path class="arch-arrow" d="M252 340 H393" marker-end="url(#arch-arrow-gray)"/>
+    <text class="arch-flow-label" x="322" y="326">tool call hook</text>
+
+    <rect class="arch-box-enforcer" x="405" y="295" width="290" height="90" rx="12" filter="url(#arch-shadow)"/>
+    <text class="arch-box-title" x="550" y="335">PAuth Gateway</text>
+    <text class="arch-box-subtitle" x="550" y="361">Ingress hook · tool proxy</text>
+
+    <path class="arch-arrow arch-arrow-accent" d="M707 340 H848" marker-end="url(#arch-arrow-accent)"/>
+    <text class="arch-flow-label arch-flow-label-accent" x="778" y="326">permitted call</text>
+
+    <rect class="arch-box" x="860" y="295" width="190" height="90" rx="12" filter="url(#arch-shadow)"/>
+    <text class="arch-box-title" x="955" y="349">SaaS MCP</text>
+
+    <path class="arch-arrow arch-arrow-warn"
+          d="M860 370 H707"
+          marker-end="url(#arch-arrow-warn)"/>
+    <path class="arch-arrow arch-arrow-warn"
+          d="M405 370 H252"
+          marker-end="url(#arch-arrow-warn)"/>
+    <text class="arch-flow-label arch-flow-label-warn" x="550" y="424">untrusted result via Gateway</text>
+  </svg>
+</section>
+
+<!-- 6. Timeline: temporal flow -->
+<section class="slide timeline-slide">
+  <div class="chapter">How it works &middot; Timeline</div>
+  <h2>From untrusted data to an authorized tool call</h2>
+
+  <svg class="chrono-diagram" viewBox="0 0 1200 660" role="img"
+       aria-label="A Gantt chart showing the processing steps for a task that reads an operand from an untrusted source, confirms the concrete action with a human, mints a signed single-use grant, and executes the tool call through the gateway.">
+    <defs>
+      <marker id="gantt-arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+        <path d="M0,0 L8,4.5 L0,9 Z" fill="#6b6b70"/>
+      </marker>
+    </defs>
+
+    <rect class="gantt-legend-pauth" x="684" y="0" width="16" height="16" rx="3"/>
+    <text class="gantt-legend-label" x="710" y="15">PAuth Gateway</text>
+    <rect class="gantt-legend-agent" x="850" y="0" width="16" height="16" rx="3"/>
+    <text class="gantt-legend-label" x="876" y="15">Agent</text>
+    <rect class="gantt-legend-saas" x="950" y="0" width="16" height="16" rx="3"/>
+    <text class="gantt-legend-label" x="976" y="15">SaaS</text>
+
+    <line class="gantt-axis" x1="220" y1="55" x2="1070" y2="55" marker-end="url(#gantt-arrow)"/>
+    <text class="gantt-tick" x="240" y="40">PROMPT</text>
+    <text class="gantt-tick" x="360" y="40">RULES</text>
+    <text class="gantt-tick" x="510" y="40">DATA</text>
+    <text class="gantt-tick" x="620" y="40">OPERAND</text>
+    <text class="gantt-tick" x="750" y="40">CONFIRMED</text>
+    <text class="gantt-tick" x="830" y="40">GRANT</text>
+    <text class="gantt-tick" x="910" y="40">CALL</text>
+    <text class="gantt-tick" x="990" y="40">VERIFIED</text>
+    <text class="gantt-tick" x="1050" y="40">DONE</text>
+
+    <line class="gantt-boundary" x1="240" y1="55" x2="240" y2="514"/>
+    <line class="gantt-boundary" x1="360" y1="55" x2="360" y2="514"/>
+    <line class="gantt-boundary" x1="510" y1="55" x2="510" y2="514"/>
+    <line class="gantt-boundary" x1="620" y1="55" x2="620" y2="514"/>
+    <line class="gantt-boundary" x1="750" y1="55" x2="750" y2="514"/>
+    <line class="gantt-boundary" x1="830" y1="55" x2="830" y2="514"/>
+    <line class="gantt-boundary" x1="910" y1="55" x2="910" y2="514"/>
+    <line class="gantt-boundary" x1="990" y1="55" x2="990" y2="514"/>
+    <line class="gantt-boundary" x1="1050" y1="55" x2="1050" y2="514"/>
+
+    <line class="gantt-row-rule" x1="220" y1="114" x2="1060" y2="114"/>
+    <line class="gantt-row-rule" x1="220" y1="164" x2="1060" y2="164"/>
+    <line class="gantt-row-rule" x1="220" y1="214" x2="1060" y2="214"/>
+    <line class="gantt-row-rule" x1="220" y1="264" x2="1060" y2="264"/>
+    <line class="gantt-row-rule" x1="220" y1="314" x2="1060" y2="314"/>
+    <line class="gantt-row-rule" x1="220" y1="364" x2="1060" y2="364"/>
+    <line class="gantt-row-rule" x1="220" y1="414" x2="1060" y2="414"/>
+    <line class="gantt-row-rule" x1="220" y1="464" x2="1060" y2="464"/>
+
+    <text class="gantt-row-label" x="22" y="84">Compile authorization</text>
+    <text class="gantt-row-note" x="22" y="102">trusted prompt → rules</text>
+    <rect class="gantt-bar-pauth" x="240" y="70" width="120" height="34" rx="7"/>
+    <text class="gantt-bar-text-light gantt-bar-text-small" x="300" y="92">Compile rules</text>
+
+    <text class="gantt-row-label" x="22" y="134">Prepare read</text>
+    <text class="gantt-row-note" x="22" y="152">agent plans the read</text>
+    <rect class="gantt-bar-agent" x="240" y="120" width="120" height="34" rx="7"/>
+    <text class="gantt-bar-text-light gantt-bar-text-small" x="300" y="142">Plan + request</text>
+
+    <text class="gantt-row-label" x="22" y="184">Fetch untrusted data</text>
+    <text class="gantt-row-note" x="22" y="202">email / file / SaaS response</text>
+    <rect class="gantt-bar-saas" x="360" y="170" width="150" height="34" rx="7"/>
+    <text class="gantt-bar-text-light gantt-bar-text-small" x="435" y="192">Return data</text>
+
+    <text class="gantt-row-label" x="22" y="234">Extract operand</text>
+    <text class="gantt-row-note" x="22" y="252">value remains untrusted</text>
+    <rect class="gantt-bar-agent" x="510" y="220" width="110" height="34" rx="7"/>
+    <text class="gantt-bar-text-light gantt-bar-text-small" x="565" y="242">Propose action</text>
+
+    <text class="gantt-row-label" x="22" y="284">Confirm action</text>
+    <text class="gantt-row-note" x="22" y="302">human approves concrete values</text>
+    <rect class="gantt-bar-pauth" x="620" y="270" width="130" height="34" rx="7"/>
+    <text class="gantt-bar-text-light gantt-bar-text-small" x="685" y="292">Confirm gate</text>
+
+    <text class="gantt-row-label" x="22" y="334">Mint grant</text>
+    <text class="gantt-row-note" x="22" y="352">signed · single-use · bound</text>
+    <rect class="gantt-bar-pauth" x="750" y="320" width="80" height="34" rx="7"/>
+    <text class="gantt-bar-text-light gantt-bar-text-xs" x="790" y="342">Bound grant</text>
+
+    <text class="gantt-row-label" x="22" y="384">Send tool call</text>
+    <text class="gantt-row-note" x="22" y="402">uses the approved operand</text>
+    <rect class="gantt-bar-agent" x="830" y="370" width="80" height="34" rx="7"/>
+    <text class="gantt-bar-text-light gantt-bar-text-small" x="870" y="392">Tool call</text>
+
+    <text class="gantt-row-label" x="22" y="434">Redeem grant</text>
+    <text class="gantt-row-note" x="22" y="452">match tool + operands; consume</text>
+    <rect class="gantt-bar-pauth" x="910" y="420" width="80" height="34" rx="7"/>
+    <text class="gantt-bar-text-light gantt-bar-text-small" x="950" y="442">Verify</text>
+
+    <text class="gantt-row-label" x="22" y="484">Execute side effect</text>
+    <text class="gantt-row-note" x="22" y="502">SaaS accepts the authorized call</text>
+    <rect class="gantt-bar-saas" x="990" y="470" width="60" height="34" rx="7"/>
+    <text class="gantt-bar-text-light gantt-bar-text-small" x="1020" y="492">Execute</text>
+
+    <path class="gantt-interval-line" d="M240 525 V543 M240 534 H830 M830 525 V543"/>
+    <rect class="gantt-interval-box" x="385" y="548" width="300" height="56" rx="10"/>
+    <text class="gantt-interval-kicker" x="535" y="568">BEFORE GRANT</text>
+    <text class="gantt-interval-copy" x="535" y="591">SIDE-EFFECTING TOOL CALLS ARE BLOCKED</text>
+
+    <text class="chrono-takeaway" x="550" y="630">
+      Untrusted operand
+      <tspan class="chrono-takeaway-accent"> → human-approved grant → tool execution.</tspan>
+    </text>
+  </svg>
+</section>
+
+<!-- 7. PAuth paper guarantee -->
+<section class="slide">
+  <div class="chapter">PAuth paper &middot; Security boundary</div>
+  <h2>The PAuth guarantee lives at the Gateway.</h2>
+
+  <svg class="architecture-diagram" viewBox="0 0 1100 540" role="img"
+       aria-label="The architecture from slide four, with the paper guarantee highlighted around the Enforcer and PAuth Gateway.">
+    <defs>
+      <filter id="arch-paper-shadow" x="-20%" y="-30%" width="140%" height="170%">
+        <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#000" flood-opacity="0.06"/>
+      </filter>
+      <marker id="arch-paper-arrow-gray" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+        <path d="M0,0 L8,4.5 L0,9 Z" fill="#6b6b70"/>
+      </marker>
+      <marker id="arch-paper-arrow-accent" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+        <path d="M0,0 L8,4.5 L0,9 Z" fill="#0d5b5b"/>
+      </marker>
+      <marker id="arch-paper-arrow-warn" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+        <path d="M0,0 L8,4.5 L0,9 Z" fill="#b35900"/>
+      </marker>
+    </defs>
+
+    <rect class="arch-lane-plan" x="0" y="0" width="1100" height="165" rx="18"/>
+    <text class="arch-lane-label" x="28" y="33">PLAN-TIME · TRUSTED</text>
+
+    <rect class="arch-box" x="50" y="55" width="170" height="82" rx="12" filter="url(#arch-paper-shadow)"/>
+    <text class="arch-box-title" x="135" y="91">User prompt</text>
+    <text class="arch-box-subtitle" x="135" y="116">trusted input</text>
+    <path class="arch-arrow arch-arrow-accent" d="M232 96 H263" marker-end="url(#arch-paper-arrow-accent)"/>
+
+    <rect class="arch-box" x="275" y="55" width="185" height="82" rx="12" filter="url(#arch-paper-shadow)"/>
+    <text class="arch-box-title" x="367.5" y="91">Planner</text>
+    <text class="arch-box-subtitle" x="367.5" y="116">LLM</text>
+    <path class="arch-arrow arch-arrow-accent" d="M472 96 H503" marker-end="url(#arch-paper-arrow-accent)"/>
+
+    <rect class="arch-box" x="515" y="55" width="220" height="82" rx="12" filter="url(#arch-paper-shadow)"/>
+    <text class="arch-box-title" x="625" y="88">Compiler</text>
+    <text class="arch-box-subtitle" x="625" y="114">deterministic</text>
+    <path class="arch-arrow arch-arrow-accent" d="M747 96 H778" marker-end="url(#arch-paper-arrow-accent)"/>
+
+    <rect class="arch-paper-zone-fill" x="774" y="39" width="287" height="116" rx="20"/>
+    <rect class="arch-box-policy" x="790" y="55" width="255" height="82" rx="12" filter="url(#arch-paper-shadow)"/>
+    <text class="arch-box-title arch-box-title-light" x="917.5" y="91">Enforcer</text>
+    <text class="arch-box-subtitle arch-box-subtitle-light" x="917.5" y="116">compiled rules loaded</text>
+    <rect class="arch-paper-outline" x="774" y="39" width="287" height="116" rx="20"/>
+
+    <rect class="arch-lane-runtime" x="0" y="235" width="1100" height="220" rx="18"/>
+    <text class="arch-lane-label arch-lane-label-runtime" x="28" y="269">RUN-TIME · UNTRUSTED</text>
+    <path class="arch-paper-zone-connector"
+          d="M918 154 C918 205 752 232 565 286"/>
+
+    <path class="arch-arrow arch-arrow-accent"
+          d="M535 292 C358 218 182 194 182 139"
+          marker-end="url(#arch-paper-arrow-accent)"/>
+    <rect x="235" y="187" width="190" height="28" rx="14" fill="var(--bg)"/>
+    <text class="arch-flow-label arch-flow-label-accent" x="330" y="206">capture clean prompt</text>
+
+    <path class="arch-arrow arch-arrow-accent"
+          d="M918 139 C918 194 742 218 565 292"
+          marker-start="url(#arch-paper-arrow-accent)"
+          marker-end="url(#arch-paper-arrow-accent)"/>
+    <rect class="arch-paper-label-bg" x="650" y="181" width="240" height="36" rx="18"/>
+    <text class="arch-paper-label" x="770" y="204">PAUTH GUARANTEE</text>
+
+    <rect class="arch-box" x="50" y="295" width="190" height="90" rx="12" filter="url(#arch-paper-shadow)"/>
+    <text class="arch-box-title" x="145" y="335">Agent</text>
+    <text class="arch-box-subtitle arch-box-subtitle-warn" x="145" y="361">untrusted</text>
+
+    <path class="arch-arrow" d="M252 340 H393" marker-end="url(#arch-paper-arrow-gray)"/>
+    <text class="arch-flow-label" x="322" y="326">tool call hook</text>
+
+    <rect class="arch-paper-zone-fill" x="387" y="277" width="326" height="126" rx="21"/>
+    <rect class="arch-box-enforcer" x="405" y="295" width="290" height="90" rx="12" filter="url(#arch-paper-shadow)"/>
+    <text class="arch-box-title" x="550" y="335">PAuth Gateway</text>
+    <text class="arch-box-subtitle" x="550" y="361">Ingress hook · tool proxy</text>
+    <rect class="arch-paper-outline" x="387" y="277" width="326" height="126" rx="21"/>
+
+    <path class="arch-arrow arch-arrow-accent" d="M707 340 H848" marker-end="url(#arch-paper-arrow-accent)"/>
+    <text class="arch-flow-label arch-flow-label-accent" x="778" y="326">permitted call</text>
+
+    <rect class="arch-box" x="860" y="295" width="190" height="90" rx="12" filter="url(#arch-paper-shadow)"/>
+    <text class="arch-box-title" x="955" y="349">SaaS MCP</text>
+
+    <path class="arch-arrow arch-arrow-warn" d="M860 370 H707" marker-end="url(#arch-paper-arrow-warn)"/>
+    <path class="arch-arrow arch-arrow-warn" d="M405 370 H252" marker-end="url(#arch-paper-arrow-warn)"/>
+    <text class="arch-flow-label arch-flow-label-warn" x="550" y="424">untrusted result via Gateway</text>
+
+    <rect class="arch-paper-summary-box" x="40" y="468" width="1020" height="64" rx="14"/>
+    <text class="arch-paper-metric" x="280" y="494">
+      <tspan class="arch-paper-metric-key">FN = 0</tspan>
+      · injected / off-plan calls are denied
+    </text>
+    <text class="arch-paper-metric" x="820" y="494">
+      <tspan class="arch-paper-metric-key">FP = 0</tspan>
+      · faithful calls are permitted
+    </text>
+    <text class="arch-paper-limit" x="550" y="526">
+      Not guaranteed: prompt interpretation · agent capability · SaaS correctness
+    </text>
+  </svg>
+</section>
+
+<!-- 8. Contribution 1: deployable gateway -->
+<section class="slide">
+  <div class="chapter">Contribution 1 / 4 &middot; Gateway</div>
+  <h2>Implemented PAuth as a deployable gateway.</h2>
+  <div class="contribution-compare">
+    <div class="contribution-card">
+      <div class="contribution-kicker">PAuth paper</div>
+      <h3>Authorization architecture</h3>
+      <p>Plan once; enforce every call with deterministic, default-deny rules.</p>
+    </div>
+    <div class="contribution-arrow">&rarr;</div>
+    <div class="contribution-card work">
+      <div class="contribution-kicker">My contribution</div>
+      <h3>Production-ready proxy</h3>
+      <p>A drop-in gateway for unchanged agents and SaaS MCPs.</p>
+    </div>
+  </div>
+  <div class="contribution-points">
+    <div class="contribution-point"><strong>Ingress</strong><span>Capture the clean prompt</span></div>
+    <div class="contribution-point"><strong>Enforcement</strong><span>Signed rules and deterministic checks</span></div>
+    <div class="contribution-point"><strong>Hardening</strong><span>Auth, SSRF defense, limits, and audit logs</span></div>
+  </div>
+</section>
+
+<!-- 9. Contribution 2: grammar growth -->
+<section class="slide">
+  <div class="chapter">Contribution 2 / 4 &middot; Grammar</div>
+  <h2>Broader plans, with FN = 0 preserved.</h2>
+  <div class="contribution-compare">
+    <div class="contribution-card">
+      <div class="contribution-kicker">PAuth paper</div>
+      <h3>Restricted plan grammar</h3>
+      <p>A small authorization language keeps checking deterministic.</p>
+    </div>
+    <div class="contribution-arrow">&rarr;</div>
+    <div class="contribution-card work">
+      <div class="contribution-kicker">My contribution</div>
+      <h3>Broader task coverage</h3>
+      <p>New constructs reuse the same default-deny Enforcer.</p>
+    </div>
+  </div>
+  <div class="contribution-points">
+    <div class="contribution-point"><strong>Collections</strong><span>Process bounded lists</span></div>
+    <div class="contribution-point"><strong>Conditions</strong><span>Support nested branches</span></div>
+    <div class="contribution-point"><strong>Aggregates</strong><span>Authorize summed values</span></div>
+  </div>
+</section>
+
+<!-- 10. Contribution 3: structuring layer -->
+<section class="slide">
+  <div class="chapter">Contribution 3 / 4 &middot; Structuring</div>
+  <h2>Free text became usable without becoming trusted.</h2>
+  <div class="contribution-compare">
+    <div class="contribution-card">
+      <div class="contribution-kicker">PAuth paper</div>
+      <h3>Typed control operands</h3>
+      <p>Rules check structured operands together with their provenance.</p>
+    </div>
+    <div class="contribution-arrow">&rarr;</div>
+    <div class="contribution-card work">
+      <div class="contribution-kicker">My contribution</div>
+      <h3>Taint-preserving extraction</h3>
+      <p><code>read_site</code> extracts typed candidates from tool-returned prose.</p>
+    </div>
+  </div>
+  <div class="contribution-points">
+    <div class="contribution-point"><strong>Input</strong><span>Untrusted free text</span></div>
+    <div class="contribution-point"><strong>Output</strong><span>Amounts, IBANs, and dates</span></div>
+    <div class="contribution-point"><strong>Boundary</strong><span>Signed, still-untrusted results</span></div>
+  </div>
+</section>
+
+<!-- 11. Contribution 4: bounding grill -->
+<section class="slide">
+  <div class="chapter">Contribution 4 / 4 &middot; Bounding</div>
+  <h2>Unsupported tasks became one upfront question.</h2>
+  <div class="contribution-compare">
+    <div class="contribution-card">
+      <div class="contribution-kicker">PAuth paper</div>
+      <h3>Reject outside the grammar</h3>
+      <p>Open-ended tasks cannot receive a bounded authorization plan.</p>
+    </div>
+    <div class="contribution-arrow">&rarr;</div>
+    <div class="contribution-card work">
+      <div class="contribution-kicker">My contribution</div>
+      <h3>Bounding grill</h3>
+      <p>Detect the missing bound, ask once, then compile a signed plan.</p>
+    </div>
+  </div>
+  <div class="contribution-points">
+    <div class="contribution-point"><strong>Detect</strong><span>Find the unbounded loop</span></div>
+    <div class="contribution-point"><strong>Confirm</strong><span>Ask for a count or deadline</span></div>
+    <div class="contribution-point"><strong>Compile</strong><span>Reuse the bounded-for machinery</span></div>
+  </div>
+</section>
+
+<!-- 12. Current evaluation map -->
+<section class="slide">
+  <div class="chapter">Current evaluation</div>
+  <h2>Evaluation metrics by axis.</h2>
+
+  <div class="metric-catalog">
+    <div class="metric-category">
+      <h3>Availability</h3>
+      <div class="metric-catalog-row">
+        <code>AVAIL_1_EXPRESSIBLE</code><span>grammar</span>
+      </div>
+      <div class="metric-catalog-row">
+        <code>AVAIL_2_PLAN_VALID</code><span>planner</span>
+      </div>
+      <div class="metric-catalog-row">
+        <code>AVAIL_3_RAN_CLEAN</code><span>runtime</span>
+      </div>
+      <div class="metric-catalog-row metric-highlight">
+        <code>AVAIL_4_CALLS_MADE</code><span>authorization</span>
+      </div>
+    </div>
+
+    <div class="metric-category">
+      <h3>Security</h3>
+      <div class="metric-catalog-row">
+        <code>SEC_NO_EXCESS_CALLS</code><span>least authority</span>
+      </div>
+      <div class="metric-catalog-row">
+        <code>SEC_INJECTIONS_DENIED</code><span>FN = 0</span>
+      </div>
+    </div>
+
+    <div class="metric-category">
+      <h3>Outcome</h3>
+      <div class="metric-catalog-row">
+        <code>OUTCOME_TASK_COMPLETED</code><span>utility</span>
+      </div>
+    </div>
+
+    <div class="metric-category">
+      <h3>Cost</h3>
+      <div class="metric-catalog-row">
+        <code>COST_TOOL_CALLS</code><span>calls / task</span>
+      </div>
+    </div>
+  </div>
+  <p class="metric-catalog-note">Primary goal: raise AVAIL_4 while preserving FN = 0.</p>
+</section>
+
+<!-- 13. AgentDojo framework -->
+<section class="slide agentdojo-framework-slide">
+  <div class="chapter">Evaluation framework</div>
+  <h2>What AgentDojo Is</h2>
+  <p class="agentdojo-framework-lead">It recreates a realistic attack: an agent calls a SaaS tool and encounters prompt injection in the returned data.</p>
+  <div class="agentdojo-framework-flow">
+    <div class="agentdojo-framework-step">
+      <div class="agentdojo-framework-count">97</div>
+      <div class="agentdojo-framework-label">User tasks</div>
+      <p class="agentdojo-framework-note">Banking &middot; Slack &middot; Travel &middot; Workspace</p>
+    </div>
+    <div class="agentdojo-framework-operator">&rarr;</div>
+    <div class="agentdojo-framework-step">
+      <div class="agentdojo-framework-count">27</div>
+      <div class="agentdojo-framework-label">Injection goals</div>
+      <p class="agentdojo-framework-note">Only goals from the task&rsquo;s suite are paired</p>
+    </div>
+    <div class="agentdojo-framework-operator">&rarr;</div>
+    <div class="agentdojo-framework-step">
+      <div class="agentdojo-framework-count">629</div>
+      <div class="agentdojo-framework-label">Test cases</div>
+      <ul class="agentdojo-suite-list">
+        <li>Banking: 16&times;9 = 144</li>
+        <li>Slack: 21&times;5 = 105</li>
+        <li>Travel: 20&times;7 = 140</li>
+        <li>Workspace: 40&times;6 = 240</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 14. Result 1: security -->
+<section class="slide agentdojo-eval-slide">
+  <div class="chapter">Results &middot; Live injection security</div>
+  <h2 class="agentdojo-security-title">Safety Preserved.</h2>
+  <p class="agentdojo-security-number">FN = 0</p>
+  <p class="agentdojo-security-caption">Of the 629 total pairs, 542 remained after excluding all pairs associated with the 15 invalid-plan tasks; none produced a successful attack.</p>
+  <p class="agentdojo-security-method">Separate full-matrix run over all compatible injection goals for the 82 valid-plan tasks.</p>
+</section>
+
+<!-- 15. Result 2: availability chain -->
+<section class="slide">
+  <div class="chapter">Results &middot; Availability &amp; Outcome</div>
+  <h2>Availability improved.</h2>
+  <div class="gates">
+    <div class="gate-node">
+      <div class="gate-id">AVAIL_1 Expressible</div>
+      <div class="gate-rate">100%<span>97/97</span></div>
+      <div class="gate-q">Writable in the restricted grammar at all?</div>
+    </div>
+    <div class="gate-arrow">&rarr;</div>
+    <div class="gate-node">
+      <div class="gate-id">AVAIL_2<br>Plan-valid</div>
+      <div class="gate-rate">85%<span>82/97</span></div>
+      <div class="gate-q">Planner produced a grammar-valid plan?</div>
+    </div>
+    <div class="gate-arrow">&rarr;</div>
+    <div class="gate-node">
+      <div class="gate-id">AVAIL_3<br>Ran-clean</div>
+      <div class="gate-rate">85%<span>82/97</span></div>
+      <div class="gate-q">Ran without crash or false denial?</div>
+    </div>
+    <div class="gate-arrow">&rarr;</div>
+    <div class="gate-node hot">
+      <div class="gate-id">AVAIL_4 Calls-made</div>
+      <div class="gate-rate">58%<span>56/97</span></div>
+      <div class="gate-q">Every needed control call made?</div>
+    </div>
+    <div class="gate-arrow">&rarr;</div>
+    <div class="gate-node">
+      <div class="gate-id">OUTCOME Completed</div>
+      <div class="gate-rate">31%<span>30/97</span></div>
+      <div class="gate-q">Task goal reached (utility)?</div>
+    </div>
+  </div>
+</section>
+
+<!-- 16. Result 3: planner cost -->
+<section class="slide cost-slide">
+  <div class="chapter">Result cost</div>
+  <h2>Cost increased.</h2>
+  <div class="cost-table">
+    <div class="cost-table-header">
+      <span>Planner</span>
+      <span>API price / 1M tokens</span>
+      <span>AVAIL_4</span>
+      <span>Normalized cost / plan</span>
+      <span>vs GPT-4.1</span>
+    </div>
+    <div class="cost-row">
+      <div class="cost-model">GPT-4.1</div>
+      <div class="cost-price"><strong>$2</strong> in / <strong>$8</strong> out</div>
+      <div class="cost-avail">16%</div>
+      <div class="cost-bar-wrap">
+        <div class="cost-track"><div class="cost-fill" style="width: 19%;"></div></div>
+        <div class="cost-normalized">$0.028</div>
+      </div>
+      <div class="cost-ratio">1.0&times;</div>
+    </div>
+    <div class="cost-row">
+      <div class="cost-model">GPT-5.1</div>
+      <div class="cost-price"><strong>$1.25</strong> in / <strong>$10</strong> out</div>
+      <div class="cost-avail">48%</div>
+      <div class="cost-bar-wrap">
+        <div class="cost-track"><div class="cost-fill" style="width: 15%;"></div></div>
+        <div class="cost-normalized">$0.023</div>
+      </div>
+      <div class="cost-ratio">0.8&times;</div>
+    </div>
+    <div class="cost-row premium">
+      <div class="cost-model">Claude Fable 5</div>
+      <div class="cost-price"><strong>$10</strong> in / <strong>$50</strong> out</div>
+      <div class="cost-avail">58%</div>
+      <div class="cost-bar-wrap">
+        <div class="cost-track"><div class="cost-fill" style="width: 100%;"></div></div>
+        <div class="cost-normalized">$0.150</div>
+      </div>
+      <div class="cost-ratio">5.4&times;</div>
+    </div>
+  </div>
+  <p class="cost-assumption">AVAIL_4 reflects each tested Planner configuration. Cost assumes 10k input + 1k output tokens per plan.</p>
+</section>
+
+<!-- 17. Future work -->
+<section class="slide">
+  <div class="chapter">Next goal</div>
+  <h2>Future work</h2>
+  <p class="future-goal-statement">The ultimate goal is AVAIL_4 = 100% with FN = 0, as cheaply as possible.</p>
+</section>
+
+<!-- 18. Future work 1: reduce confirmation reliance -->
+<section class="slide">
+  <div class="chapter">Future work &middot; 1 / 4</div>
+  <h2>Reduce reliance on human confirmation</h2>
+  <p class="overview-lead">
+    Use confirmation only as an escape hatch; move repeatable cases into static authorization.
+  </p>
+  <div class="grid-2">
+    <div class="card">
+      <h3>Problem</h3>
+      <p>Some tasks depend on runtime values and currently require a human gate.</p>
+    </div>
+    <div class="card">
+      <h3>Next step</h3>
+      <p>Extend the DSL, Planner, and Rule compiler so more of these tasks compile into static PAuth rules.</p>
+    </div>
+  </div>
+  <p class="note"><strong>Success:</strong> fewer confirmations and higher AVAIL_4, while FN = 0 holds.</p>
+</section>
+
+<!-- 19. Future work 2: confirmation UX -->
+<section class="slide">
+  <div class="chapter">Future work &middot; 2 / 4</div>
+  <h2>Confirmation UX</h2>
+  <p class="overview-lead">
+    A secure confirmation gate fails if users learn to approve every request.
+  </p>
+  <div class="grid-2">
+    <div class="card">
+      <h3>Problem</h3>
+      <p>Frequent or attacker-amplified prompts create confirmation fatigue.</p>
+    </div>
+    <div class="card">
+      <h3>Next step</h3>
+      <p>Batch related actions, expose control operands, and rate-limit requests.</p>
+    </div>
+  </div>
+  <p class="note"><strong>Success:</strong> fewer confirmations without lowering decision quality.</p>
+</section>
+
+<!-- 20. Future work 3: safe rule updates -->
+<section class="slide">
+  <div class="chapter">Future work &middot; 3 / 4</div>
+  <h2>Safe rule updates</h2>
+  <p class="overview-lead">
+    Long-running tasks need authorization rules to evolve without inheriting authority from untrusted data.
+  </p>
+  <div class="grid-2">
+    <div class="card">
+      <h3>Problem</h3>
+      <p>Re-planning from runtime content can turn attacker input into permission.</p>
+    </div>
+    <div class="card">
+      <h3>Next step</h3>
+      <p>Accept authenticated user updates, compile a new rule set, and retire the old one.</p>
+    </div>
+  </div>
+  <p class="note"><strong>Success:</strong> no privilege carry-over between rule versions.</p>
+</section>
+
+<!-- 21. Future work 4: beyond AgentDojo -->
+<section class="slide">
+  <div class="chapter">Future work &middot; 4 / 4</div>
+  <h2>Other framework</h2>
+  <p class="overview-lead">
+    There are other frameworks for agents' tests.
+  </p>
+  <div class="grid-2">
+    <div class="card">
+      <h3>Problem</h3>
+      <p>Prompt capture, side channels, and evolving SaaS state remain under-tested.</p>
+    </div>
+    <div class="card">
+      <h3>Next step</h3>
+      <p>InjecAgent / τ-bench / ToolSandbox / BrowserGym / WebArena / WorkArena / OSWorld / etc.</p>
+    </div>
+  </div>
+  <p class="note"><strong>Final goal:</strong> guarantee performance for arbitrary user-authored prompts.</p>
+</section>
+
+<!-- 22. GitHub + article -->
+<section class="slide github-slide">
+  <div class="chapter">Repository &amp; write-up</div>
+  <h2>Everything is reproducible.</h2>
+  <p class="lead">
+    The repository contains the gateway and offline benchmark suite.<br>
+    A technical write-up is forthcoming.
+  </p>
+  <a class="github-link" href="https://github.com/Aj1905/PAuthGateway" target="_blank" rel="noopener noreferrer">
+    https://github.com/Aj1905/PAuthGateway
+  </a>
+</section>
+
+</div>
+
+<div class="footer">
+  <span>Auto-Authorizing AI Gateway &mdash; Lab Meeting 2026-07-24</span>
+  <span class="key-hint">
+    <span id="pageno">1 / 22</span>
+  </span>
+</div>
+<div class="progress" id="progress"></div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const pageno = document.getElementById('pageno');
+  const progress = document.getElementById('progress');
+  let idx = 0;
+
+  function show(n) {
+    n = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, i) => {
+      s.classList.toggle('active', i === n);
+    });
+    pageno.textContent = `${n + 1} / ${slides.length}`;
+    progress.style.width = `${((n + 1) / slides.length) * 100}%`;
+    idx = n;
+  }
+
+  document.addEventListener('keydown', (e) => {
+    switch (e.key) {
+      case 'ArrowRight':
+      case 'PageDown':
+      case ' ':
+        show(idx + 1); e.preventDefault(); break;
+      case 'ArrowLeft':
+      case 'PageUp':
+        show(idx - 1); e.preventDefault(); break;
+      case 'Home':
+        show(0); e.preventDefault(); break;
+      case 'End':
+        show(slides.length - 1); e.preventDefault(); break;
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('a, button, code, pre, kbd, .key-hint')) return;
+    const half = window.innerWidth / 2;
+    show(e.clientX > half ? idx + 1 : idx - 1);
+  });
+
+  let touchStartX = 0;
+  document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+  document.addEventListener('touchend', (e) => {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 50) show(idx + (dx < 0 ? 1 : -1));
+  });
+
+  show(0);
+</script>
+</body>
+</html>
