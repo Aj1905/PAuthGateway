@@ -19,6 +19,7 @@ PDF は `.gitignore` の `*.pdf` により **git 追跡外(ローカル限定)**
 | `debenedetti2024agentdojo` | AgentDojo | `AgentDojo/2406.13352v3-agentdojo.pdf` | https://arxiv.org/abs/2406.13352 |
 | `zhan2024injecagent` | InjecAgent | `InjecAgent/2024.findings-acl.624-injecagent.pdf` | https://aclanthology.org/2024.findings-acl.624/ |
 | `yao2024taubench` | τ-bench | `TauBench/2406.12045v1-taubench.pdf` | https://arxiv.org/abs/2406.12045 |
+| `barres2025tau2bench` | τ²-Bench(τ-bench の後継) | `Tau2Bench/2506.07982v1-tau2bench.pdf` | https://arxiv.org/abs/2506.07982 |
 | `bhagwatkar2025firewalls` | Indirect Prompt Injections: Are Firewalls All You Need…? | `Firewalls/2510.05244v2-firewalls.pdf` | https://arxiv.org/abs/2510.05244 |
 | `evolvent2026authbench` | Do Coding Agents Understand Least-Privilege Authorization? (AuthBench) | `AuthBench/2605.14859v2-authbench.pdf` | https://arxiv.org/abs/2605.14859 |
 | `ma2026autodojo` | AutoDojo | `AutoDojo/2606.15057v2-autodojo.pdf` | https://arxiv.org/abs/2606.15057 |
@@ -29,7 +30,7 @@ PDF は `.gitignore` の `*.pdf` により **git 追跡外(ローカル限定)**
 引用中の数値と食い違う恐れがあるので、URL の版指定を外さないこと。
 
 ```bash
-cd paper && mkdir -p PAuth AgentDojo InjecAgent TauBench Firewalls AuthBench AutoDojo && curl -sL -o PAuth/2603.17170v1-pauth.pdf https://arxiv.org/pdf/2603.17170v1 && curl -sL -o AgentDojo/2406.13352v3-agentdojo.pdf https://arxiv.org/pdf/2406.13352v3 && curl -sL -o InjecAgent/2024.findings-acl.624-injecagent.pdf https://aclanthology.org/2024.findings-acl.624.pdf && curl -sL -o TauBench/2406.12045v1-taubench.pdf https://arxiv.org/pdf/2406.12045v1 && curl -sL -o Firewalls/2510.05244v2-firewalls.pdf https://arxiv.org/pdf/2510.05244v2 && curl -sL -o AuthBench/2605.14859v2-authbench.pdf https://arxiv.org/pdf/2605.14859v2 && curl -sL -o AutoDojo/2606.15057v2-autodojo.pdf https://arxiv.org/pdf/2606.15057v2
+cd paper && mkdir -p PAuth AgentDojo InjecAgent TauBench Tau2Bench Firewalls AuthBench AutoDojo && curl -sL -o PAuth/2603.17170v1-pauth.pdf https://arxiv.org/pdf/2603.17170v1 && curl -sL -o AgentDojo/2406.13352v3-agentdojo.pdf https://arxiv.org/pdf/2406.13352v3 && curl -sL -o InjecAgent/2024.findings-acl.624-injecagent.pdf https://aclanthology.org/2024.findings-acl.624.pdf && curl -sL -o TauBench/2406.12045v1-taubench.pdf https://arxiv.org/pdf/2406.12045v1 && curl -sL -o Tau2Bench/2506.07982v1-tau2bench.pdf https://arxiv.org/pdf/2506.07982v1 && curl -sL -o Firewalls/2510.05244v2-firewalls.pdf https://arxiv.org/pdf/2510.05244v2 && curl -sL -o AuthBench/2605.14859v2-authbench.pdf https://arxiv.org/pdf/2605.14859v2 && curl -sL -o AutoDojo/2606.15057v2-autodojo.pdf https://arxiv.org/pdf/2606.15057v2
 ```
 
 新しい参照論文を足すときの規則: (1) `references.bib` にエントリを追加、
