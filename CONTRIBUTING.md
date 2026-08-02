@@ -11,7 +11,7 @@
 1. **決定的な中核は決定的なままにする。** どの Planner 戦略も、`pauth.prepare()` が
    構文解析・スライス導出・ルールコンパイルを行う制限付き run コードを出力する。
    その検証を迂回したり、ルールを直接出力したりする Planner は認めない
-   (`docs/SYSTEM_MODEL.md` の Planner / DSLValidator と `docs/SYSTEM_MODEL.md` 第 6 部「結合境界と帰結」を参照)。
+   (`docs/SYSTEM_MODEL.md` の Planner / GrammarValidator と `docs/SYSTEM_MODEL.md` 第 6 部「結合境界と帰結」を参照)。
 2. **エージェント向けフィードバックは値を含まないままにする。** エージェントのモデル文脈に
    再流入する拒否理由は、オペランド値を一切含んではならない — プロンプトインジェクションの
    ペイロードになりうるためである。`gateway/runtime/feedback.py` を参照。

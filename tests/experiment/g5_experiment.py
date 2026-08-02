@@ -25,7 +25,7 @@ from pauth import prepare
 from pauth.enforcer import Enforcer, check_injection
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.dsl_validator import DSLRejectionError
+from pauth.grammar_validator import DSLRejectionError
 
 CACHE = Path("tests/experiment/cache")
 SCRATCH = Path("tests/experiment/g5_scratch")

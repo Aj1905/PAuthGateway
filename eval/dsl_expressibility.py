@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from pauth import prepare
-from pauth.dsl_validator import DSLRejectionError
+from pauth.grammar_validator import DSLRejectionError
 from pauth.enforcer import Enforcer, check_injection
 from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.tool_executor import execute_generated_code

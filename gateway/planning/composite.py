@@ -44,7 +44,7 @@ import dataclasses
 from typing import Any
 
 from pauth.codegen import ToolDoc
-from pauth.dsl_validator import DSLRejectionError, parse_and_validate
+from pauth.grammar_validator import DSLRejectionError, parse_and_validate
 
 from .prechecks import PrecheckPolicy, precheck_code
 

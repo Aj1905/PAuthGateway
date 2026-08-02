@@ -1,4 +1,4 @@
-"""DSLValidator -- parser for the operational Appendix A reconstruction and G2.
+"""GrammarValidator -- parser for the operational Appendix A reconstruction and G2.
 
 The Planner step asks an LLM to generate a ``run`` function in a restrictive subset
 of Python.  Before any slice is derived we

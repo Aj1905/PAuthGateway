@@ -11,7 +11,7 @@ import ast
 import dataclasses
 import hashlib
 
-from .dsl_validator import (
+from .grammar_validator import (
     DSL_PROFILE_EXTENDED,
     parse_and_validate,
     strip_dead_code,
@@ -149,7 +149,7 @@ def prepare(
 ) -> PreparedTask:
     """Run the Planner's output through validation (grammar), the Slicer (slices) and the Rule compiler (rules).
 
-    Raises :class:`pauth.dsl_validator.DSLRejectionError` if the code violates
+    Raises :class:`pauth.grammar_validator.DSLRejectionError` if the code violates
     the DSL.
 
     ``dsl_profile`` selects the DSL version (experiment axis G):

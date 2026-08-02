@@ -43,7 +43,7 @@ from pauth.enforcer import Enforcer, check_injection
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing, flatten
 from pauth.evaluator import EXEC_HELPERS, wrap
-from pauth.dsl_validator import DSLRejectionError
+from pauth.grammar_validator import DSLRejectionError
 from pauth.structuring import structure
 from gateway.planning.prechecks import PrecheckPolicy
 from gateway.runtime.confirmation import control_operands, is_side_effecting

@@ -85,7 +85,7 @@ from pauth.enforcer import Decision, Enforcer
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.evaluator import wrap
-from pauth.dsl_validator import DSLRejectionError
+from pauth.grammar_validator import DSLRejectionError
 
 SUITES = ("banking", "slack", "travel", "workspace")
 DEFAULT_PLAN_ROOT = Path("tests/experiment/funnel_scratch")

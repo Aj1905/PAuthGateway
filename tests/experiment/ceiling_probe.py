@@ -26,7 +26,7 @@ from pauth import prepare
 from pauth.enforcer import Enforcer
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.dsl_validator import DSLRejectionError
+from pauth.grammar_validator import DSLRejectionError
 from pathlib import Path
 
 CACHE = Path("tests/experiment/cache")

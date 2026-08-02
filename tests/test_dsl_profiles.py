@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from pauth import prepare
-from pauth.dsl_validator import (
+from pauth.grammar_validator import (
     DSL_PROFILE_PAPER,
     DSLRejectionError,
     parse_and_validate,

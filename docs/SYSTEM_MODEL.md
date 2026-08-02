@@ -27,8 +27,7 @@ PAuth ゲートウェイのシステムモデルの正本。`pauth/`、`gateway/
   識別子が名前そのものである語(`PendingConfirmation`、指標名
   `FEASIBILITY_*` など)には日本語名を造語しない。
 - **版番号 ID**(`P1`、`G1` など)は語ではなく登録表の鍵であり、改名の
-  対象外として凍結する。`G` は旧称 grammar(GrammarValidator)に由来する
-  歴史的接頭辞である。
+  対象外として凍結する。`G` は GrammarValidator に由来する。
 - **tool call の統一.** ツール呼び出しを指す語は「ツール呼び出し / tool
   call」の一語に統一し、裸の「call」は使わない。
 
@@ -202,7 +201,7 @@ PAuth ゲートウェイ層 / ツール層 / SaaS 層)と、その間の情報�
 # 第 2 部 — PAuth パイプラインのノード
 
 第 0 部で導入した PAuth パイプラインにズームインする。パイプラインの
-ノードは Planner・DSLValidator・Slicer・Rule compiler・Enforcer・
+ノードは Planner・GrammarValidator・Slicer・Rule compiler・Enforcer・
 EnvelopeStore の六つである。下図には、実行時の連鎖を完結させるため、
 Gateway が所有する ToolExecutor(実行部)と、その先の結合境界である
 ツールアダプタも併せて描くが、どちらもパイプラインのノードには数えない
@@ -220,7 +219,7 @@ Gateway が所有する ToolExecutor(実行部)と、その先の結合境界で
      │ (b) run コード                                │
      ▼                                                │
 ┌────────────────────┐                                │
-│ DSLValidator       │────────────────────────────────┘
+│ GrammarValidator       │────────────────────────────────┘
 └────┬───────────────┘
      │ (c) 検証済み run コード
      ▼
@@ -264,9 +263,9 @@ Gateway が所有する ToolExecutor(実行部)と、その先の結合境界で
 | 区間 | 流れる情報 | 定義 |
 |---|---|---|
 | ユーザー → Planner | (a) prompt — 汚染されていない自然言語タスク | 第 3 部 |
-| Planner → DSLValidator | (b) run コード — DSL に従う計画 | 第 3 部 |
-| DSLValidator → Planner | (b') DSL 棄却の理由 — agentic 再生成の入力 | DSLValidator の節 |
-| DSLValidator → Slicer | (c) 検証済み run コード | 第 3 部 |
+| Planner → GrammarValidator | (b) run コード — DSL に従う計画 | 第 3 部 |
+| GrammarValidator → Planner | (b') DSL 棄却の理由 — agentic 再生成の入力 | GrammarValidator の節 |
+| GrammarValidator → Slicer | (c) 検証済み run コード | 第 3 部 |
 | Slicer → Rule compiler | (d) スライス — オペランド式 + guard | 第 3 部 |
 | Rule compiler → Enforcer | (e) ルール — 全体でコンパイル済み policy | 第 3 部 |
 | エージェント → Enforcer | (f) tool call — 検査の単位 | 第 3 部 |
@@ -287,12 +286,12 @@ Gateway が所有する ToolExecutor(実行部)と、その先の結合境界で
   自動認可または人間の承認を経たツール呼び出しだけである。ツールアダプタも独立
   ノードではなく、ToolExecutor が許可済みツール呼び出しを送る先の差し替え可能な
   結合境界である(同節で定義、運用は第 6 部)。
-- **決定性.** DSLValidator〜EnvelopeStore の自動処理は、同じ入力、同じ永続状態、同じ呼び出し
+- **決定性.** GrammarValidator〜EnvelopeStore の自動処理は、同じ入力、同じ永続状態、同じ呼び出し
   順序に対して決定的である。Planner は LLM 戦略では非決定的に
   なりうる。ToolExecutor と外部ツールは、外部状態、時刻、通信、
   プロバイダの再試行に依存するため決定的とはみなさない。
 - **実装の対応.** `pauth/codegen.py`(Planner プロンプト)、
-  `pauth/dsl_validator.py`、`pauth/slicer.py`、`pauth/rule_compiler.py`、
+  `pauth/grammar_validator.py`、`pauth/slicer.py`、`pauth/rule_compiler.py`、
   `pauth/enforcer.py`、`pauth/envelope.py`、`pauth/suites/base.py`。
 
 ### 実験用の部品版 ID と構成版 ID
@@ -304,7 +303,7 @@ commit または hash、およびデータセット版も記録する。
 | 接頭辞 | 実験因子 | 備考 |
 |---|---|---|
 | `P` | Planner | Planner の実装契約の通し番号。製品レベルの戦略名や実験成果物の内部 ID とは別の名前空間で、番号と戦略・工程の対応は Planner の節の登録表に記す |
-| `G` | DSLValidator | 旧称 grammar(GrammarValidator)由来の歴史的接頭辞で、ID は凍結。Gateway を表す文字には使わない。Gateway を比較する場合は `GW` を使う |
+| `G` | GrammarValidator | ID は凍結。Gateway を表す文字には使わない。Gateway を比較する場合は `GW` を使う |
 | `S` | Slicer | — |
 | `R` | Rule compiler | — |
 | `E` | Enforcer | EnvelopeStore を比較する場合は `ES` を使う |
@@ -312,13 +311,13 @@ commit または hash、およびデータセット版も記録する。
 | `V` | 実験構成全体 | 下記の部品版 ID を並べた不変のタプル |
 
 `0` はその因子を使わない基準条件に限って使い、実装済みまたは予約済みの方式には
-`1` 以降を割り当てる。論文の図表では初出または凡例に `G1 (DSLValidator G1)` のように
+`1` 以降を割り当てる。論文の図表では初出または凡例に `G1 (GrammarValidator G1)` のように
 構成要素名を併記する。これは、既存の実験指標や結果番号で使われた裸の `G1`、
 `R1`、`E1` との誤読を避けるためである。
 
 各部品版の実装契約は、本部の各ノードの節の**版番号の登録表**
 (`| 版番号 | 対応する戦略・工程 | 状態 |` の形式で統一)に定義する
-(P は Planner、G は DSLValidator、S は Slicer、R は Rule compiler、
+(P は Planner、G は GrammarValidator、S は Slicer、R は Rule compiler、
 E と C は Enforcer の各節)。実装契約が存在しない番号は、処理の流れ・導入条件・失敗要因を
 定めた**設計契約**とともに予約できる(状態は「予約済み・未実装」)。設計契約の
 ない空欄として番号だけを先に確保してはならない。予約中の番号は `V` タプルと
@@ -352,7 +351,7 @@ Vx = (model-name, Pj, Gk, Sl, Rm, En, Cq)
 ## 計画器 / Planner
 
 プロンプト+ツールスキーマを入力に、DSL(第 3 部)に従う `run()` 関数を
-出力する。LLM を使いうる唯一のノードであり、DSLValidator 以降は決定的である。
+出力する。LLM を使いうる唯一のノードであり、GrammarValidator 以降は決定的である。
 Planner 自体は戦略によって決定的にも非決定的にもなる。境界と正準名の実装は
 `gateway/planning/planner.py`、LLM 版は `gateway/planning/agentic_planner.py`。
 
@@ -363,7 +362,7 @@ Planner 自体は戦略によって決定的にも非決定的にもなる。境
   `gateway/planning/planner.py` の `KNOWN_STRATEGIES` と `build_planner()`。
 - **計画生成エラー / PlanGenerationError.** 計画を作れず、タスクを受け付け
   られなかった失敗。AgentChannel はプロンプトを不受理として返す。DSL 棄却
-  (DSLValidator)とも Enforcer の拒否とも別の失敗である。
+  (GrammarValidator)とも Enforcer の拒否とも別の失敗である。
 - **評価用の生成モード / evaluation generation mode ※.** 実験の比較のために `eval/` が使う生成方式の名前。
   `oneshot` は一回生成して終わり、`agentic` は棄却理由や実行結果を LLM に
   返して作り直させる。製品レベルの戦略名とは別の名前空間。
@@ -384,7 +383,7 @@ Planner 自体は戦略によって決定的にも非決定的にもなる。境
   望ましい。
 - **散文に埋もれた値 / prose-buried value ※.** 必要な値が自由な文章の中にしか
   書かれていない状態(例: `.txt` の中の請求金額)。文字列を切り貼りできない
-  この DSL では取り出せない。表現可能性(DSLValidator の節の指標)が
+  この DSL では取り出せない。表現可能性(GrammarValidator の節の指標)が
   落ちる主因。
 
 ### Planner 版番号の登録表
@@ -402,25 +401,25 @@ Planner 契約に従って制限付き run コードを返し、ルールを直�
 | `P1` | 評価用 LLM 生成・一段階生成: 一回だけ生成し、直さずにそのまま評価する。修復・改稿・意図判定器・実行時フィードバックなし。内部 ID `direct1` | 実装済み |
 | `P2` | 評価用 LLM 生成・網羅生成＋削除限定監査: 取りこぼさないよう広めに生成した後、「残すか削るか」だけを判定する二段階。第二段階は追加・書き換え・再試行・意図判定器・実行時フィードバック不可。内部 ID `st`(この監査は Planner 内部の工程で、実行時の `AuditLog` とは別物) | 実装済み |
 | `P3` | 製品戦略 `interactive-structuring`: コード生成前に、欠けた制御値(宛先・金額・日付・分岐条件など)だけを利用者に質問し、回答を畳み込んだ構造化プロンプトを通常のコード生成器へ渡す。値の創作はしない。生プロンプト・質問・回答・構造化結果・生成記録を `planner_metadata` に監査記録として残す。対話面は `clarifier` コールバック注入で提供し、対話面のない配備(現行の hooks 経路)では値の欠けたプロンプトを質問一覧を理由に明示拒否する(完全なプロンプトは対話なしで通る) | 実装済み(`gateway/planning/interactive_structuring.py`)・未実験 |
-| `P4` | 製品戦略 `specialized-codegen`: プロンプト+ツールスキーマから制限付き `run()` だけを生成させ、DSLValidator〜Rule compiler の棄却理由だけを返して再試行させる最小構成。意図判定器・precheck・試走なし。予算切れは拒否番兵に置き換えず `PlanGenerationError` で拒否。専用モデルは `model` 設定で差し替える(学習データは未整備で、汎用モデルでも動く) | 実装済み(`gateway/planning/specialized_codegen.py`)・未実験 |
+| `P4` | 製品戦略 `specialized-codegen`: プロンプト+ツールスキーマから制限付き `run()` だけを生成させ、GrammarValidator〜Rule compiler の棄却理由だけを返して再試行させる最小構成。意図判定器・precheck・試走なし。予算切れは拒否番兵に置き換えず `PlanGenerationError` で拒否。専用モデルは `model` 設定で差し替える(学習データは未整備で、汎用モデルでも動く) | 実装済み(`gateway/planning/specialized_codegen.py`)・未実験 |
 | `P5` | 製品戦略 `formal-semantic`: 定義済みタスク言語 FSL-1(`call` / `with` / `if … then` / 束縛と参照)を LLM なしで構文解析+意味解析(ツールの存在・引数の数・参照の解決)し、`run()` へ決定的に写像。文法の外の表現は補完せず解析不能として拒否。文法定義の正本は実装ファイルの docstring | 実装済み(`gateway/planning/formal_semantic.py`)・未実験 |
 
 ### Planner の性能を測る指標
 
 - **policy 生成成功 / SYNTHESIS_POLICY_COMPILED.** 生成されたコードが、検査と
-  コンパイル(DSLValidator〜Rule compiler)を通ってルールになったか。
+  コンパイル(GrammarValidator〜Rule compiler)を通ってルールになったか。
   コードの欠落や無効は失敗となる。DSL 棄却はここで Planner 側に計上する。
 - **実行時クラッシュなし / RELIABILITY_RUNTIME_CRASH_FREE.** 生成した計画が
   最後まで落ちずに走れるか。執行を切った使い捨ての試走で測るので、早い段階の
   拒否が後のクラッシュを隠すことはない。ツールエラーは `None` を返し、その
   `None` の誤用はクラッシュしうる(クラッシュの定義は実行部 / ToolExecutor の節)。
 
-## DSL 検証器 / DSLValidator
+## 文法検証器 / GrammarValidator
 
 Planner が書いたコードが、決められた書き方の枠(DSL、第 3 部)に収まって
 いるかを検査する門番。構文検査(`parse_and_validate`)→ 死コード除去
 (`strip_dead_code`)→ 意味検査(`validate_semantics`)の順に見る。実装は
-`pauth/dsl_validator.py` の一箇所だが、呼び出し側は Planner 側のリトライループと
+`pauth/grammar_validator.py` の一箇所だが、呼び出し側は Planner 側のリトライループと
 `pauth.prepare()` 内の再検証の二つある(第 6 部「結合境界と帰結」)。
 
 このノードの機構・挙動:
@@ -429,11 +428,11 @@ Planner が書いたコードが、決められた書き方の枠(DSL、第 3 �
   Enforcer の拒否とは別の失敗(計画側の失敗)として評価ファネル
   に数える。agentic 経路では、棄却理由がそのまま作り直しの材料になる。
 
-### DSLValidator 版番号の登録表
+### GrammarValidator 版番号の登録表
 
 | 版番号 | 対応する DSL・工程 | 状態 |
 |---|---|---|
-| `G1` | 原論文付録 A を操作的に再構成した比較基準: 代入・式・リストリテラル・添字アクセス・平坦な `if`(else/elif なし・入れ子なし)、`len` / `min` / `max` / `first` / `last` と一引数の純粋な helper lambda を扱う。`for`・内包表記・dict リテラル・`sum` はなく、変数は単一代入。Tier-1 正規化も適用しない | 実装済み(`pauth/dsl_validator.py` の profile `g1`)・表現可能性評価済み |
+| `G1` | 原論文付録 A を操作的に再構成した比較基準: 代入・式・リストリテラル・添字アクセス・平坦な `if`(else/elif なし・入れ子なし)、`len` / `min` / `max` / `first` / `last` と一引数の純粋な helper lambda を扱う。`for`・内包表記・dict リテラル・`sum` はなく、変数は単一代入。Tier-1 正規化も適用しない | 実装済み(`pauth/grammar_validator.py` の profile `g1`)・表現可能性評価済み |
 | `G2` | 本リポジトリの拡張 DSL(既定): G1 に加えて else/elif、深さ 3 以下の入れ子 `if`、観測済み集合上の有界 `for`(入れ子可)、dict リテラル、単一生成器の内包表記、`sum`、二種の合流代入、Tier-1 正規化を扱う。`while`・`return`・import・例外処理・class・メソッド呼び出し・未知関数・式中の入れ子ツール呼び出し・ツールのキーワード引数は引き続き棄却し、文として単独で現れるツールでない呼び出しだけは死コードとして除去する | 実装済み・表現可能性評価済み |
 
 注: 下線始まりの属性アクセスの禁止は安全対策として両版に共通で適用する
@@ -460,13 +459,16 @@ helper の第一引数を変数へ限定する一方で lambda 内のツール�
   `bulk_max_iterations` は一定件数を超えた後に人間確認へ送る別の運用上限であり、
   有界 `for` の意味や表現可能性を定義する上限ではない。
 
-### DSLValidator の性能を測る指標
+### GrammarValidator の性能を測る指標
 
 - **表現可能性評価ケース / expressibility case.** 必要な外部効果、
-  ツールスキーマ、複数の初期状態、および同じ run コードからなる評価単位。
-  ある profile について、同じコードが DSLValidator から Rule compiler までを通り、
-  すべての初期状態で必要な外部効果を表せたときに合格とする。表現不可能という判定には
-  文法上の根拠を要求し、一つの生成コードが棄却された事実だけを根拠にしない。
+  ツールスキーマ、入力状態の定義域、正準 run コードまたは表現不可能である文法上の
+  根拠、および代表的な初期状態からなる評価単位。ある profile について、同じ run コードが
+  GrammarValidator から Rule compiler までを通り、定義域のすべての状態で必要な外部効果を
+  表せるときに合格とする。表現可能という判定には正準 run コードと定義域全体へ適用できる
+  根拠を、表現不可能という判定には文法上の根拠を要求する。一つの生成コードが棄却された
+  事実や有限個の初期状態だけを根拠にしない。代表的な初期状態は実装の回帰確認に使い、
+  定義域全体についての証明とは扱わない。
 - **表現可能性 / FEASIBILITY_EXPRESSIBLE.** 対象 profile の DSL で、タスクに
   必要な値と制御構造を書き表せるか。表現可能性評価ケースを使う比較では、合格ケース数を
   全ケース数で割る。これは事前定義したケース集合に対する被覆率であり、一般のタスク分布に
@@ -648,7 +650,7 @@ run コードの実行と、許可されたツール呼び出しの実行は、�
 
 | 失敗 | 発生箇所 |
 |---|---|
-| DSL 棄却 / DSL rejection | DSLValidator |
+| DSL 棄却 / DSL rejection | GrammarValidator |
 | 拒否 / denial | Enforcer |
 | クラッシュ / crash | 計画実行 |
 | ツールエラー / tool error | ツールアダプタ |
@@ -670,7 +672,7 @@ run コードの実行と、許可されたツール呼び出しの実行は、�
   通信形は **`PromptMessage`** — ingress アダプタが正規化
   し、AgentChannel が「最初に一度だけ」を守らせる。
 - **runコード / run code.** Planner が書く一本の関数。タスクの手順書で
-  あり、DSL に収まっていなければならない。DSLValidator が検査し、Slicer が
+  あり、DSL に収まっていなければならない。GrammarValidator が検査し、Slicer が
   読む。実行時にはこれが計画として走り、そのツール呼び出しが Enforcer を
   通る。本書で「計画」と言うときは、この run コードの実行内容を指す。
 - **DSL / DSL.** run コードを書くための言語であり、同時にその言語に許される
@@ -679,7 +681,7 @@ run コードの実行と、許可されたツール呼び出しの実行は、�
   文字列演算なし、`while` なし、署名付きの有限集合を列挙する有界 `for`、
   浅い `if`)。狭いから
   こそ機械的に解析でき、スライスとルールを確実に作れる。同じ狭さが表現
-  可能性(DSLValidator の節の指標)の上限も決める。
+  可能性(GrammarValidator の節の指標)の上限も決める。
 - **スライス / slice.** ツール呼び出し一つぶんの仕様書: 各値をどの式で作る
   か+その呼び出しに至るための条件(guard)。Slicer が作り、
   Rule compiler が読む。
@@ -774,7 +776,7 @@ POLICY(h, call) = the policy decision for a call under execution history h
 
 | 指標 | 性能を測る対象(定義の所在) |
 |---|---|
-| `FEASIBILITY_EXPRESSIBLE` | DSLValidator — DSL の広さの上限(第 2 部) |
+| `FEASIBILITY_EXPRESSIBLE` | GrammarValidator — DSL の広さの上限(第 2 部) |
 | `SYNTHESIS_POLICY_COMPILED` | Planner — DSL に収まるコードを書けるか(第 2 部) |
 | `RELIABILITY_RUNTIME_CRASH_FREE` | Planner — 生成コードの実行健全性(第 2 部) |
 | `CONFORMANCE_PLAN_TRACE_PERMITTED` | Slicer+Rule compiler — 計画を狭め過ぎていないか(第 2 部) |
@@ -785,8 +787,8 @@ POLICY(h, call) = the policy decision for a call under execution history h
 | `OUTCOME_TASK_COMPLETED` | 系全体 — 目標状態への到達(本部) |
 | `COST_TOOL_CALLS` | 系全体 — 呼び出し数の費用(本部) |
 
-- **ツール呼び出しの欠落なし / REF_NO_MISSING_CALLS.** 手本(`REF`)にある必須の
-  呼び出しを、すべて許せたか(「欠落なし」の半分)。照合はツール名+制御
+- **ツール呼び出しの不足なし / REF_NO_MISSING_CALLS.** 手本(`REF`)にある必須の
+  呼び出しを、すべて許せたか(「不足なし」の半分)。照合はツール名+制御
   オペランドで行う。
 - **ツール呼び出しの過剰なし / REF_NO_EXCESS_CALLS.** 手本にない呼び出しを
   許していないか(「過剰なし」の半分)。照合器は同じ。
@@ -851,29 +853,24 @@ POLICY(h, call) = the policy decision for a call under execution history h
 
 ## 一般的な外部用語
 
-- **大規模言語モデル / large language model (LLM).** 自然言語などの系列から
-  次の出力を生成するモデル。本システムでは計画器だけが利用しうる。
 - **AIエージェント / AI agent.** LLMを用いて状況を判断し、SaaSなどの外部
   サービスが提供するツールを呼び出してタスクを実行するシステム。
 - **間接プロンプトインジェクション / indirect prompt injection.** Webサイト、
   文書、ツール結果などの外部データに文章を埋め込み、LLMに指示と誤認させて、
   利用者が意図しないツール呼び出しを誘導する攻撃。
-- **OAuth.** 利用者が持つ外部サービスへのアクセス権を第三者アプリケーションへ
-  委譲する認可の枠組み。事前定義したスコープは比較的広いサービス権限を表し、
-  一件の利用者タスクが許す具体的なツール呼び出しと制御オペランドまでは表さない。
-- **PAuth.** 信頼できないツール結果を読む前に取得した利用者プロンプトから、
-  一件のタスクに限定したコンパイル済み policy を導出し、OAuth等が委譲した広い
-  権限の内側で、個々のツール呼び出しを実行前に照合する認可方式。
 
 ## PAuth論文の語
 
+- **PAuth.** 信頼できないツール結果を読む前に取得した利用者プロンプトから、
+  一件のタスクに限定したコンパイル済み policy を導出し、OAuth等が委譲した広い
+  権限の内側で、個々のツール呼び出しを実行前に照合する認可方式。
 - **A1–A4 / B1–B4.** 論文 Figure 6 の**矢印ラベル**であり、独立した段階の
   定義ではない。矢印は「何がどこからどこへ渡るか」を指すので、各番号は
   受け渡される成果物で読む。
   - **A 系列 = task submission pipeline(計画時、タスクにつき一度).**
     - **A1 コード生成.** プロンプト+ツールスキーマが Planner に入り、制限
       DSL に従う run コードが出る。唯一の LLM 段で、出口で
-      DSLValidator が検査する。
+      GrammarValidator が検査する。
     - **A2 スライス導出.** run コードが Slicer に入り、ツール呼び出し
       ごとのスライスが出る。ここから先は決定的。
     - **A3 ルールコンパイル.** スライスが Rule compiler で照合可能な形に
@@ -944,12 +941,12 @@ POLICY(h, call) = the policy decision for a call under execution history h
 見取り図は第 0 部を正とする。Planner 戦略の正準集合は
 `gateway/planning/planner.py` の `KNOWN_STRATEGIES` を正とし、全戦略が
 `build_planner()` で構築できる(必須設定を欠く場合は
-`PlanGenerationError` で拒否され、DSLValidator には到達しない)。
+`PlanGenerationError` で拒否され、GrammarValidator には到達しない)。
 
 | 境界 | 契約 | 差し替え可能な部分 | 安定した所有者 |
 |---|---|---|---|
 | エージェント ingress | `PromptMessage` と `ToolCallMessage` | Claude hooks、InterceptingProxy(`gateway/serving/proxy.py`、執行の中核は実装済み、TLS/ネットワーク接続部は未着手)、独自クライアント | `gateway/ingress/agent_channel.py` |
-| Planner | 制限された命令型の `def run(...): ...`(執行点は DSLValidator = `pauth/dsl_validator.py`) | 決定的認識器、LLM 自由生成、両者を使う `auto`、充足性・厳密性の二段生成、対話構造化・専用コード生成・形式意味解析(`P3`–`P5`、設計契約は第 2 部 Planner の節の登録表) | `gateway/planning/planner.py` |
+| Planner | 制限された命令型の `def run(...): ...`(執行点は GrammarValidator = `pauth/grammar_validator.py`) | 決定的認識器、LLM 自由生成、両者を使う `auto`、充足性・厳密性の二段生成、対話構造化・専用コード生成・形式意味解析(`P3`–`P5`、設計契約は第 2 部 Planner の節の登録表) | `gateway/planning/planner.py` |
 | ツールアダプタ | `tools`・`make_env`・`tool_executor_factory` の三点契約 | 買い物デモ、AgentDojo、MCP サーバー、OpenAPI 仕様、将来の SaaS アダプタ | `pauth/suites/base.py` |
 | 認可の中核 | コンパイル済みルール + 封筒に裏付けられたオペランド検査 | プロバイダごとに変わるべきではない | `pauth/` |
 

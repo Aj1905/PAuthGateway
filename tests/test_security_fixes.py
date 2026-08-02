@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from pauth.dsl_validator import (
+from pauth.grammar_validator import (
     DSLRejectionError,
     parse_and_validate,
     strip_dead_code,

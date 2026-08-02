@@ -29,7 +29,7 @@ from pauth import prepare  # noqa: E402
 from pauth.enforcer import Enforcer  # noqa: E402
 from pauth.tool_executor import execute_generated_code  # noqa: E402
 from pauth.envelope import EnvelopeStore, KeyRing  # noqa: E402
-from pauth.dsl_validator import DSLRejectionError  # noqa: E402
+from pauth.grammar_validator import DSLRejectionError  # noqa: E402
 
 CRASHERS = [("travel", "user_task_4"), ("travel", "user_task_7"),
             ("travel", "user_task_8"), ("workspace", "user_task_33")]
