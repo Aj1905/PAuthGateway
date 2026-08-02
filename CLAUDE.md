@@ -12,7 +12,7 @@
   AgentChannel / Gateway)と第 2 部(パイプライン: Planner /
   DSLValidator / Slicer / Rule compiler / Enforcer / EnvelopeStore)の
   ノード定義に従う。ToolExecutor はパイプラインのノードではなく、Gateway が
-  所有する実行部。ツールアダプタ(SuiteSpec)もノードではなく、ToolExecutor
+  所有する実行部。ツールアダプタもノードではなく、ToolExecutor
   が許可済みツール呼び出しを送る先の差し替え可能な結合境界(いずれも定義は
   第 2 部、運用は第 6 部)。粒度の粗い語(外殻、PAuth パイプラインなど)は
   第 0 部で定義される。

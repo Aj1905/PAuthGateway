@@ -64,7 +64,7 @@ PAuth ゲートウェイ層 / ツール層 / SaaS 層)と、その間の情報�
                           │ 許可された tool call のみ
                           ▼
       ┌────────────────────────────────────────┐
-      │ ツールアダプタ(SuiteSpec)                │
+      │ ツールアダプタ                             │
       └───────────────────┬────────────────────┘
                           │ ツールの実行
                           ▼
@@ -93,7 +93,7 @@ PAuth ゲートウェイ層 / ツール層 / SaaS 層)と、その間の情報�
   危険側=全通し)が即時に決める(第 2 部 Enforcer の節)。
   条件と部品は第 2 部 Enforcer の節で定義する。
 - **ツールアダプタ / tool adapter.** 利用可能なツールの schema と実際の実行機能を供給する
-  差し替え可能な結合境界(契約は SuiteSpec、第 2 部で定義)。PAuth パイプ
+  差し替え可能な結合境界(契約は第 2 部で定義)。PAuth パイプ
   ラインのノードでは**なく**、ToolExecutor の先(ツール層)に立つ。買い物
   デモ、AgentDojo、MCP、OpenAPI が実装し、PAuth の中核は背後のツールの
   出どころを知らない。
@@ -257,7 +257,7 @@ Gateway が所有する ToolExecutor(実行部)と、その先の結合境界で
      │ (ツール名, 引数)   ※ ToolExecutor は Gateway が所有(ノードではない)
      ▼
 ┌───────────────────────────┐
-│ ツールアダプタ(SuiteSpec)  │ ※ ノードではなく結合境界(ツール層)
+│ ツールアダプタ               │ ※ ノードではなく結合境界(ツール層)
 └───────────────────────────┘
 ```
 
@@ -616,7 +616,7 @@ run コードの実行と、許可されたツール呼び出しの実行は、�
 - この節が定義する **ToolExecutor** は、Gateway が所有する実行部。個々の許可
   されたツール呼び出し(ツール名, 引数)を受け取り、ツールアダプタへ送って
   実行し、結果を返す(型は `pauth/suites/base.py` の `ToolExecutor`、実体は
-  `SuiteSpec.tool_executor_factory` が env から作る)。ここに届くのは
+  `tool_executor_factory`(`pauth/suites/base.py`)が env から作る)。ここに届くのは
   Enforcer の認可を経たツール呼び出しだけで、結果は封筒として EnvelopeStore
   に記録される。run コードを走らせる係ではない。
 - **計画実行**(run コードそのものの実行)は sandboxed plan executor
@@ -628,9 +628,6 @@ run コードの実行と、許可されたツール呼び出しの実行は、�
 
 このノードの機構・挙動:
 
-- **SuiteSpec.** ツールアダプタの契約(`tools`、`make_env`、
-  `tool_executor_factory`)。買い物デモ、AgentDojo、MCP、OpenAPI が実装する。
-  PAuth の中核は、背後のツールがどこから来ているかを知らない。
 - **クラッシュ / crash.** 生成された計画のコードが、実行の途中で(拒否
   `_Denied` 以外の)Python 例外を出して止まったこと(例: 文章に添字アクセス
   して KeyError、`None.field`)。データに対するコード側の見立ての誤りで
@@ -670,8 +667,7 @@ run コードの実行と、許可されたツール呼び出しの実行は、�
 
 - **ユーザープロンプト / user prompt.** ユーザーが最初に入力したタスクの文。
   エージェントが外部のデータを読む*前に*捕まえるので、汚染されていない。
-  Planner の唯一の入力で、計画は一度だけなので、セッションに
-  一度しか流れない。通信形は **`PromptMessage`** — ingress アダプタが正規化
+  通信形は **`PromptMessage`** — ingress アダプタが正規化
   し、AgentChannel が「最初に一度だけ」を守らせる。
 - **runコード / run code.** Planner が書く一本の関数。タスクの手順書で
   あり、DSL に収まっていなければならない。DSLValidator が検査し、Slicer が
@@ -789,19 +785,10 @@ POLICY(h, call) = the policy decision for a call under execution history h
 | `OUTCOME_TASK_COMPLETED` | 系全体 — 目標状態への到達(本部) |
 | `COST_TOOL_CALLS` | 系全体 — 呼び出し数の費用(本部) |
 
-## 参照に対する認可忠実性(パイプライン全体の指標)
-
-同一軸(手本との一致)の二方向を、対の名前で測る。名前は「トレース比較の語」
-の **欠落 / Missing**・**過剰 / Excess** に対応する。改名(2026-08-02): 旧
-`REF_REQUIRED_CALLS_PERMITTED` → `REF_NO_MISSING_CALLS`、旧
-`REF_NO_EXCESS_CALLS_PERMITTED` → `REF_NO_EXCESS_CALLS`。定義・値・分母は
-不変。保存済みの実験成果物(`tests/experiment/results/`)は旧キーのまま
-凍結してある。
-
 - **ツール呼び出しの欠落なし / REF_NO_MISSING_CALLS.** 手本(`REF`)にある必須の
   呼び出しを、すべて許せたか(「欠落なし」の半分)。照合はツール名+制御
   オペランドで行う。
-- **過剰なツール呼び出しなし / REF_NO_EXCESS_CALLS.** 手本にない呼び出しを
+- **ツール呼び出しの過剰なし / REF_NO_EXCESS_CALLS.** 手本にない呼び出しを
   許していないか(「過剰なし」の半分)。照合器は同じ。
 - **過不足なし / REF_EXACT_AUTHORIZATION.** 先行する二つの指標がともに合格
   したときに限り、合格する。
@@ -963,7 +950,7 @@ POLICY(h, call) = the policy decision for a call under execution history h
 |---|---|---|---|
 | エージェント ingress | `PromptMessage` と `ToolCallMessage` | Claude hooks、InterceptingProxy(`gateway/serving/proxy.py`、執行の中核は実装済み、TLS/ネットワーク接続部は未着手)、独自クライアント | `gateway/ingress/agent_channel.py` |
 | Planner | 制限された命令型の `def run(...): ...`(執行点は DSLValidator = `pauth/dsl_validator.py`) | 決定的認識器、LLM 自由生成、両者を使う `auto`、充足性・厳密性の二段生成、対話構造化・専用コード生成・形式意味解析(`P3`–`P5`、設計契約は第 2 部 Planner の節の登録表) | `gateway/planning/planner.py` |
-| ツールアダプタ | `SuiteSpec`(`tools`、`make_env`、`tool_executor_factory`) | 買い物デモ、AgentDojo、MCP サーバー、OpenAPI 仕様、将来の SaaS アダプタ | `pauth/suites/base.py` |
+| ツールアダプタ | `tools`・`make_env`・`tool_executor_factory` の三点契約 | 買い物デモ、AgentDojo、MCP サーバー、OpenAPI 仕様、将来の SaaS アダプタ | `pauth/suites/base.py` |
 | 認可の中核 | コンパイル済みルール + 封筒に裏付けられたオペランド検査 | プロバイダごとに変わるべきではない | `pauth/` |
 
 用語に関する注意 — 本部の "ingress" は*アダプタ*の水準だけを指す。二水準の
@@ -976,13 +963,13 @@ POLICY(h, call) = the policy decision for a call under execution history h
 - 製品の中核は Claude Code hook ではない。Claude Code は一つのアダプタにすぎない。
 - バイパスを防ぐためにネットワーク経路の制御は必要だが、プロンプトとツール呼び出し
   の捕捉を併せて行わない限り、PAuth の執行には十分でない。
-- ホスティングは運用上の判断である。Planner の論理、執行の論理、`SuiteSpec` に
+- ホスティングは運用上の判断である。Planner の論理、執行の論理、ツールアダプタの契約に
   漏れ込んではならない(本部末尾の「配備形態」がこの原則を不変条件として
   述べ、具体の配備は `SELF_HOSTING.md` が記述する)。
 
 AgentDojo は**ツールアダプタ**境界の内側に属する。ベンチマークとモック環境で
 使われる一つのプロバイダであって、アーキテクチャの中心ではない。実アプリが
-AgentDojo を置き換えるなら、それらは `SuiteSpec` を実装するか適合させるべき
+AgentDojo を置き換えるなら、それらはツールアダプタの契約を実装するか適合させるべき
 であり、PAuth の中核と Planner の契約は、背後のツールが AgentDojo・MCP・
 OpenAPI・手書きのスイートのどれに由来するかを知るべきではない。
 
@@ -1036,9 +1023,9 @@ OpenAPI に基づくプロバイダは運用の輪をもう一つ加える。
 
 ## 複数スイート/差し替え可能なツールアダプタ
 
-ゲートウェイは単一の ``SuiteSpec`` の上で動作するが、
+ゲートウェイは単一のツールアダプタの上で動作するが、
 ``gateway/providers/registry.py`` が任意個の元スイートを併合した*仮想的な*
-``SuiteSpec`` を合成する。ツール名は全体で一意でなければならず、レジストリが
+ツールアダプタを合成する。ツール名は全体で一意でなければならず、レジストリが
 登録時にこれを検証する。
 
 現在差し替え可能なバックエンド:

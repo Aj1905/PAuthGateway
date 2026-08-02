@@ -175,7 +175,7 @@ Planner の節の登録表に置く。将来の設定ファイルや UI も同�
    - MCP/HTTP/SaaS 向けのツールアダプタを登録する。
    - tool スキーマ、パラメータの順序、返り値スキーマを保持する。
    - 明示的に名前空間を分けない限り、tool 名の衝突を拒否する。
-   - HTTP API については、OpenAPI 仕様を `SuiteSpec` に反映する。
+   - HTTP API については、OpenAPI 仕様をツールアダプタの契約に反映する。
    - 上流 API 仕様の変化を検出し、新しい tool 面を受け入れる前に利用者へ通知できる報告を発行する。
 
 2. **Ingress アダプタ**
@@ -216,7 +216,7 @@ OpenAPI に基づくスイートはゲートウェイ設定に登録できる。
 }
 ```
 
-ゲートウェイ起動時に、`gateway/providers/openapi_suite.py` が現在の OpenAPI 文書を `SuiteSpec` に反映する。operation は tool になり、パラメータと JSON ボディのフィールドはその tool のオペランドになり、レスポンススキーマは Planner の tool ドキュメントになる。
+ゲートウェイ起動時に、`gateway/providers/openapi_suite.py` が現在の OpenAPI 文書をツールアダプタの契約に反映する。operation は tool になり、パラメータと JSON ボディのフィールドはその tool のオペランドになり、レスポンススキーマは Planner の tool ドキュメントになる。
 
 通知/更新の作業の流れには、次を実行する。
 

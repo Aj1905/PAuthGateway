@@ -100,7 +100,7 @@ single repository
     pauth/
     gateway planner
     gateway event contract
-    SuiteSpec/tool adapters
+    tool adapters
     audit/envelope semantics
 
   deployment modes:
