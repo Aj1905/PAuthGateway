@@ -11,7 +11,8 @@ from __future__ import annotations
 from benchmarks.agentdojo_adapter import load_suite
 from benchmarks.structured_read import augment_with_structuring
 from pauth import prepare
-from pauth.enforcer import Enforcer, check_injection, execute_generated_code
+from pauth.enforcer import Enforcer, check_injection
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 from gateway.planning.prechecks import precheck_code
 from gateway.runtime.confirmation import SourceTrust, static_taint_map

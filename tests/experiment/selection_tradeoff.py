@@ -31,9 +31,10 @@ from eval.metrics import (
 )
 from gateway.runtime.confirmation import is_side_effecting
 from pauth import prepare
-from pauth.enforcer import Enforcer, execute_generated_code
+from pauth.enforcer import Enforcer
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar import RestrictedGrammarError
+from pauth.grammar_validator import RestrictedGrammarError
 
 SCRATCH = Path("tests/experiment/funnel_scratch")
 SUITES = ["banking", "slack", "travel", "workspace"]

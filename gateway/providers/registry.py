@@ -16,7 +16,7 @@ A merged suite's ``make_env`` returns a dict keyed by source-suite name;
 ``tool_executor_factory`` returns a dispatcher that routes each tool call to
 the originating suite's tool_executor. ``tool_signer`` is the union of the
 underlying signers, so envelopes are tagged with the source signer and
-PAuth's cross-service deduplication (``pauth.rules.compile_rules``)
+PAuth's cross-service deduplication (``pauth.rule_compiler.compile_rules``)
 keeps working unchanged.
 """
 

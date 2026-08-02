@@ -4,7 +4,8 @@ its forced injections are all denied (FN=0) -- offline, no API key."""
 from __future__ import annotations
 
 from pauth import prepare
-from pauth.enforcer import Enforcer, check_injection, execute_generated_code
+from pauth.enforcer import Enforcer, check_injection
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.suites.dining import build_suite
 from benchmarks.schema_scope import STRUCTURED, TEXT_BLOB, classify_return

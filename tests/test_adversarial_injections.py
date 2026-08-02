@@ -14,7 +14,8 @@ memorising the benchmark's specific attacker values.
 from __future__ import annotations
 
 from pauth import prepare
-from pauth.enforcer import Enforcer, check_injection, execute_generated_code
+from pauth.enforcer import Enforcer, check_injection
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.suites.dining import build_suite as build_dining
 from pauth.suites.shopping import build_suite as build_shopping

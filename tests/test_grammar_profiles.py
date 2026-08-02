@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from pauth import prepare
-from pauth.grammar import (
+from pauth.grammar_validator import (
     GRAMMAR_PROFILE_PAPER,
     RestrictedGrammarError,
     parse_and_validate,

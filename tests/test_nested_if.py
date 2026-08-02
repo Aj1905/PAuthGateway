@@ -10,9 +10,10 @@ from __future__ import annotations
 import pytest
 
 from pauth import prepare
-from pauth.enforcer import Enforcer, check_injection, execute_generated_code
+from pauth.enforcer import Enforcer, check_injection
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar import RestrictedGrammarError
+from pauth.grammar_validator import RestrictedGrammarError
 from pauth.suites.shopping import build_suite
 
 _NESTED = '''def run():

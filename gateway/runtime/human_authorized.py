@@ -29,7 +29,8 @@ import hmac
 import secrets
 from typing import Any, Callable, Protocol
 
-from pauth.enforcer import CallEvent, Decision, Enforcer, execute_generated_code
+from pauth.enforcer import Decision, Enforcer
+from pauth.tool_executor import CallEvent, execute_generated_code
 from pauth.envelope import KeyRing
 from pauth.evaluator import wrap
 

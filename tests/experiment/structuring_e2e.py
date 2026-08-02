@@ -12,7 +12,8 @@ from agentdojo.task_suite.load_suites import get_suites
 from benchmarks.agentdojo_adapter import load_suite
 from benchmarks.structured_read import augment_with_structuring
 from pauth import prepare
-from pauth.enforcer import Enforcer, execute_generated_code
+from pauth.enforcer import Enforcer
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 
 # The extraction plan we WISH the Planner produced (hand-written for now).

@@ -39,10 +39,11 @@ from eval.metrics import (
     SYNTHESIS_POLICY_COMPILED,
 )
 from pauth import prepare
-from pauth.enforcer import Enforcer, check_injection, execute_generated_code
+from pauth.enforcer import Enforcer, check_injection
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing, flatten
 from pauth.evaluator import EXEC_HELPERS, wrap
-from pauth.grammar import RestrictedGrammarError
+from pauth.grammar_validator import RestrictedGrammarError
 from pauth.structuring import structure
 from gateway.planning.prechecks import PrecheckPolicy
 from gateway.runtime.confirmation import control_operands, is_side_effecting

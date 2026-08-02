@@ -26,7 +26,8 @@ from typing import Any, Callable
 
 from pauth import prepare
 from pauth.codegen import ToolDoc
-from pauth.enforcer import Enforcer, execute_generated_code
+from pauth.enforcer import Enforcer
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.suites import dining, websum
 from pauth.suites.base import SuiteSpec, ToolSpec

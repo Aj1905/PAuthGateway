@@ -10,7 +10,7 @@ The paper's the Planner step is one-shot. Free-form measurement showed:
 This module adds a two-stage validator inside a feedback loop (grammar repair + semantic judge):
 
   1. Generate code.
-  2. **Grammar check** -- ``pauth.grammar.parse_and_validate``. On failure,
+  2. **Grammar check** -- ``pauth.grammar_validator.parse_and_validate``. On failure,
      feed the violation + "you MUST obey rule X" back to the LLM and retry.
   3. **Semantic check** -- ``_judge_intent``: a separate LLM call asks
      whether the code captures the user's intent (coverage / conditions /
@@ -44,7 +44,7 @@ from pauth.codegen import (
     build_user_prompt,
     has_api_key,
 )
-from pauth.grammar import (
+from pauth.grammar_validator import (
     RestrictedGrammarError,
     parse_and_validate,
     strip_dead_code,
@@ -135,7 +135,7 @@ Output ONLY the corrected code, with no explanation and no markdown fences.
 def _rule_reminder(error_message: str) -> str:
     """Extract a focused reminder for the violated rule.
 
-    The error messages from ``pauth.grammar`` include a rule tag like
+    The error messages from ``pauth.grammar_validator`` include a rule tag like
     "(rule 10)" or a free-form reason. We surface the strongest applicable
     rule restatement so the LLM cannot claim it did not know.
     """

@@ -34,9 +34,10 @@ import sys
 from typing import Any, Callable, Iterator
 
 from pauth import prepare
-from pauth.enforcer import Enforcer, check_injection, execute_generated_code
+from pauth.enforcer import Enforcer, check_injection
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar import RestrictedGrammarError
+from pauth.grammar_validator import RestrictedGrammarError
 
 from eval.gates import (
     _control_trace_fidelity,

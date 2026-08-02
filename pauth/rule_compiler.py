@@ -1,8 +1,8 @@
-"""Compile a slice into enforcer rules (paper sec. 4.1.2, Algorithm 1).
+"""Rule compiler -- compile a slice into enforcer rules (paper sec. 4.1.2, Algorithm 1).
 
 Parsing and analysing a slice on every call would be inefficient, so PAuth
 compiles each slice once, at slice-generation time, into reusable rules that
-the enforcer consumes directly at runtime (paper sec. 4.1, step the Rule compiler).
+the enforcer consumes directly at runtime (paper sec. 4.1, the Rule compiler step).
 
 A rule records (paper "In general, a rule records five pieces of
 information"): the expected tool, a per-operand symbolic expression, a guard
@@ -15,7 +15,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 
-from .slicing import Slice
+from .slicer import Slice
 from .symbolic import HELPERS, call_name
 
 

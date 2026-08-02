@@ -276,11 +276,11 @@ docs/
 | 論文 | 本実装 |
 |-------|---------------------|
 | 命令型コード生成(LLM、4.1.1 節) | Planner — `pauth/codegen.py`(OpenAI、Appendix A のプロンプト) |
-| NL スライス導出(3.3 / 4.1.2 節、決定的) | Slicer — `pauth/slicing.py` |
-| ルールコンパイル(Algorithm 1、決定的) | Rule compiler — `pauth/rules.py` |
+| NL スライス導出(3.3 / 4.1.2 節、決定的) | Slicer — `pauth/slicer.py` |
+| ルールコンパイル(Algorithm 1、決定的) | Rule compiler — `pauth/rule_compiler.py` |
 | 署名付き envelope(3.4 節 / 図 3) | `pauth/envelope.py` |
 | 実行時執行(4.1.3 節、決定的) | Enforcer — `pauth/enforcer.py` |
-| 制限文法(BNF、Appendix A) | `pauth/grammar.py` |
+| 制限文法(BNF、Appendix A) | `pauth/grammar_validator.py` |
 | AgentDojo 実装(4.1 節) | `benchmarks/agentdojo_adapter.py` |
 | 強制注入(5.1 節) | `benchmarks/forced_injection.py` |
 | FP/FN 評価(5.2 節、Table 2) | `eval/fpfn.py` |

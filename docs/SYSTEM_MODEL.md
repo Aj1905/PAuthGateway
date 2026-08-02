@@ -257,7 +257,7 @@ PAuth ゲートウェイ層 / ツール層 / SaaS 層)と、その間の情報�
   なりうる。ToolExecutor と外部ツール(ノード 7)は、外部状態、時刻、通信、
   プロバイダの再試行に依存するため決定的とはみなさない。
 - **実装の対応.** `pauth/codegen.py`(Planner プロンプト)、
-  `pauth/grammar.py`、`pauth/slicing.py`、`pauth/rules.py`、
+  `pauth/grammar_validator.py`、`pauth/slicer.py`、`pauth/rule_compiler.py`、
   `pauth/enforcer.py`、`pauth/envelope.py`、`pauth/suites/base.py`。
 
 ### 実験用の部品版 ID と構成版 ID
@@ -464,7 +464,7 @@ docstring。
 Planner が書いたコードが、決められた書き方の枠(制限文法、第 3 部)に収まって
 いるかを検査する門番。構文検査(`parse_and_validate`)→ 死コード除去
 (`strip_dead_code`)→ 意味検査(`validate_semantics`)の順に見る。実装は
-`pauth/grammar.py` の一箇所だが、呼び出し側は Planner 側のリトライループと
+`pauth/grammar_validator.py` の一箇所だが、呼び出し側は Planner 側のリトライループと
 `pauth.prepare()` 内の再検証の二つある(第 6 部「結合境界と帰結」)。
 
 このノードの機構・挙動:
@@ -480,7 +480,7 @@ Planner が書いたコードが、決められた書き方の枠(制限文法�
 
 | 版番号 | 対応する文法・工程 | 状態 |
 |---|---|---|
-| `G1` | 論文付録 A の DSL そのまま: 代入・式・平坦な `if`(else/elif なし・入れ子なし)のみ。`for`・内包表記・dict リテラルはなく、変数は単一代入。Tier-1 正規化も適用しない | 実装済み(`pauth/grammar.py` の profile `g1`)・未実験 |
+| `G1` | 論文付録 A の DSL そのまま: 代入・式・平坦な `if`(else/elif なし・入れ子なし)のみ。`for`・内包表記・dict リテラルはなく、変数は単一代入。Tier-1 正規化も適用しない | 実装済み(`pauth/grammar_validator.py` の profile `g1`)・未実験 |
 | `G2` | 本リポジトリの拡張制限文法(既定): G1 に加えて else/elif、深さ 3 以下の入れ子 `if`、観測済み集合上の有界 `for`(入れ子可)、dict リテラル、単一生成器の内包表記、二種の合流代入、Tier-1 正規化。`while`・`return`・import・例外処理・class・メソッド呼び出し・未知関数・式中の入れ子ツール呼び出し・ツールのキーワード引数は引き続き棄却し、文として単独で現れるツールでない呼び出しだけは死コードとして除去する | 実装済み(既定) |
 
 注: 下線始まりの属性アクセスの禁止は安全対策として両版に共通で適用する
@@ -490,25 +490,25 @@ Planner が書いたコードが、決められた書き方の枠(制限文法�
 
 検証済みの `run()` を機械的に読み、ツール呼び出し一つごとの**スライス**
 (第 3 部)— どの値をどう作るか、どの条件で実行されるか — を取り出す。
-決定的。実装は `pauth/slicing.py`。
+決定的。実装は `pauth/slicer.py`。
 
 ### Slicer 版番号の登録表
 
 | 版番号 | 対応する戦略・工程 | 状態 |
 |---|---|---|
-| `S1` | 依存閉包スライス導出: 各ツール呼び出しから、位置オペランドの式、`if` / `else` の条件(guard)、参照する束縛の依存閉包、有界ループ、計画内の順序を持つスライスを決定的に導出。対応済みの分岐は分岐ごとのスライスに分ける | 実装済み(`pauth/slicing.py`) |
+| `S1` | 依存閉包スライス導出: 各ツール呼び出しから、位置オペランドの式、`if` / `else` の条件(guard)、参照する束縛の依存閉包、有界ループ、計画内の順序を持つスライスを決定的に導出。対応済みの分岐は分岐ごとのスライスに分ける | 実装済み(`pauth/slicer.py`) |
 
 ## 4. Rule compiler / ルールコンパイラ
 
 スライスを、実行時に照合できる**ルール**(第 3 部)に固める(論文
-Algorithm 1)。決定的。実装は `pauth/rules.py`。ここまで(ノード 1〜4)が
+Algorithm 1)。決定的。実装は `pauth/rule_compiler.py`。ここまで(ノード 1〜4)が
 タスク開始時に一度だけ走り、以降は実行時(ノード 5〜7)に移る。
 
 ### Rule compiler 版番号の登録表
 
 | 版番号 | 対応する戦略・工程 | 状態 |
 |---|---|---|
-| `R1` | rule コンパイル: 各スライスを、ツール名、位置オペランドの式、guard、束縛、有界ループ、計画内の順序、必要な外部サービス由来 envelope を持つ実行時ルールへ決定的に変換 | 実装済み(`pauth/rules.py`) |
+| `R1` | rule コンパイル: 各スライスを、ツール名、位置オペランドの式、guard、束縛、有界ループ、計画内の順序、必要な外部サービス由来 envelope を持つ実行時ルールへ決定的に変換 | 実装済み(`pauth/rule_compiler.py`) |
 
 ## 5. Enforcer / 執行器
 
@@ -598,7 +598,7 @@ C 系列ではない。
 
 生成された `run()` の実行と、許可された call を実際に走らせる側。三つの役割を
 区別する。`run()` コードそのものは Enforcer 側の sandboxed plan executor
-(`pauth/enforcer.py` の `execute_generated_code`)が走らせる。個々の許可
+(`pauth/tool_executor.py` の `execute_generated_code`)が走らせる。個々の許可
 された call は、Gateway が所有する実行部 **ToolExecutor** が受け取り、
 ツールアダプタへ送って実行する。ツールアダプタは、ツールの schema と実際の
 実行機能を供給する差し替え可能なバックエンドであり、ToolExecutor とは別の
@@ -930,7 +930,7 @@ POLICY(h, call) = the policy decision for a call under execution history h
 | 境界 | 契約 | 差し替え可能な部分 | 安定した所有者 |
 |---|---|---|---|
 | エージェント ingress | `PromptMessage` と `ToolCallMessage` | Claude hooks、InterceptingProxy(`gateway/serving/proxy.py`、執行の中核は実装済み、TLS/ネットワーク接続部は未着手)、独自クライアント | `gateway/ingress/agent_channel.py` |
-| Planner | 制限された命令型の `def run(...): ...`(執行点は GrammarValidator = `pauth/grammar.py`) | 決定的認識器、LLM 自由生成、両者を使う `auto`、充足性・厳密性の二段生成、対話構造化・専用コード生成・形式意味解析(`P3`–`P5`、設計契約は第 2 部ノード 1 の登録表) | `gateway/planning/planner.py` |
+| Planner | 制限された命令型の `def run(...): ...`(執行点は GrammarValidator = `pauth/grammar_validator.py`) | 決定的認識器、LLM 自由生成、両者を使う `auto`、充足性・厳密性の二段生成、対話構造化・専用コード生成・形式意味解析(`P3`–`P5`、設計契約は第 2 部ノード 1 の登録表) | `gateway/planning/planner.py` |
 | ツールアダプタ | `SuiteSpec`(`tools`、`make_env`、`tool_executor_factory`) | 買い物デモ、AgentDojo、MCP サーバー、OpenAPI 仕様、将来の SaaS アダプタ | `pauth/suites/base.py` |
 | 認可の中核 | コンパイル済みルール + envelope に裏付けられたオペランド検査 | プロバイダごとに変わるべきではない | `pauth/` |
 

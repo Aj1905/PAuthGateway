@@ -13,7 +13,8 @@ from benchmarks.agentdojo_adapter import load_suite
 from benchmarks.structured_read import augment_with_structuring
 from gateway.planning.agentic_planner import generate_code_with_self_repair
 from pauth import prepare
-from pauth.enforcer import Enforcer, execute_generated_code
+from pauth.enforcer import Enforcer
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 
 # banking tasks whose value is prose-locked (HOLLOW/WRONG-wall in ceiling_probe).

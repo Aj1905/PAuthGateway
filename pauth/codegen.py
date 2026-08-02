@@ -1,4 +1,4 @@
-"""the Planner -- imperative code generation (paper sec. 4.1.1).
+"""Imperative code generation -- the LLM backend behind the Planner node (paper sec. 4.1.1).
 
 Given a user task and the schema of the available tools (extended with an
 *output* schema, paper sec. 4.1.1), an LLM generates a ``run`` function in the

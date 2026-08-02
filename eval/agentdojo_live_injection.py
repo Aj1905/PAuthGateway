@@ -81,10 +81,11 @@ from benchmarks.agentdojo_adapter import load_suite
 from benchmarks.structured_read import augment_with_structuring
 from gateway.runtime.confirmation import is_side_effecting
 from pauth import prepare
-from pauth.enforcer import Decision, Enforcer, execute_generated_code
+from pauth.enforcer import Decision, Enforcer
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.evaluator import wrap
-from pauth.grammar import RestrictedGrammarError
+from pauth.grammar_validator import RestrictedGrammarError
 
 SUITES = ("banking", "slack", "travel", "workspace")
 DEFAULT_PLAN_ROOT = Path("tests/experiment/funnel_scratch")

@@ -21,9 +21,10 @@ from pathlib import Path
 from benchmarks.tau_bench_adapter import build_suite
 from gateway.planning.agentic_planner import generate_code_with_self_repair
 from pauth import prepare
-from pauth.enforcer import Enforcer, check_injection, execute_generated_code
+from pauth.enforcer import Enforcer, check_injection
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar import RestrictedGrammarError
+from pauth.grammar_validator import RestrictedGrammarError
 
 CACHE = Path("tests/experiment/cache/tau_retail")
 SCRATCH = Path("tests/experiment/tau_scratch")

@@ -26,9 +26,10 @@ from benchmarks.structured_read import augment_with_structuring  # noqa: E402
 from gateway.planning.agentic_planner import generate_code_with_self_repair  # noqa: E402
 from gateway.runtime.confirmation import is_side_effecting  # noqa: E402
 from pauth import prepare  # noqa: E402
-from pauth.enforcer import Enforcer, execute_generated_code  # noqa: E402
+from pauth.enforcer import Enforcer  # noqa: E402
+from pauth.tool_executor import execute_generated_code  # noqa: E402
 from pauth.envelope import EnvelopeStore, KeyRing  # noqa: E402
-from pauth.grammar import RestrictedGrammarError  # noqa: E402
+from pauth.grammar_validator import RestrictedGrammarError  # noqa: E402
 
 CRASHERS = [("travel", "user_task_4"), ("travel", "user_task_7"),
             ("travel", "user_task_8"), ("workspace", "user_task_33")]

@@ -1,9 +1,9 @@
-"""NL-slice derivation (paper sec. 3.3 and step the Slicer of sec. 4.1.2).
+"""Slicer -- NL-slice derivation (paper sec. 3.3 and sec. 4.1.2).
 
 Given the imperative ``run`` function produced by the Planner, we derive -- for *every*
 tool invocation -- a slice: the tool name, a symbolic expression for each
 operand, and the path conditions required to reach the call.  Slicing is the
-deterministic core of PAuth: "The derivation of slices/rules (Steps the Slicer and Rule compiler)
+deterministic core of PAuth: "The derivation of slices/rules (the Slicer and Rule compiler steps)
 is deterministic without LLM" (paper sec. 5.2).
 
 A slice keeps only the dependency closure of its target call: the ``let``

@@ -6,9 +6,8 @@ guard predicates hold and that every operand equals the value implied by the
 slice.  PAuth is *default-deny*: "a call is by default denied unless an
 exact-matching rule is found" (paper sec. 5.2).
 
-This module also provides the sandboxed plan executor that executes the generated
-``run`` function, routing every tool call through the enforcer and turning
-each permitted result into a signed envelope (envelope signing).
+The sandboxed plan executor that runs the generated ``run`` function lives in
+:mod:`pauth.tool_executor` (the ToolExecutor node).
 """
 
 from __future__ import annotations
@@ -19,8 +18,8 @@ import threading
 from typing import Any, Callable
 
 from .envelope import EnvelopeStore, TamperedEnvelopeError, make_envelope
-from .evaluator import EXEC_HELPERS, Evaluator, NotConcretizable, values_match, wrap
-from .rules import Rule
+from .evaluator import Evaluator, NotConcretizable, values_match
+from .rule_compiler import Rule
 from .symbolic import canon
 
 
@@ -409,118 +408,6 @@ class Enforcer:
 
     def _keyring(self):
         return self.store._keyring  # the store owns the shared keyring
-
-
-# --------------------------------------------------------------------------
-# Sandboxed plan executor for the generated code
-# --------------------------------------------------------------------------
-
-class _Denied(Exception):
-    """Internal: unwinds execution on the first denied call."""
-
-    def __init__(self, event: "CallEvent") -> None:
-        self.event = event
-
-
-@dataclasses.dataclass
-class CallEvent:
-    tool: str
-    args: list[Any]
-    decision: Decision
-
-
-@dataclasses.dataclass
-class ExecReport:
-    """Outcome of executing a generated task."""
-
-    events: list[CallEvent]
-    denied: list[CallEvent]
-    tool_errors: list[str]
-    crashed: str | None
-
-    @property
-    def has_denial(self) -> bool:
-        return bool(self.denied)
-
-
-def execute_generated_code(
-    code: str,
-    enforcer: Enforcer,
-    tool_params: dict[str, list[str]],
-    tool_executor: Callable[[str, dict[str, Any]], Any],
-    stop_on_denial: bool = True,
-) -> ExecReport:
-    """Execute ``run`` with every tool call proxied through the enforcer.
-
-    Tool calls are intercepted (call interception), checked (the authorization check), executed when permitted,
-    and their results recorded as envelopes (envelope signing).  A denial is recorded; with
-    ``stop_on_denial`` the run halts on the first denial, mirroring the paper's
-    "execution stops with a denial".
-    """
-    events: list[CallEvent] = []
-    tool_errors: list[str] = []
-    crashed: str | None = None
-    denied: list[CallEvent] = []
-
-    def make_wrapper(name: str) -> Callable[..., Any]:
-        def wrapper(*args: Any) -> Any:
-            decision = enforcer.check(name, list(args), live=True)
-            event = CallEvent(name, list(args), decision)
-            events.append(event)
-            if not decision.permit:
-                denied.append(event)
-                if stop_on_denial:
-                    raise _Denied(event)
-                return None
-            params = tool_params.get(name, [])
-            if not enforcer.begin(decision.token):
-                replay = Decision(
-                    False,
-                    decision.rule,
-                    "execution attempt already exists (replay blocked)",
-                    decision.token,
-                )
-                replay_event = CallEvent(name, list(args), replay)
-                denied.append(replay_event)
-                if stop_on_denial:
-                    raise _Denied(replay_event)
-                return None
-            kwargs = dict(zip(params, args))
-            try:
-                result = tool_executor(name, kwargs)
-            except Exception as exc:  # noqa: BLE001 -- tool-level failure
-                try:
-                    enforcer.mark_indeterminate(decision.token)
-                except Exception:
-                    # The pre-dispatch ``started`` snapshot remains fail-closed
-                    # even if persisting the more precise state fails.
-                    pass
-                tool_errors.append(f"{name}: {type(exc).__name__}: {exc}")
-                return None
-            result = wrap(result)
-            assert decision.rule is not None
-            enforcer.record(decision.rule, result, decision.token)
-            return result
-
-        return wrapper
-
-    namespace: dict[str, Any] = {name: make_wrapper(name) for name in tool_params}
-    namespace.update(EXEC_HELPERS)
-    namespace["__builtins__"] = {}
-
-    try:
-        exec(compile(code, "<pauth-run>", "exec"), namespace)  # noqa: S102
-        run = namespace.get("run")
-        if not callable(run):
-            crashed = "generated code defines no callable 'run'"
-        else:
-            run()
-    except _Denied:
-        pass  # already recorded in `denied`
-    except Exception as exc:  # noqa: BLE001 -- generated-code bug, not a denial
-        crashed = f"{type(exc).__name__}: {exc}"
-
-    return ExecReport(events=events, denied=denied, tool_errors=tool_errors, crashed=crashed)
 
 
 def check_injection(enforcer: Enforcer, tool: str, args: list[Any]) -> Decision:

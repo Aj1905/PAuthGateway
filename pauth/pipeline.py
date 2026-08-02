@@ -11,15 +11,15 @@ import ast
 import dataclasses
 import hashlib
 
-from .grammar import (
+from .grammar_validator import (
     GRAMMAR_PROFILE_EXTENDED,
     parse_and_validate,
     strip_dead_code,
     validate_semantics,
 )
 from .normalize import normalize_run
-from .rules import Rule, compile_rules
-from .slicing import Slice, derive_slices
+from .rule_compiler import Rule, compile_rules
+from .slicer import Slice, derive_slices
 from .symbolic import HELPERS, call_name
 
 
@@ -149,7 +149,7 @@ def prepare(
 ) -> PreparedTask:
     """Run the Planner's output through validation (grammar), the Slicer (slices) and the Rule compiler (rules).
 
-    Raises :class:`pauth.grammar.RestrictedGrammarError` if the code violates
+    Raises :class:`pauth.grammar_validator.RestrictedGrammarError` if the code violates
     the restricted grammar.
 
     ``grammar_profile`` selects the grammar version (experiment axis G):

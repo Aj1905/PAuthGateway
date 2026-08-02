@@ -32,7 +32,8 @@ import time
 from typing import Any, Callable
 
 from pauth import prepare
-from pauth.enforcer import Enforcer, execute_generated_code
+from pauth.enforcer import Enforcer
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.suites.base import SuiteSpec
 from pauth.suites.shopping import build_suite as build_shopping

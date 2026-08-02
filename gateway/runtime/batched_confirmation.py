@@ -28,7 +28,8 @@ from __future__ import annotations
 import dataclasses
 from typing import Any, Callable
 
-from pauth.enforcer import CallEvent, Decision, Enforcer, _Denied
+from pauth.enforcer import Decision, Enforcer
+from pauth.tool_executor import CallEvent, _Denied
 from pauth.evaluator import wrap
 
 from gateway.runtime.confirmation import PendingConfirmation, is_side_effecting

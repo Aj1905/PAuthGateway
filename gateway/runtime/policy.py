@@ -27,7 +27,7 @@ from typing import Any
 from pauth.enforcer import Decision, Enforcer
 from pauth.envelope import TamperedEnvelopeError
 from pauth.evaluator import Evaluator, NotConcretizable, values_match
-from pauth.rules import Rule
+from pauth.rule_compiler import Rule
 
 
 @dataclasses.dataclass(frozen=True)

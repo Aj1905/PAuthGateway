@@ -1,4 +1,4 @@
-"""Restricted-grammar parser and validator (paper Appendix A).
+"""GrammarValidator -- restricted-grammar parser and validator (paper Appendix A).
 
 The Planner step asks an LLM to generate a ``run`` function in a restrictive subset
 of Python.  Before any slice is derived we

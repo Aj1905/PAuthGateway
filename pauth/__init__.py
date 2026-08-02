@@ -3,28 +3,22 @@
 A faithful reimplementation of the deterministic core of PAuth (Sharma, Jiang,
 Lin & Chen, arXiv:2603.17170): NL-slice derivation, Algorithm-1 rule
 compilation, signed envelopes and the runtime enforcer.  The LLM-dependent
-the Planner step lives in :mod:`pauth.codegen`.
+Planner step lives in :mod:`pauth.codegen`.
 """
 
-from .enforcer import (
-    CallEvent,
-    Decision,
-    Enforcer,
-    ExecReport,
-    check_injection,
-    execute_generated_code,
-)
+from .enforcer import Decision, Enforcer, check_injection
+from .tool_executor import CallEvent, ExecReport, execute_generated_code
 from .envelope import Envelope, EnvelopeStore, KeyRing, flatten, make_envelope, verify
 from .evaluator import Evaluator, NotConcretizable, values_match
-from .grammar import (
+from .grammar_validator import (
     RestrictedGrammarError,
     parse_and_validate,
     strip_dead_code,
     validate_semantics,
 )
 from .pipeline import ExecutionPlan, ExecutionStep, PreparedTask, prepare
-from .rules import Rule, compile_rules
-from .slicing import Slice, derive_slices
+from .rule_compiler import Rule, compile_rules
+from .slicer import Slice, derive_slices
 
 __all__ = [
     "CallEvent",

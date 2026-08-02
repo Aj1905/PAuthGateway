@@ -4,7 +4,8 @@ injected (off-plan) attacker call -- FN=0 on the indirect-injection scenarios.""
 from __future__ import annotations
 
 from pauth import prepare
-from pauth.enforcer import Enforcer, check_injection, execute_generated_code
+from pauth.enforcer import Enforcer, check_injection
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 
 from benchmarks.injecagent_adapter import build_suite

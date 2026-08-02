@@ -9,7 +9,8 @@ import pytest
 pytest.importorskip("tau_bench")
 
 from pauth import prepare
-from pauth.enforcer import Enforcer, check_injection, execute_generated_code
+from pauth.enforcer import Enforcer, check_injection
+from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 
 from benchmarks.tau_bench_adapter import build_suite
