@@ -200,7 +200,7 @@ def precheck_code(
 
     An empty list means "no mechanical objection" -- NOT "safe"; the semantic
     judge and the runtime enforcer still apply. Unparseable code yields a
-    violation so callers stay fail-closed (the grammar layer normally rejects
+    violation so callers stay fail-closed (the DSL layer normally rejects
     it first anyway).
     """
     policy = policy or DEFAULT_POLICY

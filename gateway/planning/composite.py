@@ -44,7 +44,7 @@ import dataclasses
 from typing import Any
 
 from pauth.codegen import ToolDoc
-from pauth.grammar_validator import RestrictedGrammarError, parse_and_validate
+from pauth.dsl_validator import DSLRejectionError, parse_and_validate
 
 from .prechecks import PrecheckPolicy, precheck_code
 
@@ -467,8 +467,8 @@ def validate_plan(
 
         try:
             parse_and_validate(template_code)
-        except RestrictedGrammarError as exc:
-            violations.append(f"{label}: restricted grammar: {exc}")
+        except DSLRejectionError as exc:
+            violations.append(f"{label}: DSL: {exc}")
         violations.extend(
             f"{label}: {v}" for v in precheck_code(prompt, template_code, tools, policy)
         )

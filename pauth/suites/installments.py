@@ -1,7 +1,7 @@
 """The installments suite -- the BOUNDED form of an unbounded-loop task.
 
 Task: "pay my rent every month until the lease ends." Written naively that is
-``while lease_active: send_money(...)`` -- an unbounded loop the grammar rejects
+``while lease_active: send_money(...)`` -- an unbounded loop the DSL rejects
 and the enforcer cannot authorise (it cannot enumerate the calls).
 
 The grill (gateway/planning/bounding.py) asks the human for the bound. The

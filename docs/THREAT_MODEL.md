@@ -76,7 +76,7 @@
 | 構成要素 | 役割 | 実装 |
 |---|---|---|
 | 供給元の信頼ラベル | どのツールが非信頼データを返すかを宣言する。**既定を非信頼(fail-closed)にできる** | 🟢 `gateway/runtime/confirmation.py` (`SourceTrust` / `SourceTrust.fail_closed`) |
-| 汚染の伝播 | 制限文法(単一代入、ループなし)を出発点に、どの制御オペランドが非信頼の供給元に由来するかを**静的な来歴**で追跡する。変換 (`amount*2`) を経ても汚染は落ちない | 🟢 `gateway/runtime/confirmation.py`(`static_taint_map`、S20。静的解析であり、設計段階で考えた実行時の「meet」ではない) |
+| 汚染の伝播 | DSL(単一代入、ループなし)を出発点に、どの制御オペランドが非信頼の供給元に由来するかを**静的な来歴**で追跡する。変換 (`amount*2`) を経ても汚染は落ちない | 🟢 `gateway/runtime/confirmation.py`(`static_taint_map`、S20。静的解析であり、設計段階で考えた実行時の「meet」ではない) |
 | sink 分類 | 制御オペランド(宛先・金額)を決定する。内容オペランドは gate されない(S15 の内容／制御の分離) | 🟢 `gateway/planning/prechecks.py` (`_classify_param`) + `confirmation.py` (`control_operands`) |
 | 確認ゲート (taint × sink) | `untrusted × control operand` → **人間の確認まで保留** (PENDING_CONFIRMATION)。セッション経路と複合経路の両方で発火する (S19) | 🟢 `gateway/runtime/gateway.py` (`_confirmation_gate`) |
 | 確認の往復 | 保留された値と来歴を人間側の別経路へ渡し、承認で解放する | 🟡 Python API は実装済み(`Gateway.pending_confirmations()` / `confirm()`)。HTTP 通信面(`confirm_request` / `confirm_response`)は未公開 |

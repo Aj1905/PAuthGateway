@@ -47,7 +47,7 @@ from pauth import prepare
 from pauth.enforcer import Enforcer
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar_validator import RestrictedGrammarError
+from pauth.dsl_validator import DSLRejectionError
 
 SCRATCH = Path("tests/experiment/funnel_scratch")
 SUITES = ["banking", "slack", "travel", "workspace"]
@@ -57,7 +57,7 @@ TOTAL = 97
 def _trace(suite, code):
     try:
         prepared = prepare(code, suite.tool_names(), suite.tool_signer())
-    except RestrictedGrammarError:
+    except DSLRejectionError:
         return None, None
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prepared.source, enf, suite.tool_params(),

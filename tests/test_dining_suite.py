@@ -1,4 +1,4 @@
-"""The dining suite (structured-native, Option B) is solvable in-grammar and
+"""The dining suite (structured-native, Option B) is solvable in-DSL and
 its forced injections are all denied (FN=0) -- offline, no API key."""
 
 from __future__ import annotations

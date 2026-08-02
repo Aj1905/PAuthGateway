@@ -30,7 +30,7 @@ from pauth import prepare
 from pauth.enforcer import Enforcer, check_injection
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar_validator import RestrictedGrammarError
+from pauth.dsl_validator import DSLRejectionError
 
 TAU_CACHE = Path("tests/experiment/cache/tau_retail")
 
@@ -40,7 +40,7 @@ def _ref_trace(suite, code):
         return None
     try:
         prepared = prepare(code, suite.tool_names(), suite.tool_signer())
-    except RestrictedGrammarError:
+    except DSLRejectionError:
         return None
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
@@ -90,7 +90,7 @@ def score_framework(name, suite, plan_of, ref_of, limit=None):
             prepared = prepare(code, suite.tool_names(), suite.tool_signer())
             agg[SYNTHESIS_POLICY_COMPILED][0] += 1
             agg[SYNTHESIS_POLICY_COMPILED][1] += 1
-        except RestrictedGrammarError:
+        except DSLRejectionError:
             agg[SYNTHESIS_POLICY_COMPILED][1] += 1
             exc, dfc = _exc_def(ref_of(t), [], docs)
             if dfc is not None:

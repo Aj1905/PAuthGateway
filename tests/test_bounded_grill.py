@@ -4,7 +4,7 @@ Shows the whole path end-to-end and offline:
   1. the naive unbounded plan is a WALL (detected; grammar rejects it),
   2. the grill asks the human for the bound,
   3. the bounded plan (iterate the human-authorised, signed schedule) is
-     grammar-valid, and
+     DSL-valid, and
   4. it executes the exact schedule while DENYING every off-schedule call (FN=0).
      The bound IS the signed collection's length.
 """
@@ -17,7 +17,7 @@ from pauth import prepare
 from pauth.enforcer import Enforcer, check_injection
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar_validator import RestrictedGrammarError
+from pauth.dsl_validator import DSLRejectionError
 from pauth.suites import installments
 from gateway.planning.bounding import detect_unbounded, is_boundable_wall
 
@@ -34,9 +34,9 @@ def test_unbounded_plan_is_detected_as_a_wall():
 
 
 def test_unbounded_plan_is_actually_rejected_by_the_grammar():
-    # the wall is real, not just flagged: the grammar refuses `while`
+    # the wall is real, not just flagged: the DSL refuses `while`
     suite = installments.build_suite()
-    with pytest.raises(RestrictedGrammarError):
+    with pytest.raises(DSLRejectionError):
         prepare(installments.UNBOUNDED_CODE, suite.tool_names(), suite.tool_signer())
 
 

@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from pauth.grammar_validator import (
-    RestrictedGrammarError,
+from pauth.dsl_validator import (
+    DSLRejectionError,
     parse_and_validate,
     strip_dead_code,
     validate_semantics,
@@ -39,27 +39,27 @@ def test_dunder_attribute_access_is_rejected():
         "    f = x.__getattr__\n"
         "    send(f)\n"
     )
-    with pytest.raises(RestrictedGrammarError):
+    with pytest.raises(DSLRejectionError):
         _prepare(code)
 
 
 def test_class_dunder_access_is_rejected():
     code = "def run():\n    x = get_val()\n    c = x.__class__\n    send(c)\n"
-    with pytest.raises(RestrictedGrammarError):
+    with pytest.raises(DSLRejectionError):
         _prepare(code)
 
 
 def test_shadowing_a_tool_name_is_rejected():
     # send = <callable> then send(...) would call an arbitrary callable.
     code = "def run():\n    x = get_val()\n    send = x\n    send(x)\n"
-    with pytest.raises(RestrictedGrammarError):
+    with pytest.raises(DSLRejectionError):
         _prepare(code)
 
 
 def test_keyword_args_on_tool_call_are_rejected():
     # kwargs escape the positional-only slicer + taint gate.
     code = "def run():\n    send_money(recipient=\"x\", amount=1)\n"
-    with pytest.raises(RestrictedGrammarError):
+    with pytest.raises(DSLRejectionError):
         _prepare(code)
 
 

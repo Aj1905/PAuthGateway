@@ -1,5 +1,5 @@
 """Axis B: which CONTROL-FLOW construct does each task's canonical trace need,
-and is it already in the grammar? Prioritises TCB-growing extensions by real data.
+and is it already in the DSL? Prioritises TCB-growing extensions by real data.
 
 Honest caveats (the ground truth is a TRACE, not code, so structure is inferred):
   * an unbounded loop cannot be seen in a finite trace -> undercounted here.

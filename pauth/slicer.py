@@ -63,7 +63,7 @@ def _statements_with_guards(
     enforcer already requires ALL guards to hold (``all(...)``), so a leaf under
     ``if C1: if C2:`` compiles to a rule requiring ``C1 and C2`` -- authorized
     only on its exact path, off-path (injected) values matching no rule (FN=0).
-    ``for`` stays top-level (grammar-enforced) and never nests with an ``if``.
+    ``for`` stays top-level (DSL-enforced) and never nests with an ``if``.
     """
     out: list[tuple[ast.stmt, list[ast.expr], list]] = []
 

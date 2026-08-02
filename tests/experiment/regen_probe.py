@@ -1,5 +1,5 @@
 """(A) Spot-regeneration probe: do the 10 loop-related G2 rejects become
-grammar-valid once the Planner prompt is synced with the extended grammar?
+DSL-valid once the Planner prompt is synced with the extended grammar?
 
 Regenerates each task fresh (no cache) with the synced SYSTEM_PROMPT, then checks
 whether the new plan passes parse_and_validate (G2). Prints old vs new verdict.
@@ -14,8 +14,8 @@ from agentdojo.task_suite.load_suites import get_suites
 
 from benchmarks.agentdojo_adapter import load_suite
 from gateway.planning.agentic_planner import generate_code_with_self_repair
-from pauth.grammar_validator import (
-    RestrictedGrammarError,
+from pauth.dsl_validator import (
+    DSLRejectionError,
     parse_and_validate,
     strip_dead_code,
     validate_semantics,
@@ -44,7 +44,7 @@ def _g2(code: str, tool_names: set[str]) -> str:
         func = strip_dead_code(func, tool_names)
         validate_semantics(func, tool_names)
         return "PASS"
-    except RestrictedGrammarError as e:
+    except DSLRejectionError as e:
         return f"REJECT: {str(e)[:45]}"
 
 

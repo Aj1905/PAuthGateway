@@ -1,6 +1,6 @@
-"""The ``sum`` reduction: deterministic aggregation inside the grammar.
+"""The ``sum`` reduction: deterministic aggregation inside the DSL.
 
-The point of doing the arithmetic in-grammar (instead of handing it to an
+The point of doing the arithmetic in-DSL (instead of handing it to an
 untrusted LLM) is that the enforcer RE-DERIVES the total from the signed
 collection. So:
 

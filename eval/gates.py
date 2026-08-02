@@ -43,7 +43,7 @@ from pauth.enforcer import Enforcer, check_injection
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing, flatten
 from pauth.evaluator import EXEC_HELPERS, wrap
-from pauth.grammar_validator import RestrictedGrammarError
+from pauth.dsl_validator import DSLRejectionError
 from pauth.structuring import structure
 from gateway.planning.prechecks import PrecheckPolicy
 from gateway.runtime.confirmation import control_operands, is_side_effecting
@@ -85,7 +85,7 @@ def _positional(fc, params) -> list:
 
 def gate1_expressible(ut, spec, params, docs=None) -> tuple[bool | None, str]:
     """True iff every CONTROL operand of a SIDE-EFFECTING call can be produced by
-    the grammar + its mechanisms. A control value is expressible when it is any of:
+    the DSL + its mechanisms. A control value is expressible when it is any of:
       * a prompt literal / a clean field of a prior tool result;
       * COMPUTED from available numbers (sum / diff / product / percentage -- the
         grammar has BinOp: rent = old + rise, VAT = paid * 0.195 + fee);
@@ -93,7 +93,7 @@ def gate1_expressible(ut, spec, params, docs=None) -> tuple[bool | None, str]:
       * LLM-EXTRACTABLE -- it appears in the reachable untrusted text, so an LLM
         extractor can pull it (a plain name the shape-keyed structurer cannot type).
     The last three carry taint, so the confirmation gate verifies them at runtime;
-    they are still EXPRESSIBLE (the whole point: push everything into the grammar,
+    they are still EXPRESSIBLE (the whole point: push everything into the DSL,
     using the gate). Non-control operands and reads need no provenance. This is a
     generous, mechanism-aware ceiling -- it measures 'can be written & gated', not
     'the Planner will compile it' nor 'auto-completes' (gated ones need a human)."""
@@ -346,7 +346,7 @@ def eval_suite(suite_name: str) -> list[GateRow]:
         try:
             prepared = prepare(code, tools, signer)
             g2 = "pass"
-        except RestrictedGrammarError:
+        except DSLRejectionError:
             excess, missing = _fidelity_control(
                 ut, spec, params, [], {n: s.doc for n, s in spec.tools.items()}
             )

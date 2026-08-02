@@ -12,7 +12,7 @@ content/control rule (S15): poisoned content reaches an already-approved
 destination, which is bounded. Only untrusted data reaching a CONTROL operand is
 gated.
 
-Taint is STATIC and provenance-based (S20). Because the restricted grammar has
+Taint is STATIC and provenance-based (S20). Because the DSL has
 single assignment, no loops, and explicit tool-result-to-variable dataflow, we
 can compute -- from the code plus per-tool trust labels -- which control
 operands derive from an untrusted source, regardless of any transformation on
@@ -456,7 +456,7 @@ def control_operands(
 
 # ---------------------------------------------------------------------------
 # Static provenance taint (S20): which control operands derive from an
-# untrusted source, computed from the restricted-grammar code + trust labels.
+# untrusted source, computed from the DSL code + trust labels.
 # ---------------------------------------------------------------------------
 
 def _run_function(code: str) -> ast.FunctionDef | None:

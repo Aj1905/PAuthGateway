@@ -1,11 +1,11 @@
 """Deterministic, taint-preserving structuring of unstructured tool returns.
 
 A read that returns free text (a bill, a landlord notice) hides values inside
-prose. The restricted grammar has no string ops, so the Planner cannot reference those
+prose. The DSL has no string ops, so the Planner cannot reference those
 values -- they are prose-locked (the dominant G1 expressibility failure). This
 layer runs a DETERMINISTIC, shape-keyed extractor over such text and exposes the
 values as typed FIELDS, so a plan could reference ``view.ibans[0]`` /
-``view.amounts[0]`` inside the grammar.
+``view.amounts[0]`` inside the DSL.
 
 Two properties make it safe to add without touching FN=0:
 

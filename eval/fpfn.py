@@ -32,7 +32,7 @@ from pauth import (
     Enforcer,
     EnvelopeStore,
     KeyRing,
-    RestrictedGrammarError,
+    DSLRejectionError,
     check_injection,
     execute_generated_code,
     prepare,
@@ -94,7 +94,7 @@ class TaskResult:
     tool_errors: list[str]
     n_injections: int
     fn_calls: list[str]
-    # Agentic-planner path only: the plan was grammar-valid but rejected at
+    # Agentic-planner path only: the plan was DSL-valid but rejected at
     # the plan layer (deterministic-precheck violation or empty/sentinel plan). For a
     # benign task this is an over-rejection, never an over-authorization.
     plan_denied: str | None = None
@@ -116,7 +116,7 @@ class TaskResult:
 def _runtime_probe(suite: SuiteSpec):
     """Build a dry-run executor for the agentic runtime-repair stage.
 
-    Executes grammar-valid code against a THROWAWAY mock env permissively (no
+    Executes DSL-valid code against a THROWAWAY mock env permissively (no
     enforcer) and returns the crash string, or None if it runs clean. This
     surfaces bad field / index / type access (e.g. subscripting a text-blob
     return, or ``datetime <= str``) so the self-repair loop can fix it -- or
@@ -164,7 +164,7 @@ def run_task(
     """Run the full the Planner -> the Rule compiler -> B pipeline for a single task.
 
     ``planner`` selects the Planner path: ``oneshot`` is the paper-faithful single
-    call; ``agentic`` uses the grammar/precheck/judge self-repair loop plus
+    call; ``agentic`` uses the DSL/precheck/judge self-repair loop plus
     the deterministic plan-layer gate (the free-form product pipeline).
     """
     cost = 0.0
@@ -208,8 +208,8 @@ def run_task(
     # ---- the Slicer / the Rule compiler: slices and rules ------------------------------------
     try:
         prepared = prepare(code, suite.tool_names(), suite.tool_signer())
-    except RestrictedGrammarError as exc:
-        res = _failed(suite, task, f"the Planner output violates restricted grammar: {exc}")
+    except DSLRejectionError as exc:
+        res = _failed(suite, task, f"the Planner output violates DSL: {exc}")
         res.cost_usd, res.prompt_tokens, res.completion_tokens, res.planner_cached = (
             cost, prompt_tokens, completion_tokens, cached,
         )

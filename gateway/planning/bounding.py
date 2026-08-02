@@ -3,7 +3,7 @@
 A task that needs ``while`` (an unbounded, data-dependent loop) is inexpressible:
 the enforcer cannot enumerate the authorised calls, so FN=0 cannot be proven.
 Rather than fail with a bare G1 error, we detect the wall BEFORE execution and
-ask the human for the bound -- the termination witness the grammar requires.
+ask the human for the bound -- the termination witness the DSL requires.
 
 The human's answer is TRUSTED (a human is the authority), so it is materialised
 as a signed, bounded collection and iterated with the EXISTING bounded-for. So

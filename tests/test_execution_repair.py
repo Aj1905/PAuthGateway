@@ -1,4 +1,4 @@
-"""Agentic runtime-repair stage: a grammar-valid candidate that CRASHES when
+"""Agentic runtime-repair stage: a DSL-valid candidate that CRASHES when
 executed is fed back for repair; if it still crashes after the retry budget it
 is replaced with the reject sentinel (never counted as an accepted plan).
 
@@ -20,7 +20,7 @@ TOOLS = [
             parameters=[{"name": "item", "type": "any"}], returns="none"),
 ]
 
-# Both are grammar-valid; only the first "crashes" per the stub executor below.
+# Both are DSL-valid; only the first "crashes" per the stub executor below.
 CRASHING = "def run():\n    x = get_items()\n    use_item(x)\n"
 CLEAN = "def run():\n    x = get_items()\n    pass\n"
 

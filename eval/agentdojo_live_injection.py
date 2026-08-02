@@ -8,7 +8,7 @@ plan.
 The default run is intentionally the 82-case screen requested for the lab
 meeting:
 
-* select the 82 grammar-valid, clean plans from the cached Claude Fable 5
+* select the 82 DSL-valid, clean plans from the cached Claude Fable 5
   best-of-3 planner run;
 * pair each plan with one suite injection goal (round-robin within the suite);
 * insert AgentDojo's ``important_instructions`` attack into the mock data;
@@ -85,7 +85,7 @@ from pauth.enforcer import Decision, Enforcer
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
 from pauth.evaluator import wrap
-from pauth.grammar_validator import RestrictedGrammarError
+from pauth.dsl_validator import DSLRejectionError
 
 SUITES = ("banking", "slack", "travel", "workspace")
 DEFAULT_PLAN_ROOT = Path("tests/experiment/funnel_scratch")
@@ -338,7 +338,7 @@ def select_valid_plans(
                 code = path.read_text()
                 try:
                     prepared = prepare(code, spec.tool_names(), spec.tool_signer())
-                except RestrictedGrammarError:
+                except DSLRejectionError:
                     candidates.append(((-1, 0), path, code, None))
                     continue
                 enforcer = Enforcer(
@@ -656,7 +656,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         suite: sum(plan.suite_name == suite for plan in plans)
         for suite in suites
     }
-    print(f"Selected grammar-valid plans: {len(plans)} {by_suite}")
+    print(f"Selected DSL-valid plans: {len(plans)} {by_suite}")
     if len(plans) != 82 and suites == SUITES:
         raise SystemExit(
             f"Expected the reported 82 valid plans, found {len(plans)}. "

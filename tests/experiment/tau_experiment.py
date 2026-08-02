@@ -3,7 +3,7 @@
 tau_retail has a different domain and tools, so a lift here (not just on AgentDojo)
 is evidence the intervention is a real capability gain, not overfitting. tau tasks
 have no utility(), but each carries a ground-truth reference trace, so we measure:
-  G2  -- regenerated plan is grammar-valid
+  G2  -- regenerated plan is DSL-valid
   FID -- the plan's permitted-call trace matches the reference trace (fidelity)
   GS  -- every forced injection is denied (FN=0)
 
@@ -24,7 +24,7 @@ from pauth import prepare
 from pauth.enforcer import Enforcer, check_injection
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar_validator import RestrictedGrammarError
+from pauth.dsl_validator import DSLRejectionError
 
 CACHE = Path("tests/experiment/cache/tau_retail")
 SCRATCH = Path("tests/experiment/tau_scratch")
@@ -33,7 +33,7 @@ SCRATCH = Path("tests/experiment/tau_scratch")
 def _trace(suite, code) -> list | None:
     try:
         prepared = prepare(code, suite.tool_names(), suite.tool_signer())
-    except RestrictedGrammarError:
+    except DSLRejectionError:
         return None
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
@@ -46,7 +46,7 @@ def _trace(suite, code) -> list | None:
 def _gs(suite, code, injections) -> bool:
     try:
         prepared = prepare(code, suite.tool_names(), suite.tool_signer())
-    except RestrictedGrammarError:
+    except DSLRejectionError:
         return True  # no plan -> nothing authorized -> trivially FN=0
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     execute_generated_code(prepared.source, enf, suite.tool_params(),
@@ -62,7 +62,7 @@ def _measure(suite, task, code, ref_trace) -> dict:
     try:
         prepare(code, suite.tool_names(), suite.tool_signer())
         out["g2"] = True
-    except RestrictedGrammarError:
+    except DSLRejectionError:
         out["gs"] = _gs(suite, code, task.forced_injections)
         return out
     tr = _trace(suite, code)

@@ -38,7 +38,7 @@ def _suite():
 def test_prose_value_becomes_expressible_via_structuring():
     suite = _suite()
     prepared = prepare(PLAN, suite.tool_names(), suite.tool_signer())
-    assert prepared.rules  # grammar-valid (was inexpressible without structuring)
+    assert prepared.rules  # DSL-valid (was inexpressible without structuring)
 
 
 def test_precheck_defers_the_structured_field_instead_of_rejecting():

@@ -1,11 +1,11 @@
-"""Decompose the 14% headless ceiling: among grammar-valid (G2-pass) cached
+"""Decompose the 14% headless ceiling: among DSL-valid (G2-pass) cached
 plans that FAIL G5, how many are
 
   HOLLOW  -- ground truth needs a side-effecting call but the plan issues NONE
              (the Planner dropped an un-expressible step; a grammar wall,
              regeneration cannot cross);
   WRONG   -- the plan DOES issue side-effecting calls but still fails G5
-             (wrong args / excess / deficiency; a correct grammar-valid plan may
+             (wrong args / excess / deficiency; a correct DSL-valid plan may
              exist, so REGENERATION could plausibly fix it);
   GT_READ -- ground truth has no side-effecting call (a pure query task).
 
@@ -26,7 +26,7 @@ from pauth import prepare
 from pauth.enforcer import Enforcer
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar_validator import RestrictedGrammarError
+from pauth.dsl_validator import DSLRejectionError
 from pathlib import Path
 
 CACHE = Path("tests/experiment/cache")
@@ -47,7 +47,7 @@ def main() -> None:
                 continue
             try:
                 prepared = prepare(p.read_text(), tools, signer)
-            except RestrictedGrammarError:
+            except DSLRejectionError:
                 continue
             g2 += 1
             env = spec.make_env()
@@ -78,7 +78,7 @@ def main() -> None:
             else:
                 tally["WRONG"].append(f"{s}/{tid}")
 
-    print(f"grammar-valid (G2) plans: {g2}")
+    print(f"DSL-valid (G2) plans: {g2}")
     print(f"reached G5 (success):     {g5}")
     print(f"failed G5:                {g2 - g5}\n")
     for k in ("HOLLOW", "WRONG", "GT_READ"):

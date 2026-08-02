@@ -37,7 +37,7 @@ from pauth import prepare
 from pauth.enforcer import Enforcer, check_injection
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar_validator import RestrictedGrammarError
+from pauth.dsl_validator import DSLRejectionError
 
 from eval.gates import (
     _control_trace_fidelity,
@@ -179,7 +179,7 @@ def _agentdojo_gate_footprint(interactive: bool = False) -> None:
                 continue
             try:
                 prepared = prepare(p.read_text(), spec.tool_names(), spec.tool_signer())
-            except RestrictedGrammarError:
+            except DSLRejectionError:
                 continue
             n += 1
             narrow = static_taint_map(p.read_text(), docs, SourceTrust.fail_closed())
@@ -266,7 +266,7 @@ def _authorize_footprint() -> None:
             for f in cands:
                 try:
                     prep = prepare(f.read_text(), suite.tool_names(), suite.tool_signer())
-                except RestrictedGrammarError:
+                except DSLRejectionError:
                     continue
                 enf = Enforcer(prep.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
                 rep = execute_generated_code(prep.source, enf, suite.tool_params(),
@@ -395,7 +395,7 @@ def _ref_trace(suite, code):
         return None
     try:
         prepared = prepare(code, suite.tool_names(), suite.tool_signer())
-    except RestrictedGrammarError:
+    except DSLRejectionError:
         return None
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
@@ -461,7 +461,7 @@ def measure(corpus: Corpus, task: Task, mode: str) -> dict[str, str]:
     try:
         prepared = prepare(task.plan_code, suite.tool_names(), suite.tool_signer())
         m[SYNTHESIS_POLICY_COMPILED] = "pass"
-    except RestrictedGrammarError:
+    except DSLRejectionError:
         m[SYNTHESIS_POLICY_COMPILED] = "fail"
         excess, missing = _reference_fidelity(corpus, task, [])
         _set_reference_fidelity(m, excess, missing)
@@ -524,7 +524,7 @@ def _crash_probe(suite):
     def probe(code: str):
         try:
             prepared = prepare(code, suite.tool_names(), suite.tool_signer())
-        except RestrictedGrammarError:
+        except DSLRejectionError:
             return None                     # grammar is a separate repair stage
         return _permissive_runtime_crash(suite, prepared.source)
     return probe
@@ -573,7 +573,7 @@ def _bestof_plan(suite, task, scratch_dir, n=None):
     def score(code):
         try:
             prepared = prepare(code, suite.tool_names(), suite.tool_signer())
-        except RestrictedGrammarError:
+        except DSLRejectionError:
             return (-1, 0)
         enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
         rep = execute_generated_code(prepared.source, enf, suite.tool_params(),

@@ -1,7 +1,7 @@
 """The dining suite -- a structured-native benchmark (Option B).
 
 Purpose. AgentDojo's travel tools return a bare ``str`` (a newline-joined blob),
-which the restricted grammar cannot destructure, so tasks like "book the
+which the DSL cannot destructure, so tasks like "book the
 highest-rated restaurant" fail at the Planner -- an artifact of AgentDojo's untyped return
 convention, not a limitation of PAuth. A real deployment connects tools via
 MCP / OpenAPI, whose response schemas are STRUCTURED (typed objects/lists). This

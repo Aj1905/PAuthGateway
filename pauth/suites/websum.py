@@ -1,17 +1,17 @@
-"""The websum suite -- an UNTRUSTED structured read + in-grammar aggregation.
+"""The websum suite -- an UNTRUSTED structured read + in-DSL aggregation.
 
 This is the worked end-to-end of the "structuring layer as a tool" design:
 
   view  = read_site(url)     # a gateway-provided tool: fetch untrusted text and
                              #   deterministically structure it (pauth.structuring)
-  amts  = view.amounts       # typed field -> referenceable in the grammar
+  amts  = view.amounts       # typed field -> referenceable in the DSL
   total = sum(amts)          # deterministic reduction, re-derived by the enforcer
   send_money(recipient, total, ...)   # a tainted control operand -> confirmation
 
 Three properties hold at once, and the suite exists to demonstrate all three:
 
 * EXPRESSIBILITY -- the prose-locked amounts become a clean list field, so the
-  restricted grammar (no string ops) can total them via ``sum``.
+  DSL (no string ops) can total them via ``sum``.
 * FN=0 BY CONSTRUCTION -- the enforcer re-derives ``sum(view.amounts)`` from the
   SIGNED ``read_site`` envelope; a fabricated total is off-slice and denied
   (forced_injections), not waved through by the human gate.
@@ -21,7 +21,7 @@ Three properties hold at once, and the suite exists to demonstrate all three:
   Typing the return like an API does NOT make the source trusted.
 
 ``read_site`` is a GATEWAY tool with a fixed deterministic body -- not a method
-the plan invents (the grammar forbids method calls). The LLM only calls it.
+the plan invents (the DSL forbids method calls). The LLM only calls it.
 """
 
 from __future__ import annotations

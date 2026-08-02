@@ -13,7 +13,7 @@ from pauth import prepare
 from pauth.enforcer import Enforcer, check_injection
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar_validator import RestrictedGrammarError
+from pauth.dsl_validator import DSLRejectionError
 from pauth.suites.shopping import build_suite
 
 _NESTED = '''def run():
@@ -70,7 +70,7 @@ def test_depth_cap_rejected():
             "            if c.price < 70.0:\n"
             "                if c.price < 50.0:\n"
             "                    add_to_cart(c.name, 1)\n")
-    with pytest.raises(RestrictedGrammarError):
+    with pytest.raises(DSLRejectionError):
         prepare(deep, s.tool_names(), s.tool_signer())
 
 
@@ -86,7 +86,7 @@ def test_nested_reassignment_rejected():
             "        if c.price < 50.0:\n"
             "            name = c.name\n"
             "    add_to_cart(name, 1)\n")
-    with pytest.raises(RestrictedGrammarError):
+    with pytest.raises(DSLRejectionError):
         prepare(code, s.tool_names(), s.tool_signer())
 
 
@@ -97,5 +97,5 @@ def test_for_inside_if_rejected():
             "    if products != None:\n"
             "        for p in products:\n"
             "            add_to_cart(p.name, 1)\n")
-    with pytest.raises(RestrictedGrammarError):
+    with pytest.raises(DSLRejectionError):
         prepare(code, s.tool_names(), s.tool_signer())

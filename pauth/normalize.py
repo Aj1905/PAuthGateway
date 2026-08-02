@@ -1,6 +1,6 @@
 """Semantics-preserving normalization applied before slicing (Tier-1).
 
-The restricted grammar rejects several constructs that are not *unsafe*, merely
+The DSL rejects several constructs that are not *unsafe*, merely
 outside the slicer's canonical form. Rejecting them lowers the Planner's acceptance rate
 without buying any security. This module rewrites such code into the canonical
 form the slicer already understands, **without changing what the code does** --

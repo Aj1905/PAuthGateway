@@ -11,8 +11,8 @@ import ast
 import dataclasses
 import hashlib
 
-from .grammar_validator import (
-    GRAMMAR_PROFILE_EXTENDED,
+from .dsl_validator import (
+    DSL_PROFILE_EXTENDED,
     parse_and_validate,
     strip_dead_code,
     validate_semantics,
@@ -145,27 +145,28 @@ def prepare(
     tool_names: set[str],
     tool_service: dict[str, str] | None = None,
     *,
-    grammar_profile: str = GRAMMAR_PROFILE_EXTENDED,
+    dsl_profile: str = DSL_PROFILE_EXTENDED,
 ) -> PreparedTask:
     """Run the Planner's output through validation (grammar), the Slicer (slices) and the Rule compiler (rules).
 
-    Raises :class:`pauth.grammar_validator.RestrictedGrammarError` if the code violates
-    the restricted grammar.
+    Raises :class:`pauth.dsl_validator.DSLRejectionError` if the code violates
+    the DSL.
 
-    ``grammar_profile`` selects the grammar version (experiment axis G):
-    ``"g2"`` (default, this repo's extended grammar) or ``"g1"`` (the paper's
-    Appendix A DSL as published). Under ``"g1"`` the Tier-1 normalization is
-    also skipped, since it widens the acceptance surface beyond the paper.
+    ``dsl_profile`` selects the DSL version (experiment axis G):
+    ``"g2"`` (default, this repo's extended DSL) or ``"g1"`` (the operational
+    Appendix A baseline defined in ``docs/SYSTEM_MODEL.md``). Under ``"g1"``
+    the Tier-1 normalization is also skipped because it widens the acceptance
+    surface beyond that baseline.
     """
-    func = parse_and_validate(code, profile=grammar_profile)
+    func = parse_and_validate(code, profile=dsl_profile)
     func = strip_dead_code(func, tool_names)
-    if grammar_profile == GRAMMAR_PROFILE_EXTENDED:
+    if dsl_profile == DSL_PROFILE_EXTENDED:
         # Tier-1 semantics-preserving normalization: rewrite reject-but-safe
         # forms (call-as-argument, straight-line reassignment) into the
         # slicer's canonical form. Does not change behavior, so the
         # deterministic core is untouched.
         func = normalize_run(func)
-    validate_semantics(func, tool_names)
+    validate_semantics(func, tool_names, profile=dsl_profile)
     slices = derive_slices(func, tool_names)
     rules = compile_rules(slices, tool_service)
     cleaned = ast.unparse(ast.Module(body=[func], type_ignores=[]))
@@ -173,7 +174,7 @@ def prepare(
     # normalized program and its digest are intentionally insensitive to the
     # model's blank lines/indent trivia; retaining pre-normalization ``lineno``
     # values here would make two identical contracts hash/display differently.
-    contract_func = parse_and_validate(cleaned)
+    contract_func = parse_and_validate(cleaned, profile=dsl_profile)
     contract_slices = derive_slices(contract_func, tool_names)
     execution_plan = _build_execution_plan(cleaned, contract_slices, tool_names)
     return PreparedTask(

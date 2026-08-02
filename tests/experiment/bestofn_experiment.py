@@ -1,5 +1,5 @@
 """E3: best-of-N sampling (search, not prompt-tuning). Generate N candidates per
-task; SELECT the first that is grammar-valid AND runs clean (no crash/deny) -- a
+task; SELECT the first that is DSL-valid AND runs clean (no crash/deny) -- a
 deployment-available criterion, no ground truth. Measures whether a search-based
 lift generalizes across frameworks where prompt-tuning did not.
 
@@ -23,7 +23,7 @@ from pauth import prepare
 from pauth.enforcer import Enforcer, check_injection
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar_validator import RestrictedGrammarError
+from pauth.dsl_validator import DSLRejectionError
 
 SCRATCH = Path("tests/experiment/bestofn_scratch")
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 3
@@ -32,7 +32,7 @@ N = int(sys.argv[1]) if len(sys.argv) > 1 else 3
 def _runs_clean(suite, code) -> bool:
     try:
         prepared = prepare(code, suite.tool_names(), suite.tool_signer())
-    except RestrictedGrammarError:
+    except DSLRejectionError:
         return False
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
@@ -45,11 +45,11 @@ def _select(suite, cands: list[str]) -> str:
     for c in cands:
         try:
             prepare(c, suite.tool_names(), suite.tool_signer())
-        except RestrictedGrammarError:
+        except DSLRejectionError:
             continue
         valid.append(c)
         if _runs_clean(suite, c):
-            return c            # first grammar-valid that runs clean
+            return c            # first DSL-valid that runs clean
     return valid[0] if valid else cands[0]
 
 
@@ -72,7 +72,7 @@ def _candidates(suite, prompt, key) -> list[str]:
 def _g2gs(suite, code, injections):
     try:
         prepared = prepare(code, suite.tool_names(), suite.tool_signer())
-    except RestrictedGrammarError:
+    except DSLRejectionError:
         return False, True
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     execute_generated_code(prepared.source, enf, suite.tool_params(),

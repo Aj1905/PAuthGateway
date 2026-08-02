@@ -38,7 +38,7 @@ class _MergedEnv:
 def namespaced_tool(source: str, tool: str) -> str:
     """Identifier-safe namespaced tool name (``<suite>__<tool>``, D2).
 
-    The paper notation is ``<suite>:<tool>``, but the restricted grammar calls
+    The paper notation is ``<suite>:<tool>``, but the DSL calls
     tools as Python identifiers, so ``:`` is not usable -- ``__`` is.
     """
     return f"{source}__{tool}"
@@ -73,7 +73,7 @@ def merge_suites(
                     f"{prev!r} and {source_name!r}; rename one or set namespace=True"
                 )
             if namespace:
-                # Rename the tool identifier the grammar/enforcer/the Planner see.
+                # Rename the tool identifier the DSL/enforcer/the Planner see.
                 spec = dataclasses.replace(
                     spec, name=merged_name,
                     doc=dataclasses.replace(spec.doc, name=merged_name),

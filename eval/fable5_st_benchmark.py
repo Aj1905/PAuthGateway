@@ -111,7 +111,7 @@ complete replacement `run` function that both:
 2. removes every tool call or authority that the task does not justify.
 
 Unlike a delete-only audit, you may add, remove, or rewrite code. Obey the
-restricted grammar in the main system prompt. Do not discuss the draft.
+DSL in the main system prompt. Do not discuss the draft.
 Output only the complete replacement code, without markdown fences.
 """
 

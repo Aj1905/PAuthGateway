@@ -1,16 +1,16 @@
-"""Agentic the Planner: restricted-grammar code generation with grammar + semantic self-repair.
+"""Agentic the Planner: DSL code generation with grammar + semantic self-repair.
 
 The paper's the Planner step is one-shot. Free-form measurement showed:
 
 * 5/7 first-try failures were nested-if violations (Appendix A rule 10) --
   the LLM "knows" the rule but writes defensive Python anyway.
 * Grammar-valid outputs sometimes silently drop part of the user's intent
-  to satisfy the restricted grammar (call interception / two_products / post_action).
+  to satisfy the DSL (call interception / two_products / post_action).
 
 This module adds a two-stage validator inside a feedback loop (grammar repair + semantic judge):
 
   1. Generate code.
-  2. **Grammar check** -- ``pauth.grammar_validator.parse_and_validate``. On failure,
+  2. **Grammar check** -- ``pauth.dsl_validator.parse_and_validate``. On failure,
      feed the violation + "you MUST obey rule X" back to the LLM and retry.
   3. **Semantic check** -- ``_judge_intent``: a separate LLM call asks
      whether the code captures the user's intent (coverage / conditions /
@@ -44,8 +44,8 @@ from pauth.codegen import (
     build_user_prompt,
     has_api_key,
 )
-from pauth.grammar_validator import (
-    RestrictedGrammarError,
+from pauth.dsl_validator import (
+    DSLRejectionError,
     parse_and_validate,
     strip_dead_code,
     validate_semantics,
@@ -135,7 +135,7 @@ Output ONLY the corrected code, with no explanation and no markdown fences.
 def _rule_reminder(error_message: str) -> str:
     """Extract a focused reminder for the violated rule.
 
-    The error messages from ``pauth.grammar_validator`` include a rule tag like
+    The error messages from ``pauth.dsl_validator`` include a rule tag like
     "(rule 10)" or a free-form reason. We surface the strongest applicable
     rule restatement so the LLM cannot claim it did not know.
     """
@@ -558,7 +558,7 @@ def generate_code_with_self_repair(
     initial_system_prompt: str | None = None,
     initial_user_prompt: str | None = None,
 ) -> AgenticCodegenResult:
-    """Generate restricted-grammar code with grammar + semantic self-repair.
+    """Generate DSL code with grammar + semantic self-repair.
 
     ``max_retries`` bounds the number of repair turns; total LLM rounds are
     ``1 + max_retries`` in the worst case. Each round runs two checks in
@@ -571,7 +571,7 @@ def generate_code_with_self_repair(
 
     ``executor`` is an optional ``Callable[[str], str | None]`` that dry-runs the
     candidate code and returns a crash string (or None if it runs clean). When
-    supplied, a grammar-valid candidate that crashes at runtime is fed back for
+    supplied, a DSL-valid candidate that crashes at runtime is fed back for
     repair; if it still crashes after ``max_retries`` it is replaced with the
     reject sentinel. Benchmark callers pass a mock-env probe; live deployments
     that lack a safe sim env leave it None.
@@ -624,7 +624,7 @@ def generate_code_with_self_repair(
             func = parse_and_validate(code)
             func = strip_dead_code(func, tool_names)
             validate_semantics(func, tool_names)
-        except RestrictedGrammarError as exc:
+        except DSLRejectionError as exc:
             failure_history.append(f"grammar: {exc}")
             if attempt > max_retries:
                 break
@@ -658,7 +658,7 @@ def generate_code_with_self_repair(
             )
             continue
 
-        # Stage 1.75: runtime probe. Execute the grammar-valid code against a
+        # Stage 1.75: runtime probe. Execute the DSL-valid code against a
         # throwaway mock environment to catch crashes (bad field / index / type
         # access) that static checks cannot see -- e.g. subscripting a text-blob
         # return, or comparing a datetime field to a string. Runs only when the
@@ -744,7 +744,7 @@ def generate_code_with_self_repair(
 
     # Retry budget exhausted -- last attempt failed grammar, precheck, or
     # intent. Downstream ``pauth.prepare`` rejects on grammar; a precheck- or
-    # intent-only failure at the final round yields grammar-valid but unsafe
+    # intent-only failure at the final round yields DSL-valid but unsafe
     # code, so we deliberately replace it with the explicit "do nothing"
     # sentinel that the gateway will reject by default-deny. This stops the
     # over-authorization accept where the gateway took a plan the validators

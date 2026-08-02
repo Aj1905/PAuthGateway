@@ -10,7 +10,7 @@ from pauth import prepare
 from pauth.enforcer import Enforcer, check_injection
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar_validator import RestrictedGrammarError
+from pauth.dsl_validator import DSLRejectionError
 from eval.toolcall_eval import ATTACKER_IBAN, _loader
 
 _MERGE = '''def run():
@@ -83,9 +83,9 @@ def test_unsound_reassignment_shapes_still_rejected():
     tools, signer = suite.tool_names(), suite.tool_signer()
     # non-constant default -> rejected (needs path-merge we don't have)
     bad1 = 'def run():\n    m = read_message()\n    r = m.iban\n    if m.amount > 0.0:\n        r = m.text\n    send_money(r, 1.0, "x", "2024-01-01")\n'
-    with pytest.raises(RestrictedGrammarError):
+    with pytest.raises(DSLRejectionError):
         prepare(bad1, tools, signer)
     # two conditional sets -> 3 defs -> rejected
     bad2 = 'def run():\n    m = read_message()\n    r = "GB33BUKB20201555555555"\n    if m.amount > 0.0:\n        r = m.iban\n    if m.amount > 5.0:\n        r = m.text\n    send_money(r, 1.0, "x", "2024-01-01")\n'
-    with pytest.raises(RestrictedGrammarError):
+    with pytest.raises(DSLRejectionError):
         prepare(bad2, tools, signer)

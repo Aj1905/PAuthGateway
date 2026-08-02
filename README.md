@@ -228,16 +228,16 @@ cp .env.example .env   # write OPENAI_API_KEY, then:
 
 ```
 pauth/              PAuth core (framework-independent, mostly deterministic)
-  grammar_validator.py  restricted-grammar parser / validator (G1 = paper Appendix A, G2 = extended default)
+  dsl_validator.py  DSL parser / validator (G1 = paper Appendix A, G2 = extended default)
   normalize.py          Tier-1 semantics-preserving normalization (G2 only)
-  codegen.py            Planner: restricted-grammar code generation (OpenAI)
+  codegen.py            Planner: DSL code generation (OpenAI)
   slicer.py             Slicer: per-call slice derivation
   rule_compiler.py      Rule compiler: Algorithm 1
   evaluator.py          deterministic evaluator for slice expressions
   enforcer.py           Enforcer: runtime authorization
   tool_executor.py      sandboxed plan executor + per-call dispatch
   envelope.py           signed-envelope structure, HMAC signing, store
-  pipeline.py           GrammarValidator → Slicer → Rule compiler wiring
+  pipeline.py           DSLValidator → Slicer → Rule compiler wiring
   suites/shopping.py    the paper's self-contained Shopping suite
 gateway/
   serving/http_server.py       local HTTP daemon
@@ -283,7 +283,7 @@ docs/
 | ルールコンパイル(Algorithm 1、決定的) | Rule compiler — `pauth/rule_compiler.py` |
 | 署名付き envelope(3.4 節 / 図 3) | `pauth/envelope.py` |
 | 実行時執行(4.1.3 節、決定的) | Enforcer — `pauth/enforcer.py` |
-| 制限文法(BNF、Appendix A) | `pauth/grammar_validator.py` |
+| DSL(BNF、Appendix A) | `pauth/dsl_validator.py` |
 | AgentDojo 実装(4.1 節) | `benchmarks/agentdojo_adapter.py` |
 | 強制注入(5.1 節) | `benchmarks/forced_injection.py` |
 | FP/FN 評価(5.2 節、Table 2) | `eval/fpfn.py` |

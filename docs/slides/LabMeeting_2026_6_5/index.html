@@ -864,7 +864,7 @@
   <div class="grid-2">
     <div class="card">
       <h3>Plan-time (once, at task start)</h3>
-      <p><strong>Step 1</strong> &mdash; LLM turns the user&rsquo;s prompt into restricted-grammar imperative code.</p>
+      <p><strong>Step 1</strong> &mdash; LLM turns the user&rsquo;s prompt into DSL imperative code.</p>
       <p><strong>Step 2</strong> &mdash; the code is sliced into <strong>NL slices</strong>: one symbolic spec per outward call.</p>
       <p><strong>Step 3</strong> &mdash; slices are compiled into deterministic rules.</p>
     </div>
@@ -1099,7 +1099,7 @@
     <div class="theorem-label">Assumed</div>
     <ol class="theorem-list">
       <li>The prompt entered through the agent&rsquo;s UI is trusted.</li>
-      <li>That prompt is correctly translated into restricted-grammar imperative code (Step 1).</li>
+      <li>That prompt is correctly translated into DSL imperative code (Step 1).</li>
     </ol>
   </div>
   <div class="theorem-block">
@@ -1209,7 +1209,7 @@
   <div class="chapter">PAuth &middot; Approach 1 / 2</div>
   <h2>1. Specialize the LLM.</h2>
   <p class="lead">
-    Train or fine-tune a model whose <span class="strong">only job</span> is to read a natural-language prompt and emit imperative code in the restricted grammar &mdash; nothing else.
+    Train or fine-tune a model whose <span class="strong">only job</span> is to read a natural-language prompt and emit imperative code in the DSL &mdash; nothing else.
   </p>
   <div class="grid-2">
     <div class="card">
@@ -1218,7 +1218,7 @@
     </div>
     <div class="card">
       <h3>What it needs</h3>
-      <p>Enough labeled (prompt → restricted-grammar code) pairs for fine-tuning, and a clear distribution of intents that production tasks actually fall within.</p>
+      <p>Enough labeled (prompt → DSL code) pairs for fine-tuning, and a clear distribution of intents that production tasks actually fall within.</p>
     </div>
   </div>
 </section>

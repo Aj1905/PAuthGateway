@@ -1,17 +1,17 @@
-"""GrammarValidator -- restricted-grammar parser and validator (paper Appendix A).
+"""DSLValidator -- DSL parser and validator (paper Appendix A).
 
 The Planner step asks an LLM to generate a ``run`` function in a restrictive subset
 of Python.  Before any slice is derived we
 
-1. parse the code and reject anything outside the grammar's *syntax*
+1. parse the code and reject anything outside the DSL's *syntax*
    (:func:`parse_and_validate`);
 2. remove dead / unreachable statements (:func:`strip_dead_code`);
-3. reject anything that violates the grammar's *semantics* -- calls to
+3. reject anything that violates the DSL's *semantics* -- calls to
    non-tools, method calls, nested tool calls, ill-formed helper calls
    (:func:`validate_semantics`).
 
 Paper sec. 4.1.1: "The code is parsed and checked for any syntax or semantic
-errors and for any violation of our restrictive grammar."  Code that fails any
+errors and for any violation of our DSL."  Code that fails any
 check is rejected at the Planner and never reaches the enforcer -- so an LLM that emits,
 e.g., ``item.subject.lower()`` (no method-call production exists in the BNF)
 produces an *the Planner failure*, never a false positive.
@@ -24,8 +24,8 @@ import ast
 from .symbolic import HELPERS, call_name
 
 
-class RestrictedGrammarError(Exception):
-    """Raised when generated code violates the PAuth restricted grammar."""
+class DSLRejectionError(Exception):
+    """Raised when generated code violates the PAuth DSL."""
 
 
 # AST node types permitted inside a slice (Appendix A, Production Rules).
@@ -90,12 +90,12 @@ _FORBIDDEN = {
     ast.SetComp: "comprehensions contain implicit loops (rule 2a1)",
     ast.DictComp: "comprehensions contain implicit loops (rule 2a1)",
     ast.GeneratorExp: "generator expressions contain implicit loops (rule 2a1)",
-    ast.IfExp: "conditional (ternary) expressions are not in the grammar",
+    ast.IfExp: "conditional (ternary) expressions are not in the DSL",
     ast.Try: "exception handling is forbidden (rule 1)",
     ast.With: "with-statements are forbidden",
     ast.ClassDef: "class definitions are forbidden",
     ast.JoinedStr: "f-strings are forbidden (rule 1)",
-    ast.Set: "set literals are not in the grammar",
+    ast.Set: "set literals are not in the DSL",
     ast.Global: "global statements are forbidden",
     ast.Nonlocal: "nonlocal statements are forbidden",
     ast.Yield: "yield is forbidden",
@@ -105,65 +105,66 @@ _FORBIDDEN = {
 # construction the enforcer re-derives (like a list); taint propagates through it.
 
 
-# Grammar profiles (the experiment axis G in docs/SYSTEM_MODEL.md):
-#   G1 = the paper's Appendix A DSL as published: flat if only, no else/elif,
-#        no for-loops, no comprehensions, no dict literals, strict single
-#        assignment per name. (The underscore/dunder-attribute ban is kept in
-#        both profiles: it is a sandbox-security fix that does not change the
-#        acceptance of any legitimate paper program.)
+# DSL profiles (the experiment axis G in docs/SYSTEM_MODEL.md):
+#   G1 = the operational Appendix A baseline defined in docs/SYSTEM_MODEL.md:
+#        flat if only, the five paper helpers with pure one-argument lambdas,
+#        no for-loops, comprehensions, dict literals, or sum, and strict single
+#        assignment per name. Appendix A's internally inconsistent examples do
+#        not widen the profile. (The underscore/dunder-attribute ban is kept in
+#        both profiles as a shared sandbox-security fix.)
 #   G2 = this repo's extended grammar (default): everything G1 accepts, plus
 #        else/elif, nested if up to depth 3, bounded (nested) for, dict
 #        literals, single-generator comprehensions, and the two blessed
 #        assignment merges in validate_semantics.
-GRAMMAR_PROFILE_PAPER = "g1"
-GRAMMAR_PROFILE_EXTENDED = "g2"
+DSL_PROFILE_PAPER = "g1"
+DSL_PROFILE_EXTENDED = "g2"
 
 
 def parse_and_validate(
-    code: str, *, profile: str = GRAMMAR_PROFILE_EXTENDED
+    code: str, *, profile: str = DSL_PROFILE_EXTENDED
 ) -> ast.FunctionDef:
-    """Parse ``code`` and check its *syntax* against the restricted grammar.
+    """Parse ``code`` and check its *syntax* against the DSL.
 
     Returns the validated ``run`` function definition.  Semantic checks (which
     calls are allowed) happen later, in :func:`validate_semantics`, after dead
     code is stripped.
 
-    ``profile`` selects the grammar version: :data:`GRAMMAR_PROFILE_EXTENDED`
-    (default, this repo's grammar) or :data:`GRAMMAR_PROFILE_PAPER` (the
-    paper's Appendix A DSL as published).
+    ``profile`` selects the DSL version: :data:`DSL_PROFILE_EXTENDED`
+    (default, this repo's grammar) or :data:`DSL_PROFILE_PAPER` (the
+    operational Appendix A baseline defined in ``docs/SYSTEM_MODEL.md``).
     """
-    if profile not in (GRAMMAR_PROFILE_PAPER, GRAMMAR_PROFILE_EXTENDED):
-        raise ValueError(f"unknown grammar profile {profile!r}")
+    if profile not in (DSL_PROFILE_PAPER, DSL_PROFILE_EXTENDED):
+        raise ValueError(f"unknown DSL profile {profile!r}")
     try:
         tree = ast.parse(code)
     except SyntaxError as exc:  # noqa: BLE001
-        raise RestrictedGrammarError(f"syntax error: {exc}") from exc
+        raise DSLRejectionError(f"syntax error: {exc}") from exc
 
     body = [s for s in tree.body if not _is_docstring(s)]
     if len(body) != 1 or not isinstance(body[0], ast.FunctionDef):
-        raise RestrictedGrammarError(
+        raise DSLRejectionError(
             "module must contain exactly one function definition"
         )
     func = body[0]
     if func.name != "run":
-        raise RestrictedGrammarError(f"function must be named 'run', got '{func.name}'")
+        raise DSLRejectionError(f"function must be named 'run', got '{func.name}'")
 
     for node in ast.walk(func):
         for forbidden, reason in _FORBIDDEN.items():
             if isinstance(node, forbidden):
-                raise RestrictedGrammarError(reason)
+                raise DSLRejectionError(reason)
         if not isinstance(node, _ALLOWED):
-            raise RestrictedGrammarError(
+            raise DSLRejectionError(
                 f"disallowed construct: {type(node).__name__}"
             )
         if isinstance(node, ast.FunctionDef) and node is not func:
-            raise RestrictedGrammarError("nested function definitions are forbidden")
+            raise DSLRejectionError("nested function definitions are forbidden")
         # Dunder / private attribute access is a sandbox-escape primitive: from
         # any wrapped value, ``x.__getattr__.__globals__['__builtins__']`` reaches
         # the real builtins even under exec with __builtins__={}. Business field
         # paths never start with an underscore, so ban it outright.
         if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
-            raise RestrictedGrammarError(
+            raise DSLRejectionError(
                 f"attribute '{node.attr}' is not allowed (underscore/dunder access)"
             )
 
@@ -171,7 +172,7 @@ def parse_and_validate(
     _check_bounded_for(func)
     _check_comprehensions(func)
     _check_lambdas(func)
-    if profile == GRAMMAR_PROFILE_PAPER:
+    if profile == DSL_PROFILE_PAPER:
         _check_paper_profile(func)
     return func
 
@@ -181,22 +182,21 @@ def _check_paper_profile(func: ast.FunctionDef) -> None:
     _PAPER_FORBIDDEN: dict[type, str] = {
         ast.For: "for-loops are forbidden (rule 2a) [G1]",
         ast.ListComp: "comprehensions contain implicit loops (rule 2a1) [G1]",
-        ast.Lambda: "lambdas are not in the grammar [G1]",
-        ast.Dict: "dict literals are not in the grammar [G1]",
+        ast.Dict: "dict literals are not in the DSL [G1]",
     }
     for node in ast.walk(func):
         for forbidden, reason in _PAPER_FORBIDDEN.items():
             if isinstance(node, forbidden):
-                raise RestrictedGrammarError(reason)
+                raise DSLRejectionError(reason)
     for stmt in func.body:
         if isinstance(stmt, ast.If):
             if stmt.orelse:
-                raise RestrictedGrammarError(
+                raise DSLRejectionError(
                     "else / elif blocks are forbidden (rule 10) [G1]"
                 )
             for inner in stmt.body:
                 if isinstance(inner, ast.If):
-                    raise RestrictedGrammarError(
+                    raise DSLRejectionError(
                         "nested if statements are forbidden (rule 10) [G1]"
                     )
     assigned: dict[str, int] = {}
@@ -207,7 +207,7 @@ def _check_paper_profile(func: ast.FunctionDef) -> None:
                     assigned[target.id] = assigned.get(target.id, 0) + 1
     reassigned = sorted(name for name, count in assigned.items() if count > 1)
     if reassigned:
-        raise RestrictedGrammarError(
+        raise DSLRejectionError(
             "variables are re-assigned (rules 14a/14f) [G1]: "
             + ", ".join(reassigned)
         )
@@ -236,7 +236,7 @@ def _check_no_nested_if(func: ast.FunctionDef) -> None:
         for stmt in stmts:
             if isinstance(stmt, ast.If):
                 if depth + 1 > _MAX_IF_DEPTH:
-                    raise RestrictedGrammarError(
+                    raise DSLRejectionError(
                         f"if-nesting deeper than {_MAX_IF_DEPTH} is forbidden (rule 10)"
                     )
                 walk(stmt.body, depth + 1)
@@ -260,30 +260,41 @@ def _check_bounded_for(func: ast.FunctionDef) -> None:
     assigned = {t.id for n in ast.walk(func) if isinstance(n, ast.Assign)
                 for t in n.targets if isinstance(t, ast.Name)}
 
-    def _iter_ok(it: ast.expr) -> bool:
+    def _iter_root(it: ast.expr) -> str | None:
         while isinstance(it, (ast.Attribute, ast.Subscript)):
             it = it.value
-        return isinstance(it, ast.Name)
+        return it.id if isinstance(it, ast.Name) else None
 
-    def _check_for(stmt: ast.For) -> None:
+    def _check_for(
+        stmt: ast.For,
+        prior_bindings: set[str],
+        outer_loop_vars: set[str],
+    ) -> None:
         if not isinstance(stmt.target, ast.Name):
-            raise RestrictedGrammarError("for-loop target must be a single variable (rule 2a)")
+            raise DSLRejectionError("for-loop target must be a single variable (rule 2a)")
         if stmt.target.id in assigned:
-            raise RestrictedGrammarError(f"for-loop variable '{stmt.target.id}' shadows an assignment")
-        if not _iter_ok(stmt.iter):
-            raise RestrictedGrammarError(
+            raise DSLRejectionError(f"for-loop variable '{stmt.target.id}' shadows an assignment")
+        root = _iter_root(stmt.iter)
+        if root is None:
+            raise DSLRejectionError(
                 "for-loop must iterate a bound collection variable or a field of one, "
                 "e.g. `for x in items:` or `for i in order.items:` (rule 2a)"
             )
+        if root not in prior_bindings and root not in outer_loop_vars:
+            raise DSLRejectionError(
+                "for-loop collection must come from an earlier top-level assignment "
+                "or a field of an outer loop variable (rule 2a)"
+            )
         if stmt.orelse:
-            raise RestrictedGrammarError("for-else is forbidden")
+            raise DSLRejectionError("for-else is forbidden")
+        nested_vars = outer_loop_vars | {stmt.target.id}
         for inner in stmt.body:
             if isinstance(inner, ast.Pass):
                 continue
             if isinstance(inner, ast.For):
-                _check_for(inner)  # nested loop
+                _check_for(inner, prior_bindings, nested_vars)
             elif not (isinstance(inner, ast.Expr) and isinstance(inner.value, ast.Call)):
-                raise RestrictedGrammarError(
+                raise DSLRejectionError(
                     "a for-body may contain only tool-call statements or nested "
                     "for-loops (no assignments or ifs)"
                 )
@@ -292,14 +303,19 @@ def _check_bounded_for(func: ast.FunctionDef) -> None:
         for s in stmts:
             if isinstance(s, ast.If):
                 if any(isinstance(n, ast.For) for n in ast.walk(s)):
-                    raise RestrictedGrammarError("for-loops may not appear inside an if body")
+                    raise DSLRejectionError("for-loops may not appear inside an if body")
             elif isinstance(s, ast.For):
                 _no_for_in_if(s.body)
 
     _no_for_in_if(func.body)
+    prior_bindings: set[str] = set()
     for stmt in func.body:
         if isinstance(stmt, ast.For):
-            _check_for(stmt)
+            _check_for(stmt, prior_bindings, set())
+        elif isinstance(stmt, ast.Assign):
+            prior_bindings.update(
+                target.id for target in stmt.targets if isinstance(target, ast.Name)
+            )
 
 
 def _check_comprehensions(func: ast.FunctionDef) -> None:
@@ -312,22 +328,22 @@ def _check_comprehensions(func: ast.FunctionDef) -> None:
         if not isinstance(comp, ast.ListComp):
             continue
         if len(comp.generators) != 1:
-            raise RestrictedGrammarError("only single-generator comprehensions are allowed")
+            raise DSLRejectionError("only single-generator comprehensions are allowed")
         gen = comp.generators[0]
         if getattr(gen, "is_async", 0):
-            raise RestrictedGrammarError("async comprehensions are forbidden")
+            raise DSLRejectionError("async comprehensions are forbidden")
         if not isinstance(gen.target, ast.Name):
-            raise RestrictedGrammarError("comprehension target must be a single variable")
+            raise DSLRejectionError("comprehension target must be a single variable")
         it = gen.iter
         while isinstance(it, (ast.Attribute, ast.Subscript)):
             it = it.value
         if not isinstance(it, ast.Name):
-            raise RestrictedGrammarError(
+            raise DSLRejectionError(
                 "comprehension must iterate a bound collection variable or a field of one"
             )
         for inner in ast.walk(comp.elt):
             if isinstance(inner, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
-                raise RestrictedGrammarError("nested comprehensions are forbidden")
+                raise DSLRejectionError("nested comprehensions are forbidden")
 
 
 def _check_lambdas(func: ast.FunctionDef) -> None:
@@ -340,9 +356,24 @@ def _check_lambdas(func: ast.FunctionDef) -> None:
                 if isinstance(kw.value, ast.Lambda):
                     lambda_nodes.add(id(kw.value))
     for node in ast.walk(func):
-        if isinstance(node, ast.Lambda) and id(node) not in lambda_nodes:
-            raise RestrictedGrammarError(
+        if not isinstance(node, ast.Lambda):
+            continue
+        if id(node) not in lambda_nodes:
+            raise DSLRejectionError(
                 "lambdas are only allowed as key=/predicate= of helper calls"
+            )
+        args = node.args
+        if (
+            len(args.args) != 1
+            or args.posonlyargs
+            or args.vararg is not None
+            or args.kwonlyargs
+            or args.kwarg is not None
+            or args.defaults
+            or args.kw_defaults
+        ):
+            raise DSLRejectionError(
+                "helper lambdas must take exactly one positional argument"
             )
 
 
@@ -380,8 +411,13 @@ def strip_dead_code(func: ast.FunctionDef, tool_names: set[str]) -> ast.Function
     return func
 
 
-def validate_semantics(func: ast.FunctionDef, tool_names: set[str]) -> None:
-    """Check the *semantic* rules of the grammar after dead-code removal.
+def validate_semantics(
+    func: ast.FunctionDef,
+    tool_names: set[str],
+    *,
+    profile: str = DSL_PROFILE_EXTENDED,
+) -> None:
+    """Check the *semantic* rules of the DSL after dead-code removal.
 
     Enforces, faithfully to Appendix A's BNF and rules:
 
@@ -480,53 +516,88 @@ def validate_semantics(func: ast.FunctionDef, tool_names: set[str]) -> None:
         if not (const_default or ifelse_merge):
             reassigned.append(name)
     if reassigned:
-        raise RestrictedGrammarError(
+        raise DSLRejectionError(
             f"variable(s) {sorted(reassigned)} assigned more than once; each variable "
             "must have a single definition (rules 14a/14f: no scoped assignments)"
         )
 
     # A tool/helper name must always resolve to the enforcer wrapper. Allowing an
-    # assignment to shadow one (``send = something``) lets grammar-valid code call
+    # assignment to shadow one (``send = something``) lets DSL-valid code call
     # an arbitrary callable through a name the call-target check accepts -- the
     # second half of the sandbox escape. Forbid shadowing outright.
     shadowed = sorted(names & (tool_names | HELPERS))
     if shadowed:
-        raise RestrictedGrammarError(
+        raise DSLRejectionError(
             f"name(s) {shadowed} shadow a tool/helper; tool and helper names "
             "cannot be reassigned"
         )
+
+    if profile not in (DSL_PROFILE_PAPER, DSL_PROFILE_EXTENDED):
+        raise ValueError(f"unknown DSL profile {profile!r}")
+
+    def _check_helper_shape(node: ast.Call, name: str) -> None:
+        if len(node.args) != 1 or not isinstance(node.args[0], ast.Name):
+            raise DSLRejectionError(
+                f"helper '{name}' must take exactly one bare variable as its "
+                "positional argument (rule 2b3 / <HelperCall>)"
+            )
+        keywords = {kw.arg: kw.value for kw in node.keywords if kw.arg is not None}
+        if len(keywords) != len(node.keywords):
+            raise DSLRejectionError(f"helper '{name}' does not allow **kwargs")
+        if name == "len":
+            expected: set[str] = set()
+        elif name in {"min", "max"}:
+            expected = {"key"}
+        elif name in {"first", "last"}:
+            expected = {"predicate"}
+        else:  # G2-only sum(): projection is optional.
+            expected = set() if not keywords else {"key"}
+        if set(keywords) != expected or any(
+            not isinstance(value, ast.Lambda) for value in keywords.values()
+        ):
+            rendered = {
+                "len": "len(values)",
+                "min": "min(values, key=lambda value: ...)",
+                "max": "max(values, key=lambda value: ...)",
+                "first": "first(values, predicate=lambda value: ...)",
+                "last": "last(values, predicate=lambda value: ...)",
+                "sum": "sum(values) or sum(values, key=lambda value: ...)",
+            }[name]
+            raise DSLRejectionError(
+                f"helper '{name}' must use the form {rendered}"
+            )
 
     for node in ast.walk(func):
         if not isinstance(node, ast.Call):
             continue
         if not isinstance(node.func, ast.Name):
-            raise RestrictedGrammarError(
-                "method calls are not in the grammar "
+            raise DSLRejectionError(
+                "method calls are not in the DSL "
                 f"(found '{ast.unparse(node.func)}(...)')"
             )
         name = node.func.id
         if name not in tool_names and name not in HELPERS:
-            raise RestrictedGrammarError(
+            raise DSLRejectionError(
                 f"call to '{name}' which is neither a provided tool nor a helper (rule 2)"
             )
         if name in HELPERS:
-            if not node.args or not isinstance(node.args[0], ast.Name):
-                raise RestrictedGrammarError(
-                    f"helper '{name}' must take a bare variable as its first argument "
-                    "(rule 2b3 / <HelperCall>)"
+            if profile == DSL_PROFILE_PAPER and name == "sum":
+                raise DSLRejectionError(
+                    "helper 'sum' is an extension and is forbidden in G1"
                 )
+            _check_helper_shape(node, name)
         elif node.keywords:
             # Tool calls MUST be positional-only. The slicer and the taint gate
             # build operand rules from positional args only; a keyword-passed
             # control operand (recipient/amount) would otherwise be enforced by
             # neither and skip the confirmation gate. Rule 6 already mandates
             # positional args, so reject any keyword on a tool call.
-            raise RestrictedGrammarError(
+            raise DSLRejectionError(
                 f"tool call '{name}(...)' uses keyword arguments; tools must be "
                 "called with positional arguments only (rule 6)"
             )
         elif id(node) not in sliceable:
-            raise RestrictedGrammarError(
+            raise DSLRejectionError(
                 f"tool call '{name}(...)' is nested inside an expression; tool "
                 "results must be assigned to a variable first (rules 2b3, 16)"
             )

@@ -1,4 +1,4 @@
-"""Nested bounded-for: the grammar now allows a for inside a for (a bounded
+"""Nested bounded-for: the DSL now allows a for inside a for (a bounded
 join / sub-iteration). The slicer records the loop stack; the enforcer enumerates
 the signed collections' NESTED product (each inner iter evaluated with the outer
 vars bound). FN=0 must hold: only the tuples the loops can actually produce are

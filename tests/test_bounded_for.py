@@ -10,7 +10,7 @@ from pauth import prepare
 from pauth.enforcer import Enforcer, check_injection
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar_validator import RestrictedGrammarError
+from pauth.dsl_validator import DSLRejectionError
 from pauth.suites.shopping import build_suite
 
 _LOOP = '''def run():
@@ -130,10 +130,21 @@ def test_index_and_range_loops_still_rejected():
     tools, signer = suite.tool_names(), suite.tool_signer()
     # iterate a non-variable (range / literal) -> rejected
     bad = 'def run():\n    for p in range(3):\n        add_to_cart("x", 1)\n'
-    with pytest.raises(RestrictedGrammarError):
+    with pytest.raises(DSLRejectionError):
         prepare(bad, tools, signer)
     # assignment inside the loop body -> rejected
     bad2 = ('def run():\n    products = list_products(None, 100.0)\n'
             '    for p in products:\n        q = p.name\n')
-    with pytest.raises(RestrictedGrammarError):
+    with pytest.raises(DSLRejectionError):
         prepare(bad2, tools, signer)
+
+
+def test_loop_collection_must_be_bound_before_the_loop():
+    suite = build_suite()
+    code = (
+        "def run(products):\n"
+        "    for product in products:\n"
+        "        add_to_cart(product.name, 1)\n"
+    )
+    with pytest.raises(DSLRejectionError, match="earlier top-level assignment"):
+        prepare(code, suite.tool_names(), suite.tool_signer())

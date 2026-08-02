@@ -1,7 +1,7 @@
 """Search for a G5-lifting intervention that keeps FN=0.
 
 Per task, compare the cached baseline against a regeneration under an intervention
-(synced prompt + optional structure_text exposure). Reports G2 (grammar-valid),
+(synced prompt + optional structure_text exposure). Reports G2 (DSL-valid),
 G5 (utility), and GS (forced injections all denied = FN=0) for each, so a lift is
 only credited if soundness holds. Regenerated plans are cached to scratch so
 re-measuring costs no API. Needs OPENAI_API_KEY.
@@ -25,7 +25,7 @@ from pauth import prepare
 from pauth.enforcer import Enforcer, check_injection
 from pauth.tool_executor import execute_generated_code
 from pauth.envelope import EnvelopeStore, KeyRing
-from pauth.grammar_validator import RestrictedGrammarError
+from pauth.dsl_validator import DSLRejectionError
 
 CACHE = Path("tests/experiment/cache")
 SCRATCH = Path("tests/experiment/g5_scratch")
@@ -36,7 +36,7 @@ def _measure(suite, adj, ut, code) -> dict:
     out = {"g2": False, "g5": False, "gs": True}
     try:
         prepared = prepare(code, suite.tool_names(), suite.tool_signer())
-    except RestrictedGrammarError:
+    except DSLRejectionError:
         return out
     out["g2"] = True
     env = suite.make_env()

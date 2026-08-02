@@ -29,7 +29,7 @@ from pauth import prepare  # noqa: E402
 from pauth.enforcer import Enforcer  # noqa: E402
 from pauth.tool_executor import execute_generated_code  # noqa: E402
 from pauth.envelope import EnvelopeStore, KeyRing  # noqa: E402
-from pauth.grammar_validator import RestrictedGrammarError  # noqa: E402
+from pauth.dsl_validator import DSLRejectionError  # noqa: E402
 
 CRASHERS = [("travel", "user_task_4"), ("travel", "user_task_7"),
             ("travel", "user_task_8"), ("workspace", "user_task_33")]
@@ -41,7 +41,7 @@ def _probe(suite):
     def probe(code):
         try:
             prep = prepare(code, suite.tool_names(), suite.tool_signer())
-        except RestrictedGrammarError:
+        except DSLRejectionError:
             return None
         enf = Enforcer(prep.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
         rep = execute_generated_code(prep.source, enf, suite.tool_params(),
@@ -53,7 +53,7 @@ def _probe(suite):
 def _runs_clean(suite, code):
     try:
         prep = prepare(code, suite.tool_names(), suite.tool_signer())
-    except RestrictedGrammarError:
+    except DSLRejectionError:
         return False, "grammar"
     enf = Enforcer(prep.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prep.source, enf, suite.tool_params(),

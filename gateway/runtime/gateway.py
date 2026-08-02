@@ -447,13 +447,13 @@ class Gateway:
         """Plan generation via LLM, bypassing the deterministic recognizer.
 
         ``max_retries == 0`` uses the paper-faithful one-shot the Planner from
-        ``pauth.codegen``. ``max_retries > 0`` enables the grammar
+        ``pauth.codegen``. ``max_retries > 0`` enables the DSL
         self-repair loop in ``gateway.agentic_planner``: each
-        ``RestrictedGrammarError`` is fed back to the LLM with the
+        ``DSLRejectionError`` is fed back to the LLM with the
         previous (invalid) code and an explicit "you MUST obey rule X"
         instruction.
 
-        Rejection modes are unchanged: unknown suite, the Planner grammar
+        Rejection modes are unchanged: unknown suite, the Planner DSL
         violation (after the retry budget), or Slicer/Rule-compiler compilation failure.
         On acceptance, ``handle_tool_call`` enforcement is identical to
         the recognizer path.

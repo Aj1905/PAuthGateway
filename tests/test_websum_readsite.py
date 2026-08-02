@@ -1,4 +1,4 @@
-"""End-to-end: an UNTRUSTED structured read (read_site) + in-grammar ``sum`` +
+"""End-to-end: an UNTRUSTED structured read (read_site) + in-DSL ``sum`` +
 the confirmation gate. Demonstrates the three properties of the "structuring
 layer as a tool" design, and -- honestly -- the boundary between what the
 enforcer defends and what only the human gate defends.
@@ -38,7 +38,7 @@ def _enf(suite, prepared):
     return enf
 
 
-# -- Expressibility: the plan totals a prose-locked list in-grammar -----------
+# -- Expressibility: the plan totals a prose-locked list in-DSL -----------
 
 def test_plan_prepares_and_runs_clean():
     suite = websum.build_suite()
@@ -52,7 +52,7 @@ def test_plan_prepares_and_runs_clean():
     assert not report.crashed
     sends = [e for e in report.events if e.tool == "send_money"]
     assert sends and sends[0].decision.permit
-    assert abs(sends[0].args[1] - TRUE_TOTAL) < 1e-6  # summed in-grammar
+    assert abs(sends[0].args[1] - TRUE_TOTAL) < 1e-6  # summed in-DSL
 
 
 # -- FN=0 by construction: the enforcer re-derives sum(view.amounts) ----------
