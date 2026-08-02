@@ -148,7 +148,9 @@ def test_one_shot_within_stage():
     assert gw.handle_tool_call("list_products", [None, 80.0]).permit
     dup = gw.handle_tool_call("list_products", [None, 80.0])
     assert not dup.permit
-    assert "one-shot" in dup.reason
+    # the enforcer-level replay check fires first; the composite one-shot
+    # check remains as belt-and-suspenders behind it
+    assert "replay" in dup.reason or "one-shot" in dup.reason
 
 
 def test_plan_complete_denies_everything():

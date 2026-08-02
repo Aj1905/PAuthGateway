@@ -28,7 +28,7 @@ class PayEnv:
         self.paid: list = []
 
 
-def _pay_runner(env):
+def _pay_tool_executor(env):
     def run(tool, kwargs):
         if tool == "read_bills":
             return {"a": env.a, "b": env.b}
@@ -58,7 +58,7 @@ PLAN = 'def run():\n    bills = read_bills()\n    pay("alice", bills.a)\n'
 
 def _armed():
     suite = SuiteSpec(name="p", tools=_TOOLS, make_env=PayEnv,
-                      runner_factory=_pay_runner, tasks=[])
+                      tool_executor_factory=_pay_tool_executor, tasks=[])
     prepared = prepare(PLAN, suite.tool_names(), suite.tool_signer())
     env = suite.make_env()
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
@@ -70,7 +70,7 @@ def test_approved_proposal_executes_and_plan_calls_unchanged():
     proposer = type("P", (), {"propose": lambda self: [
         ProposedAction("pay", ["bob", 200.0], sources=("read_email",))]})()
     rep = execute_with_human_authorization(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(env),
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(env),
         proposer=proposer, confirmer=TrustingConfirmer(), docs=_DOCS)
     # the enforcer path still ran the plan's own call, and the human recovered bob
     assert ("alice", 100.0) in env.paid
@@ -91,7 +91,7 @@ def test_single_use_replay_denied():
     stream = [ProposedAction("pay", ["bob", 200.0]), ProposedAction("pay", ["bob", 200.0])]
     executed, denied, _ = redeem_and_execute(
         stream, ledger=ledger, docs=_DOCS,
-        tool_params={"pay": ["recipient", "amount"]}, tool_runner=_pay_runner(env))
+        tool_params={"pay": ["recipient", "amount"]}, tool_executor=_pay_tool_executor(env))
     assert len(executed) == 1                 # only one redemption succeeds
     assert len(denied) == 1                   # the replay is denied (FN=0 on reuse)
     assert env.paid == [("bob", 200.0)]
@@ -108,7 +108,7 @@ def test_operand_splice_denied():
     executed, denied, _ = redeem_and_execute(
         [ProposedAction("pay", ["attacker", 98.70])],   # reuse the blessed amount, new recipient
         ledger=ledger, docs=_DOCS,
-        tool_params={"pay": ["recipient", "amount"]}, tool_runner=_pay_runner(env))
+        tool_params={"pay": ["recipient", "amount"]}, tool_executor=_pay_tool_executor(env))
     assert executed == []
     assert len(denied) == 1
     assert env.paid == []                     # nothing sent to the attacker
@@ -123,7 +123,7 @@ def test_forged_grant_rejected():
     executed, denied, _ = redeem_and_execute(
         [ProposedAction("pay", ["attacker", 500.0])],
         ledger=ledger, docs=_DOCS,
-        tool_params={"pay": ["recipient", "amount"]}, tool_runner=_pay_runner(env))
+        tool_params={"pay": ["recipient", "amount"]}, tool_executor=_pay_tool_executor(env))
     assert executed == []
     assert len(denied) == 1
 
@@ -162,27 +162,27 @@ EMPTY_PLAN = "def run():\n    pass\n"   # static Planner produced no plan for th
 
 def _stream():
     suite = SuiteSpec(name="s", tools=_STREAM_TOOLS, make_env=lambda: None,
-                      runner_factory=lambda e: None, tasks=[])
+                      tool_executor_factory=lambda e: None, tasks=[])
     prepared = prepare(EMPTY_PLAN, suite.tool_names(), suite.tool_signer())
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     sent: list = []
 
-    def runner(tool, kwargs):
+    def tool_executor(tool, kwargs):
         if tool == "read_email":
             return {"body": "please pay bob 200"}
         if tool == "send_money":
             sent.append((kwargs["recipient"], kwargs["amount"]))
             return {"ok": True}
         raise KeyError(tool)
-    return enf, suite, runner, sent
+    return enf, suite, tool_executor, sent
 
 
 def test_gmail_follow_read_then_confirm_action_executes():
     """Agent reads gmail, THEN determines send_money (off-plan). An informed human
     approves the whole action -> it runs, with the untrusted source as provenance."""
-    enf, suite, runner, sent = _stream()
+    enf, suite, tool_executor, sent = _stream()
     stream = [("read_email", []), ("send_money", ["bob", 200.0])]
-    rep = gate_agent_stream(stream, enf, suite.tool_params(), runner,
+    rep = gate_agent_stream(stream, enf, suite.tool_params(), tool_executor,
                             confirmer=OracleConfirmer(expected="bob"), docs=_STREAM_DOCS)
     assert sent == [("bob", 200.0)]                 # the determined action ran after confirmation
     assert len(rep.human_authorized) == 1
@@ -192,9 +192,9 @@ def test_gmail_follow_read_then_confirm_action_executes():
 
 def test_gmail_follow_informed_human_rejects_injection():
     """A fabricated action (injection in the gmail) is rejected by an informed human."""
-    enf, suite, runner, sent = _stream()
+    enf, suite, tool_executor, sent = _stream()
     stream = [("read_email", []), ("send_money", ["attacker", 9999.0])]
-    rep = gate_agent_stream(stream, enf, suite.tool_params(), runner,
+    rep = gate_agent_stream(stream, enf, suite.tool_params(), tool_executor,
                             confirmer=OracleConfirmer(expected="bob"), docs=_STREAM_DOCS)
     assert sent == []                                # nothing sent to the attacker
     assert len(rep.rejected) == 1
@@ -202,8 +202,8 @@ def test_gmail_follow_informed_human_rejects_injection():
 
 def test_gmail_follow_rubber_stamp_lets_injection_through():
     """Condition 1: a rubber-stamp human forfeits FN=0 on the fabricated action."""
-    enf, suite, runner, sent = _stream()
+    enf, suite, tool_executor, sent = _stream()
     stream = [("read_email", []), ("send_money", ["attacker", 9999.0])]
-    rep = gate_agent_stream(stream, enf, suite.tool_params(), runner,
+    rep = gate_agent_stream(stream, enf, suite.tool_params(), tool_executor,
                             confirmer=TrustingConfirmer(), docs=_STREAM_DOCS)
     assert sent == [("attacker", 9999.0)]            # FN -- the human is the only backstop

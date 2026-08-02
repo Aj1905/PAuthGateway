@@ -20,7 +20,7 @@ from typing import Any
 class AuditEvent:
     seq: int                 # per-session ordinal (deterministic; no wall clock)
     kind: str                # "submit" | "tool_call" | "reauthorization"
-    decision: str            # "accept" | "reject" | "permit" | "deny" | "pending"
+    decision: str            # accept/reject/permit/deny/pending/error/indeterminate
     tool: str | None         # tool name for tool_call events
     reason_code: str         # a feedback.ReasonCode value, or "accepted"/"rejected"
     reason: str              # the internal, human-readable reason (operator-facing)

@@ -7,18 +7,18 @@ import pytest
 from eval.fable5_st_benchmark import (
     ARMS,
     MODEL,
+    MODELS,
     BenchmarkCase,
     BenchmarkContractError,
     _execution_order,
     _mcnemar,
     _parse_args,
     _prepare_run_dir,
-    _revision_prompt,
     run_benchmark,
 )
 from eval.funnel import Corpus, Task
 from eval.metrics import REF_EXACT_AUTHORIZATION
-from pauth.codegen import ToolDoc, _cost
+from pauth.codegen import _cost
 
 
 def _metric_row(task_key: str, passed: bool) -> dict:
@@ -48,10 +48,12 @@ def _fake_cases(n: int = 97) -> list[BenchmarkCase]:
     ]
 
 
-def test_model_and_arms_are_fixed() -> None:
+def test_models_and_arms_are_fixed() -> None:
     assert MODEL == "claude-fable-5"
-    assert ARMS == ("direct1", "st", "direct2-revise")
-    assert _parse_args(["--run-dir", "/tmp/x", "--model", MODEL]).model == MODEL
+    assert MODELS == ("gpt-4.1", "gpt-5.1", "claude-fable-5")
+    assert ARMS == ("direct1", "st")
+    for model in MODELS:
+        assert _parse_args(["--run-dir", "/tmp/x", "--model", model]).model == model
     with pytest.raises(SystemExit):
         _parse_args(["--run-dir", "/tmp/x", "--model", "claude-other"])
 
@@ -61,27 +63,9 @@ def test_unknown_fable_pricing_is_not_faked_with_gpt_rates() -> None:
     assert _cost("gpt-4.1", 1_000, 100) == pytest.approx(0.0028)
 
 
-def test_arm_order_counterbalances_primary_and_keeps_revision_after_direct() -> None:
-    assert _execution_order(0) == ("direct1", "st", "direct2-revise")
-    assert _execution_order(1) == ("st", "direct1", "direct2-revise")
-
-
-def test_revision_prompt_contains_task_tools_and_exact_draft() -> None:
-    tool = ToolDoc(
-        name="send_message",
-        description="send one message",
-        parameters=[
-            {"name": "recipient", "type": "string"},
-            {"name": "body", "type": "string"},
-        ],
-        returns="object",
-    )
-    draft = 'def run():\n    send_message("a", "b")\n'
-    prompt = _revision_prompt("send b to a", [tool], draft)
-    assert "send b to a" in prompt
-    assert "send_message" in prompt
-    assert draft in prompt
-    assert "FIRST DRAFT" in prompt
+def test_arm_order_counterbalances_direct1_and_st() -> None:
+    assert _execution_order(0) == ("direct1", "st")
+    assert _execution_order(1) == ("st", "direct1")
 
 
 def test_fresh_directory_and_resume_are_two_distinct_states(tmp_path) -> None:
@@ -107,7 +91,7 @@ def test_dry_run_makes_no_directory_or_client(monkeypatch, tmp_path) -> None:
     )
     result = run_benchmark(target, dry_run=True)
     assert result["corpus_task_count"] == 97
-    assert result["expected_result_rows"] == 97 * 3
+    assert result["expected_result_rows"] == 97 * 2
     assert result["api_calls_made"] == 0
     assert not target.exists()
 

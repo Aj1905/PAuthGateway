@@ -64,7 +64,7 @@ def _line_only(val, view) -> bool:
 def main() -> int:
     adj = get_suites("v1")[SUITE]
     spec = load_suite(SUITE)
-    runner = spec.runner_factory(spec.make_env())
+    tool_executor = spec.tool_executor_factory(spec.make_env())
 
     print("Structuring probe -- banking file-reading tasks\n")
     print(f"{'task':<9}{'call.arg':<34}{'value':<26}{'prose?':<7}{'typed':<7}{'exact'}")
@@ -87,7 +87,7 @@ def main() -> int:
         texts = []
         for p in read_paths:
             try:
-                texts.append(str(runner("read_file", {"file_path": p})))
+                texts.append(str(tool_executor("read_file", {"file_path": p})))
             except Exception:  # noqa: BLE001
                 pass
         view = structure("\n".join(texts))

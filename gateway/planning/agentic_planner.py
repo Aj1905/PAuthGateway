@@ -476,7 +476,14 @@ def _call_generator(client: Any, model: str, messages: list[dict[str, str]]):
         )
         u = resp.usage
         return text, getattr(u, "input_tokens", 0) or 0, getattr(u, "output_tokens", 0) or 0
-    resp = client.chat.completions.create(model=model, temperature=0, messages=messages)
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "max_completion_tokens": 4096,
+    }
+    # Omit temperature for every provider. GPT-5-family chat endpoints reject
+    # non-default values, so provider defaults are the only common contract.
+    resp = client.chat.completions.create(**kwargs)
     u = resp.usage
     return (
         resp.choices[0].message.content or "",

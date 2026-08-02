@@ -48,7 +48,7 @@ def _exec(suite, code):
         return None, None, []
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
-                                 suite.runner_factory(suite.make_env()))
+                                 suite.tool_executor_factory(suite.make_env()))
     trace = [(e.tool, list(e.args)) for e in rep.events if e.decision.permit]
     return prepared, rep, trace
 
@@ -128,7 +128,7 @@ def measure(policy):
             env = suite.make_env(); pre = copy.deepcopy(env)
             enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
             execute_generated_code(
-                prepared.source, enf, suite.tool_params(), suite.runner_factory(env)
+                prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(env)
             )
             try:
                 agg[OUTCOME_TASK_COMPLETED] += bool(ut.utility("", pre, env))

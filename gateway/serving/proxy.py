@@ -20,7 +20,7 @@ Two request kinds, matching INGRESS_DESIGN's two channels:
 * **Tool / SaaS request**: an outbound action. The proxy runs gateway
   enforcement; it forwards iff permitted, otherwise returns a value-free block
   response (S16). Because the gateway executes the tool via its SuiteSpec
-  runner (the real-SaaS client in production), "permit -> execute" already IS
+  tool_executor (the real-SaaS client in production), "permit -> execute" already IS
   the forward.
 """
 
@@ -29,7 +29,12 @@ from __future__ import annotations
 import dataclasses
 from typing import Any, Callable
 
-from gateway.runtime.gateway import CallResult, Gateway, SubmissionResult
+from gateway.runtime.gateway import (
+    CallResult,
+    ExecutionStatus,
+    Gateway,
+    SubmissionResult,
+)
 
 
 @dataclasses.dataclass
@@ -47,6 +52,8 @@ class ToolProxyResult:
     return_value: Any | None = None
     agent_reason: str | None = None
     block_response: dict | None = None
+    authorization_permit: bool = False
+    execution_status: str = "not_dispatched"
 
 
 class InterceptingProxy:
@@ -107,16 +114,26 @@ class InterceptingProxy:
         result: CallResult = self._gw.handle_tool_call(tool, args)
         if result.permit:
             return ToolProxyResult(
-                forward=True, permit=True, return_value=result.return_value
+                forward=True,
+                permit=True,
+                return_value=result.return_value,
+                authorization_permit=result.authorization_permit,
+                execution_status=result.execution_status.value,
             )
         # Blocked: the wire response carries only the VALUE-FREE agent reason
         # (never the internal reason, which may quote an operand value, S16).
+        indeterminate = result.execution_status == ExecutionStatus.INDETERMINATE
         return ToolProxyResult(
             forward=False,
             permit=False,
             agent_reason=result.agent_reason,
+            authorization_permit=result.authorization_permit,
+            execution_status=result.execution_status.value,
             block_response={
-                "status": 403,
-                "error": {"type": "pauth_denied", "message": result.agent_reason},
+                "status": 409 if indeterminate else 403,
+                "error": {
+                    "type": "pauth_indeterminate" if indeterminate else "pauth_denied",
+                    "message": result.agent_reason,
+                },
             },
         )

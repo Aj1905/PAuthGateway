@@ -69,7 +69,7 @@ def _suite() -> SuiteSpec:
         name="tiny",
         tools=_TOOLS,
         make_env=lambda: None,
-        runner_factory=lambda _env: (lambda _tool, _kwargs: {"ok": True}),
+        tool_executor_factory=lambda _env: (lambda _tool, _kwargs: {"ok": True}),
         tasks=[],
     )
 

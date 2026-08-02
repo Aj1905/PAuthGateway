@@ -60,7 +60,7 @@ def _trace(suite, code):
         return None, None
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
-                                 suite.runner_factory(suite.make_env()))
+                                 suite.tool_executor_factory(suite.make_env()))
     if rep.crashed is not None or rep.denied:
         return None, enf
     return [(e.tool, list(e.args)) for e in rep.events if e.decision.permit], enf

@@ -35,6 +35,7 @@ class Rule:
     # for SOME tuple of the NESTED enumeration (each inner iter evaluated with the
     # outer vars bound). Empty list = a straight-line (non-loop) rule.
     loops: list = dataclasses.field(default_factory=list)
+    seq: int = 0                       # program order of the call site in the plan
 
     @property
     def key(self) -> str:
@@ -88,6 +89,7 @@ def compile_rule(slice_: Slice, tool_service: dict[str, str] | None = None) -> R
         lets=dict(slice_.lets),
         cross_service_deps=deps,
         loops=list(slice_.loops),
+        seq=slice_.seq,
     )
 
 

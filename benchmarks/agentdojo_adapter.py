@@ -3,7 +3,7 @@
 PAuth is "prototyped in the agent-security evaluation framework AgentDojo"
 (paper abstract).  This module exposes AgentDojo's banking / slack / travel /
 workspace suites -- their tools, environments and user tasks -- in the form
-the PAuth experiment runner consumes, including the *output schema* extension
+the PAuth experiment harness consumes, including the *output schema* extension
 to each tool (paper sec. 4.1.1).
 """
 
@@ -94,10 +94,10 @@ def _make_env_factory(agentdojo_suite: Any) -> Callable[[], Any]:
     return make_env
 
 
-def _make_runner_factory(agentdojo_suite: Any) -> Callable[[Any], Callable[..., Any]]:
+def _make_tool_executor_factory(agentdojo_suite: Any) -> Callable[[Any], Callable[..., Any]]:
     runtime = FunctionsRuntime(agentdojo_suite.tools)
 
-    def runner_factory(env: Any) -> Callable[[str, dict[str, Any]], Any]:
+    def tool_executor_factory(env: Any) -> Callable[[str, dict[str, Any]], Any]:
         def run(tool: str, kwargs: dict[str, Any]) -> Any:
             result, error = runtime.run_function(env, tool, kwargs, raise_on_error=False)
             if error:
@@ -106,7 +106,7 @@ def _make_runner_factory(agentdojo_suite: Any) -> Callable[[Any], Callable[..., 
 
         return run
 
-    return runner_factory
+    return tool_executor_factory
 
 
 def load_suite(name: str) -> SuiteSpec:
@@ -134,7 +134,7 @@ def load_suite(name: str) -> SuiteSpec:
         name=name,
         tools=tools,
         make_env=make_env,
-        runner_factory=_make_runner_factory(agentdojo_suite),
+        tool_executor_factory=_make_tool_executor_factory(agentdojo_suite),
         tasks=tasks,
     )
 

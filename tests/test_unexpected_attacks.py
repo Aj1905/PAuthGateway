@@ -68,12 +68,12 @@ def build_enforcer(
     report = None
     if run_benign:
         env = suite.make_env()
-        runner = suite.runner_factory(env)
+        tool_executor = suite.tool_executor_factory(env)
         report = execute_generated_code(
             prepared.source,
             enforcer,
             suite.tool_params(),
-            runner,
+            tool_executor,
         )
         check(report.crashed is None, "benign code runs without crashing", report.crashed or "")
         denied = "\n".join(

@@ -35,7 +35,7 @@ def test_ground_truth_plans_are_expressible_and_injections_denied():
         assert prepared.rules, task.id
         enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), signer)
         execute_generated_code(
-            prepared.source, enf, params, suite.runner_factory(suite.make_env())
+            prepared.source, enf, params, suite.tool_executor_factory(suite.make_env())
         )
         for inj in task.forced_injections:
             assert not check_injection(enf, inj.tool, inj.args).permit, f"{task.id}:{inj.tool}"

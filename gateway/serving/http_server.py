@@ -26,8 +26,10 @@ drive, or delete them (constant-time token compare; ownership survives a restart
 via the session store). Without either flag the server runs in OPEN mode and
 must be bound to loopback only -- it prints a warning at startup.
 
-Session state is held in process memory; restarting the server drops the live
-channels (the plan is rebuilt from the session store on the next message).
+Live channels and envelopes are held in process memory. With a session store,
+restart rebuilds the plan and restores the durable execution-attempt ledger;
+completed or indeterminate calls stay replay-blocked, while envelope-dependent
+continuation fails closed because envelopes are not yet restored.
 
 Usage::
 
@@ -38,6 +40,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import http.client
 import hmac
 import json
@@ -122,25 +125,46 @@ _SESSION_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})/messages$")
 _SESSION_DELETE_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})$")
 
 
+class SessionRestoreError(RuntimeError):
+    """Persisted state exists but cannot be restored without replay risk."""
+
+
 def restore_channel(
     suite_loader: Callable[[str], SuiteSpec],
     store: "SessionStore",
     session_id: str,
     audit_log: "AuditLog | None" = None,
 ) -> AgentChannel | None:
-    """Rebuild a persisted session by replaying its stored prompt (call interception).
+    """Rebuild a persisted session without resetting its execution ledger.
 
     Returns a fresh :class:`AgentChannel` with the plan re-established, or
-    ``None`` if the session is not in the store. Mid-task observations are not
-    restored -- the plan is; the client continues from there.
+    ``None`` means the session truly is absent. A legacy/malformed ledger or a
+    plan-fingerprint mismatch raises :class:`SessionRestoreError`; callers must
+    not fall back to a fresh channel in that case.
     """
     entry = store.get(session_id)
     if entry is None:
         return None
-    channel = AgentChannel(suite_loader, audit_log=audit_log)
-    message = {"kind": "prompt", "prompt": entry.get("prompt", "")}
-    message.update(entry.get("config", {}) or {})
-    channel.receive_json(message)
+    execution_state = entry.get("execution_state")
+    if not isinstance(execution_state, dict):
+        raise SessionRestoreError(
+            "persisted session has no valid execution state; legacy state is quarantined"
+        )
+    channel = AgentChannel(
+        suite_loader,
+        audit_log=audit_log,
+        restored_execution_state=execution_state,
+        execution_state_sink=lambda state: store.update_execution_state(
+            session_id, state
+        ),
+    )
+    message = dict(entry.get("config", {}) or {})
+    message.update({"kind": "prompt", "prompt": entry.get("prompt", "")})
+    response = channel.receive_json(message)
+    if not response.get("accepted"):
+        raise SessionRestoreError(
+            f"persisted session plan could not be restored: {response.get('reason', '')}"
+        )
     return channel
 
 
@@ -148,6 +172,10 @@ class _Handler(BaseHTTPRequestHandler):
     sessions: dict[str, AgentChannel] = {}
     session_owners: dict[str, str] = {}  # session_id -> authenticated principal
     _lock = threading.Lock()             # guards the session tables (threaded server)
+    # Serialize the full lookup -> restore/create -> receive -> persist transition
+    # for one session without blocking unrelated sessions. A fixed stripe table
+    # avoids an unbounded attacker-controlled lock map.
+    _session_locks = tuple(threading.RLock() for _ in range(64))
     max_sessions: int = 10_000           # cap the table; evict oldest (FIFO) beyond it
     # staticmethod: a plain function stored as a class attribute would bind to
     # the handler instance (self.suite_loader -> loader(self, name), 2 args).
@@ -197,6 +225,23 @@ class _Handler(BaseHTTPRequestHandler):
         return None
 
     @classmethod
+    def _session_lock_for(cls, session_id: str) -> threading.RLock:
+        digest = hashlib.sha256(session_id.encode("utf-8")).digest()
+        return cls._session_locks[int.from_bytes(digest[:2], "big") % len(cls._session_locks)]
+
+    def _new_channel(self, session_id: str) -> AgentChannel:
+        sink = None
+        if self.session_store is not None:
+            sink = lambda state: self.session_store.update_execution_state(
+                session_id, state
+            )
+        return AgentChannel(
+            self.suite_loader,
+            audit_log=self.audit_log,
+            execution_state_sink=sink,
+        )
+
+    @classmethod
     def _add_session(cls, session_id: str, channel: AgentChannel, principal: str) -> None:
         """Insert a session, evicting the oldest if the table is at capacity."""
         with cls._lock:
@@ -229,13 +274,17 @@ class _Handler(BaseHTTPRequestHandler):
         m = _SESSION_DELETE_RE.match(self.path)  # GET /sessions/<id> -> status
         if m:
             session_id = m.group(1)
-            channel = self.sessions.get(session_id)
-            # 404 (not 403) for missing OR not-owned: don't reveal that a session
-            # you don't own exists (IDOR/enumeration).
-            if channel is None or self.session_owners.get(session_id) != principal:
-                self._send_json(404, {"error": "no such session", "session_id": session_id})
-                return
-            self._send_json(200, {"session_id": session_id, **channel.status()})
+            with self._session_lock_for(session_id):
+                channel = self.sessions.get(session_id)
+                # 404 (not 403) for missing OR not-owned: don't reveal that a session
+                # you don't own exists (IDOR/enumeration).
+                if channel is None or self.session_owners.get(session_id) != principal:
+                    payload = {"error": "no such session", "session_id": session_id}
+                    status = 404
+                else:
+                    payload = {"session_id": session_id, **channel.status()}
+                    status = 200
+            self._send_json(status, payload)
             return
         self._send_json(404, {"error": f"no route for GET {self.path}"})
 
@@ -265,12 +314,15 @@ class _Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError as exc:
             self._send_json(400, {"error": f"invalid JSON: {exc}"})
             return
+        if not isinstance(payload, dict):
+            self._send_json(400, {"error": "request JSON must be an object"})
+            return
 
         if self.path == "/sessions":
             session_id = str(uuid.uuid4())
             self._add_session(
                 session_id,
-                AgentChannel(self.suite_loader, audit_log=self.audit_log),
+                self._new_channel(session_id),
                 principal,
             )
             self._send_json(201, {"session_id": session_id})
@@ -279,47 +331,80 @@ class _Handler(BaseHTTPRequestHandler):
         m = _SESSION_RE.match(self.path)
         if m:
             session_id = m.group(1)
-            channel = self.sessions.get(session_id)
-            if channel is not None:
-                # Existing in-memory session: only its owner may drive it.
-                if self.session_owners.get(session_id) != principal:
-                    self._send_json(403, {"error": "session belongs to another principal"})
-                    return
-            else:
-                # Restore a persisted session after a restart (call interception); otherwise
-                # create implicitly (first message under a client-supplied id).
-                # Either way the session is bound to THIS principal; a persisted
-                # session owned by someone else is refused.
-                owner = self._owner_of(session_id)
-                if owner is not None and owner != principal:
-                    self._send_json(403, {"error": "session belongs to another principal"})
-                    return
-                if self.session_store is not None:
-                    channel = restore_channel(
-                        self.suite_loader, self.session_store, session_id,
-                        audit_log=self.audit_log,
-                    )
-                if channel is None:
-                    channel = AgentChannel(self.suite_loader, audit_log=self.audit_log)
-                self._add_session(session_id, channel, principal)
-            response = channel.receive_json(payload)
-            # Persist an accepted prompt (with its owner) so it survives a restart.
-            if (
-                self.session_store is not None
-                and payload.get("kind") == "prompt"
-                and response.get("accepted")
-            ):
-                config = {
-                    k: v for k, v in payload.items()
-                    if k not in ("kind", "prompt", "cache_dir")
-                }
-                self.session_store.record(
-                    session_id, payload.get("prompt", ""), config, owner=principal
+            with self._session_lock_for(session_id):
+                status, response = self._handle_session_message(
+                    session_id, principal, payload
                 )
-            self._send_json(200, response)
+            self._send_json(status, response)
             return
 
         self._send_json(404, {"error": f"no route for POST {self.path}"})
+
+    def _handle_session_message(
+        self,
+        session_id: str,
+        principal: str,
+        payload: dict,
+    ) -> tuple[int, dict]:
+        """Handle one session transition while its stripe lock is held."""
+        channel = self.sessions.get(session_id)
+        if channel is not None:
+            if self.session_owners.get(session_id) != principal:
+                return 403, {"error": "session belongs to another principal"}
+        else:
+            owner = self._owner_of(session_id)
+            if owner is not None and owner != principal:
+                return 403, {"error": "session belongs to another principal"}
+            if self.session_store is not None:
+                try:
+                    channel = restore_channel(
+                        self.suite_loader,
+                        self.session_store,
+                        session_id,
+                        audit_log=self.audit_log,
+                    )
+                except SessionRestoreError as exc:
+                    return 409, {
+                        "error": "persisted session restore refused (fail-closed)",
+                        "detail": str(exc),
+                    }
+            if channel is None:
+                channel = self._new_channel(session_id)
+            self._add_session(session_id, channel, principal)
+
+        response = channel.receive_json(payload)
+        if (
+            self.session_store is not None
+            and payload.get("kind") == "prompt"
+            and response.get("accepted")
+        ):
+            config = {
+                key: value
+                for key, value in payload.items()
+                if key not in ("kind", "prompt", "cache_dir")
+            }
+            try:
+                execution_state = channel.execution_state()
+                if not isinstance(execution_state, dict):
+                    raise RuntimeError("accepted plan has no execution state")
+                # Prompt/config/owner and the empty initial ledger are published
+                # together. A missing ledger is never interpreted as fresh.
+                self.session_store.record(
+                    session_id,
+                    payload.get("prompt", ""),
+                    config,
+                    owner=principal,
+                    execution_state=execution_state,
+                )
+            except Exception as exc:  # noqa: BLE001 -- do not expose an unpersisted session
+                with self._lock:
+                    self.sessions.pop(session_id, None)
+                    self.session_owners.pop(session_id, None)
+                return 503, {
+                    "error": "accepted session could not be durably recorded",
+                    "detail": f"{type(exc).__name__}: {exc}",
+                }
+        return 200, response
 
     # ------------------------------------------------------------------
     # DELETE
@@ -333,15 +418,17 @@ class _Handler(BaseHTTPRequestHandler):
         if principal is None:
             return
         session_id = m.group(1)
-        # 404 for missing OR not-owned (never delete or reveal another's session).
-        if self._owner_of(session_id) != principal:
-            self._send_json(404, {"deleted": False})
-            return
-        existed = self.sessions.pop(session_id, None) is not None
-        self.session_owners.pop(session_id, None)
-        if self.session_store is not None:
-            self.session_store.remove(session_id)
-            existed = True
+        with self._session_lock_for(session_id):
+            # 404 for missing OR not-owned (never delete or reveal another's session).
+            if self._owner_of(session_id) != principal:
+                self._send_json(404, {"deleted": False})
+                return
+            with self._lock:
+                existed = self.sessions.pop(session_id, None) is not None
+                self.session_owners.pop(session_id, None)
+            if self.session_store is not None:
+                self.session_store.remove(session_id)
+                existed = True
         self._send_json(200 if existed else 404, {"deleted": existed})
 
     # ------------------------------------------------------------------

@@ -1,25 +1,23 @@
-"""Fresh, resumable Fable 5 benchmark for authorization planning.
+"""Fresh, resumable multi-model benchmark for authorization planning.
 
-This runner deliberately does not reuse ``eval.funnel.run``.  That entry point
+This harness deliberately does not reuse ``eval.funnel.run``.  That entry point
 silently treats unknown planner names as cached plans, which would make an
 ``sufficiency-tightness`` run measure the old cache instead of the new planner.
 
 The benchmark contract is fixed:
 
 * AgentDojo v1, all 97 tasks, with the structured-read helper enabled.
-* Exact model identifier ``claude-fable-5``.
+* One exact model identifier from ``gpt-4.1``, ``gpt-5.1``, or
+  ``claude-fable-5`` per run directory.
 * ``direct1``: one ordinary generation.
 * ``st``: coverage generation followed by the delete-only action-ID audit.
-* ``direct2-revise``: the ``direct1`` draft plus one unrestricted revision.
 * No semantic judge, retry, selector, ground truth, utility, or runtime result
   is shown to a model.
 * The existing funnel ``measure`` function is the sole outcome evaluator.
 
-``direct1`` is intentionally shared as the first call of ``direct2-revise``.
-This removes a sampling confound and saves 97 duplicate API calls.  The
-manifest records that dependency.  ``st`` has its own coverage-oriented first
-call, so this is a comparison of complete planning methods, not an isolation of
-the delete-only constraint.
+``direct1`` and ``st`` are complete planning methods with separate first calls.
+The benchmark compares the two methods within each model, then compares the
+same method across models.  It does not include ``direct2-revise``.
 
 A new run directory must not exist.  After interruption, only ``--resume`` may
 open that same directory, and only when its immutable manifest still matches.
@@ -63,6 +61,7 @@ from eval.metrics import (
 )
 from gateway.planning.agentic_planner import (
     AgenticCodegenResult,
+    _is_anthropic_model,
     generate_code_with_self_repair,
     load_me_env,
 )
@@ -70,11 +69,12 @@ from gateway.planning.sufficiency_tightness import (
     SufficiencyTightnessResult,
     generate_sufficiency_tightness,
 )
-from pauth.codegen import SYSTEM_PROMPT, ToolDoc, build_user_prompt
+from pauth.codegen import SYSTEM_PROMPT, ToolDoc, _cost, build_user_prompt
 from pauth.pipeline import prepare
 
 
 MODEL = "claude-fable-5"
+MODELS = ("gpt-4.1", "gpt-5.1", MODEL)
 AGENTDOJO_SUITE_VERSION = "v1"
 EXPECTED_AGENTDOJO_PACKAGE_VERSION = "0.1.35"
 SUITE_ORDER = ("banking", "slack", "travel", "workspace")
@@ -85,9 +85,9 @@ EXPECTED_SUITE_COUNTS = {
     "workspace": 40,
 }
 EXPECTED_TASK_COUNT = 97
-ARMS = ("direct1", "st", "direct2-revise")
+ARMS = ("direct1", "st")
 PRIMARY_METRIC = REF_EXACT_AUTHORIZATION
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 METRICS = (
     FEASIBILITY_EXPRESSIBLE,
@@ -153,14 +153,27 @@ class APICallRecord:
     prompt_tokens: int
     completion_tokens: int
     request_id: str | None
+    response_model: str | None = None
+    system_fingerprint: str | None = None
     error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
 
 
-class _TrackingMessages:
-    def __init__(self, owner: "TrackingAnthropicClient", delegate: Any):
+def _usage_tokens(response: Any) -> tuple[int, int]:
+    usage = getattr(response, "usage", None)
+    prompt_tokens = getattr(usage, "input_tokens", None)
+    if prompt_tokens is None:
+        prompt_tokens = getattr(usage, "prompt_tokens", 0)
+    completion_tokens = getattr(usage, "output_tokens", None)
+    if completion_tokens is None:
+        completion_tokens = getattr(usage, "completion_tokens", 0)
+    return int(prompt_tokens or 0), int(completion_tokens or 0)
+
+
+class _TrackingEndpoint:
+    def __init__(self, owner: "TrackingProviderClient", delegate: Any):
         self._owner = owner
         self._delegate = delegate
 
@@ -182,27 +195,37 @@ class _TrackingMessages:
                 )
             )
             raise
-        usage = getattr(response, "usage", None)
+        prompt_tokens, completion_tokens = _usage_tokens(response)
         self._owner.calls.append(
             APICallRecord(
                 label=self._owner.label,
                 model=model,
                 latency_seconds=time.perf_counter() - started,
-                prompt_tokens=int(getattr(usage, "input_tokens", 0) or 0),
-                completion_tokens=int(getattr(usage, "output_tokens", 0) or 0),
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
                 request_id=getattr(response, "id", None),
+                response_model=getattr(response, "model", None),
+                system_fingerprint=getattr(response, "system_fingerprint", None),
             )
         )
         return response
 
 
-class TrackingAnthropicClient:
-    """Minimal Anthropic client proxy that records no prompt or response text."""
+class _TrackingChat:
+    def __init__(self, owner: "TrackingProviderClient", delegate: Any):
+        self.completions = _TrackingEndpoint(owner, delegate.completions)
+
+
+class TrackingProviderClient:
+    """Provider-neutral proxy that records no prompt or response text."""
 
     def __init__(self, delegate: Any):
         self.calls: list[APICallRecord] = []
         self.label = "unlabelled"
-        self.messages = _TrackingMessages(self, delegate.messages)
+        if hasattr(delegate, "messages"):
+            self.messages = _TrackingEndpoint(self, delegate.messages)
+        if hasattr(delegate, "chat"):
+            self.chat = _TrackingChat(self, delegate.chat)
 
     def mark(self) -> int:
         return len(self.calls)
@@ -331,7 +354,9 @@ def _source_snapshot() -> dict[str, Any]:
     }
 
 
-def build_contract(cases: list[BenchmarkCase], *, limit: int | None) -> dict[str, Any]:
+def build_contract(
+    cases: list[BenchmarkCase], *, limit: int | None, model: str = MODEL
+) -> dict[str, Any]:
     """Build the immutable part of a run manifest."""
     if limit is not None and not 1 <= limit <= EXPECTED_TASK_COUNT:
         raise BenchmarkContractError(
@@ -353,7 +378,7 @@ def build_contract(cases: list[BenchmarkCase], *, limit: int | None) -> dict[str
         "benchmark": "AgentDojo",
         "agentdojo_suite_version": AGENTDOJO_SUITE_VERSION,
         "agentdojo_package_version": EXPECTED_AGENTDOJO_PACKAGE_VERSION,
-        "model": MODEL,
+        "model": model,
         "arms": list(ARMS),
         "primary_metric": PRIMARY_METRIC,
         "task_count": EXPECTED_TASK_COUNT,
@@ -367,10 +392,6 @@ def build_contract(cases: list[BenchmarkCase], *, limit: int | None) -> dict[str
             "runtime_feedback_to_model": False,
             "temperature": "provider_default",
             "max_output_tokens": 4096,
-        },
-        "artifact_sharing": {
-            "direct2-revise.call1": "same artifact as direct1",
-            "reason": "paired incremental-compute comparison",
         },
         "evaluation": "eval.funnel.measure(mode=headless)",
         "metric_interpretation": {
@@ -422,7 +443,8 @@ def _prepare_run_dir(
         "contract_sha256": _json_sha256(contract),
         "usd_cost": None,
         "usd_cost_note": (
-            "omitted: this repository has no verified claude-fable-5 pricing"
+            "computed in summary only when pauth.codegen has verified pricing "
+            f"for {contract.get('model', 'unknown model')}"
         ),
     }
     manifest_path.write_text(
@@ -520,7 +542,16 @@ def _error_payload(exc: Exception) -> dict[str, str]:
     return {"type": type(exc).__name__, "message": str(exc)}
 
 
-def _base_row(case: BenchmarkCase, arm: str) -> dict[str, Any]:
+def _raise_if_provider_error(exc: Exception) -> None:
+    provider_module = type(exc).__module__.partition(".")[0]
+    if provider_module in {"openai", "anthropic", "httpx", "httpcore"}:
+        raise BenchmarkContractError(
+            f"provider request failed; run stopped before recording the task: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+
+def _base_row(case: BenchmarkCase, arm: str, model: str) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "task_key": case.key,
@@ -528,7 +559,7 @@ def _base_row(case: BenchmarkCase, arm: str) -> dict[str, Any]:
         "task_id": case.task.task_id,
         "prompt_sha256": _sha256(case.task.prompt),
         "arm": arm,
-        "model": MODEL,
+        "model": model,
         "usd_cost": None,
     }
 
@@ -577,9 +608,10 @@ def _cache_path(run_dir: Path, arm: str, case: BenchmarkCase) -> Path:
 def _run_direct1(
     case: BenchmarkCase,
     run_dir: Path,
-    client: TrackingAnthropicClient,
+    client: TrackingProviderClient,
+    model: str,
 ) -> dict[str, Any]:
-    row = _base_row(case, "direct1")
+    row = _base_row(case, "direct1", model)
     cache_path = _cache_path(run_dir, "direct1", case)
     plan_path = _plan_path(run_dir, "direct1", case)
     mark = client.mark()
@@ -591,7 +623,7 @@ def _run_direct1(
         result = generate_code_with_self_repair(
             case.task.prompt,
             case.corpus.suite.tool_docs(),
-            model=MODEL,
+            model=model,
             max_retries=0,
             cache_path=cache_path,
             client=client,
@@ -599,7 +631,8 @@ def _run_direct1(
             executor=None,
         )
         code = _write_plan(plan_path, result.code)
-    except Exception as exc:  # one task must not destroy a multi-hour run
+    except Exception as exc:  # model-output failures are rows; outages stop the run
+        _raise_if_provider_error(exc)
         error = _error_payload(exc)
     calls = client.since(mark, ("direct1.generate",))
     row.update(
@@ -640,9 +673,10 @@ def _cached_coverage_code(cache_path: Path, case: BenchmarkCase) -> str | None:
 def _run_st(
     case: BenchmarkCase,
     run_dir: Path,
-    client: TrackingAnthropicClient,
+    client: TrackingProviderClient,
+    model: str,
 ) -> dict[str, Any]:
-    row = _base_row(case, "st")
+    row = _base_row(case, "st", model)
     cache_path = _cache_path(run_dir, "st", case)
     coverage_path = _plan_path(run_dir, "st-coverage", case)
     final_path = _plan_path(run_dir, "st", case)
@@ -657,7 +691,7 @@ def _run_st(
             case.task.prompt,
             case.corpus.suite.tool_docs(),
             tool_signer=case.corpus.suite.tool_signer(),
-            model=MODEL,
+            model=model,
             max_retries=0,
             cache_path=cache_path,
             client=client,
@@ -667,6 +701,7 @@ def _run_st(
         coverage_code = _write_plan(coverage_path, result.coverage_code)
         final_code = _write_plan(final_path, result.code)
     except Exception as exc:
+        _raise_if_provider_error(exc)
         error = _error_payload(exc)
         coverage_code = _cached_coverage_code(cache_path, case)
         if coverage_code is not None:
@@ -683,7 +718,7 @@ def _run_st(
             completion_tokens=result.audit.completion_tokens,
             cost_usd=0.0,
             cached=result.audit.cached,
-            model=MODEL,
+            model=model,
             attempts=result.audit.attempts,
             failure_history=[],
         )
@@ -819,10 +854,11 @@ def _revision_diff(
 def _run_direct2_revision(
     case: BenchmarkCase,
     run_dir: Path,
-    client: TrackingAnthropicClient,
+    client: TrackingProviderClient,
     direct1_row: dict[str, Any],
+    model: str = MODEL,
 ) -> dict[str, Any]:
-    row = _base_row(case, "direct2-revise")
+    row = _base_row(case, "direct2-revise", model)
     direct1_path = _plan_path(run_dir, "direct1", case)
     if not direct1_path.is_file():
         if not (
@@ -908,7 +944,7 @@ def _run_direct2_revision(
         result = generate_code_with_self_repair(
             case.task.prompt,
             case.corpus.suite.tool_docs(),
-            model=MODEL,
+            model=model,
             max_retries=0,
             cache_path=cache_path,
             client=client,
@@ -1011,17 +1047,21 @@ def _phase_compute(rows: list[dict[str, Any]]) -> dict[str, Any]:
         index = min(len(latencies) - 1, math.ceil(fraction * len(latencies)) - 1)
         return latencies[index]
 
+    prompt_tokens = sum(
+        int(phase.get("prompt_tokens", 0) or 0) for phase in phases
+    )
+    completion_tokens = sum(
+        int(phase.get("completion_tokens", 0) or 0) for phase in phases
+    )
+    models = {str(row.get("model")) for row in rows if row.get("model")}
+    model = next(iter(models)) if len(models) == 1 else None
     return {
         "logical_model_calls": sum(
             int(phase.get("logical_model_calls", 0)) for phase in phases
         ),
         "provider_calls_observed": len(provider),
-        "prompt_tokens": sum(
-            int(phase.get("prompt_tokens", 0) or 0) for phase in phases
-        ),
-        "completion_tokens": sum(
-            int(phase.get("completion_tokens", 0) or 0) for phase in phases
-        ),
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
         "cache_recovered_phases": sum(
             bool(phase.get("cached"))
             and phase.get("shared_from_arm") is None
@@ -1033,7 +1073,11 @@ def _phase_compute(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "latency_seconds_total": sum(latencies),
         "latency_seconds_p50": percentile(0.50),
         "latency_seconds_p95": percentile(0.95),
-        "usd_cost": None,
+        "usd_cost": (
+            _cost(model, prompt_tokens, completion_tokens)
+            if model is not None
+            else None
+        ),
     }
 
 
@@ -1080,8 +1124,16 @@ def summarize(
         ]
         for arm in ARMS
     }
+    observed_models = {
+        row["model"] for rows in by_arm.values() for row in rows
+    }
+    if len(observed_models) > 1:
+        raise BenchmarkContractError(
+            f"one run directory contains multiple models: {sorted(observed_models)}"
+        )
     summary: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
+        "model": next(iter(observed_models), None),
         "pilot": len(selected_cases) != EXPECTED_TASK_COUNT,
         "selected_task_count": len(selected_cases),
         "expected_rows": expected_rows,
@@ -1122,9 +1174,6 @@ def summarize(
     }
     summary["paired_primary"] = {
         "direct1_vs_st": _mcnemar(indexed["direct1"], indexed["st"]),
-        "direct2-revise_vs_st": _mcnemar(
-            indexed["direct2-revise"], indexed["st"]
-        ),
     }
     st_rows = by_arm["st"]
     summary["st_diagnostics"] = {
@@ -1145,35 +1194,50 @@ def summarize(
     return summary
 
 
-def _make_client() -> TrackingAnthropicClient:
-    load_me_env()
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise BenchmarkContractError("ANTHROPIC_API_KEY is not configured")
-    import anthropic
+def _make_client(model: str) -> TrackingProviderClient:
+    from dotenv import load_dotenv
 
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
+    load_me_env()
+    if _is_anthropic_model(model):
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            raise BenchmarkContractError("ANTHROPIC_API_KEY is not configured")
+        import anthropic
+
+        delegate = anthropic.Anthropic(max_retries=0)
+    else:
+        if not os.environ.get("OPENAI_API_KEY"):
+            raise BenchmarkContractError("OPENAI_API_KEY is not configured")
+        from openai import OpenAI
+
+        delegate = OpenAI(max_retries=0)
     # Disable SDK retries so provider-call accounting is not silently inflated.
-    return TrackingAnthropicClient(anthropic.Anthropic(max_retries=0))
+    return TrackingProviderClient(delegate)
 
 
 def _execution_order(index: int) -> tuple[str, ...]:
-    # Counterbalance the primary Direct1-vs-ST order. Revision still follows its
-    # shared Direct1 draft in both orders.
+    # Counterbalance Direct1-vs-ST order across the fixed task sequence.
     return (
-        ("direct1", "st", "direct2-revise")
+        ("direct1", "st")
         if index % 2 == 0
-        else ("st", "direct1", "direct2-revise")
+        else ("st", "direct1")
     )
 
 
 def run_benchmark(
     run_dir: Path,
     *,
+    model: str = MODEL,
     resume: bool = False,
     dry_run: bool = False,
     limit: int | None = None,
 ) -> dict[str, Any]:
+    if model not in MODELS:
+        raise BenchmarkContractError(
+            f"unsupported model {model!r}; expected one of {MODELS}"
+        )
     cases = load_cases()
-    contract = build_contract(cases, limit=limit)
+    contract = build_contract(cases, limit=limit, model=model)
     selected = cases if limit is None else cases[:limit]
     if dry_run:
         if run_dir.exists():
@@ -1193,25 +1257,16 @@ def run_benchmark(
     results_path = run_dir / "results.jsonl"
     completed = _load_completed(results_path)
     _validate_completed_artifacts(run_dir, completed)
-    client = _make_client()
+    client = _make_client(model)
     for index, case in enumerate(selected):
         for arm in _execution_order(index):
             key = (case.key, arm)
             if key in completed:
                 continue
             if arm == "direct1":
-                row = _run_direct1(case, run_dir, client)
+                row = _run_direct1(case, run_dir, client, model)
             elif arm == "st":
-                row = _run_st(case, run_dir, client)
-            elif arm == "direct2-revise":
-                direct1_row = completed.get((case.key, "direct1"))
-                if direct1_row is None:
-                    raise BenchmarkContractError(
-                        f"missing paired direct1 result for {case.key}"
-                    )
-                row = _run_direct2_revision(
-                    case, run_dir, client, direct1_row
-                )
+                row = _run_st(case, run_dir, client, model)
             else:  # pragma: no cover - ARMS is immutable
                 raise BenchmarkContractError(f"unknown arm: {arm}")
             _append_jsonl(results_path, row)
@@ -1248,7 +1303,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         type=int,
         help="pilot only: execute the first N of the validated 97 tasks",
     )
-    parser.add_argument("--model", default=MODEL, choices=(MODEL,))
+    parser.add_argument("--model", default=MODEL, choices=MODELS)
     return parser.parse_args(argv)
 
 
@@ -1257,6 +1312,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = run_benchmark(
             args.run_dir.resolve(),
+            model=args.model,
             resume=args.resume,
             dry_run=args.dry_run,
             limit=args.limit,

@@ -59,7 +59,7 @@ def test_sum_reduction_runs_clean_and_authorizes_true_total():
     prepared = prepare(PLAN, suite.tool_names(), suite.tool_signer())
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     report = execute_generated_code(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(shopping.make_env())
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(shopping.make_env())
     )
     assert not report.crashed
     # send_money executed and was permitted with the re-derived sum
@@ -76,7 +76,7 @@ def test_fabricated_total_is_denied():
     prepared = prepare(PLAN, suite.tool_names(), suite.tool_signer())
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     execute_generated_code(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(shopping.make_env())
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(shopping.make_env())
     )
     total = _expected_total()
     # any total that is not the real sum is off-slice -> default-deny (FN=0)

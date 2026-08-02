@@ -28,7 +28,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Any, Callable
 
-from pauth.enforcer import Enforcer, _Denied, CallEvent
+from pauth.enforcer import CallEvent, Decision, Enforcer, _Denied
 from pauth.evaluator import wrap
 
 from gateway.runtime.confirmation import PendingConfirmation, is_side_effecting
@@ -68,7 +68,7 @@ def execute_with_batched_confirmation(
     code: str,
     enforcer: Enforcer,
     tool_params: dict[str, list[str]],
-    tool_runner: Callable[[str, dict[str, Any]], Any],
+    tool_executor: Callable[[str, dict[str, Any]], Any],
     *,
     taint_map: dict[tuple[str, int], tuple[str, ...]],
     docs: dict[str, Any],
@@ -98,7 +98,7 @@ def execute_with_batched_confirmation(
             # value depends on a not-yet-run side-effect -> the split case.
             if any(a is _DEFERRED for a in arglist):
                 saw_deferred_none["hit"] = True
-            decision = enforcer.check(name, arglist)
+            decision = enforcer.check(name, arglist, live=True)
             event = CallEvent(name, arglist, decision)
             events.append(event)
             if not decision.permit:
@@ -109,14 +109,29 @@ def execute_with_batched_confirmation(
                 deferred.append(DeferredAction(name, arglist, gated, srcs))
                 return _DEFERRED  # DEFER: not executed until the barrier approves it
             params = tool_params.get(name, [])
+            if not enforcer.begin(decision.token):
+                raise _Denied(CallEvent(
+                    name,
+                    arglist,
+                    Decision(
+                        False,
+                        decision.rule,
+                        "execution attempt already exists (replay blocked)",
+                        decision.token,
+                    ),
+                ))
             try:
-                result = tool_runner(name, dict(zip(params, arglist)))
+                result = tool_executor(name, dict(zip(params, arglist)))
             except Exception as exc:  # noqa: BLE001 -- tool-level failure
+                try:
+                    enforcer.mark_indeterminate(decision.token)
+                except Exception:
+                    pass
                 tool_errors.append(f"{name}: {type(exc).__name__}: {exc}")
                 return None
             result = wrap(result)
             assert decision.rule is not None
-            enforcer.record(decision.rule, result)
+            enforcer.record(decision.rule, result, decision.token)
             return result
 
         return wrapper
@@ -160,19 +175,26 @@ def execute_with_batched_confirmation(
     for act in deferred:
         if not act.approved:
             continue
-        decision = enforcer.check(act.tool, act.args)
+        decision = enforcer.check(act.tool, act.args, live=True)
         if not decision.permit:
             act.approved = False
             continue
         params = tool_params.get(act.tool, [])
+        if not enforcer.begin(decision.token):
+            act.approved = False
+            continue
         try:
-            raw = tool_runner(act.tool, dict(zip(params, act.args)))
+            raw = tool_executor(act.tool, dict(zip(params, act.args)))
         except Exception as exc:  # noqa: BLE001
+            try:
+                enforcer.mark_indeterminate(decision.token)
+            except Exception:
+                pass
             tool_errors.append(f"{act.tool}: {type(exc).__name__}: {exc}")
             continue
         act.result = raw
         assert decision.rule is not None
-        enforcer.record(decision.rule, wrap(raw))
+        enforcer.record(decision.rule, wrap(raw), decision.token)
 
     return BatchedReport(
         events=events, deferred=deferred, tool_errors=tool_errors,

@@ -86,13 +86,13 @@ AUX_INJEC_ATTACK_CATEGORY = "AUX_INJEC_ATTACK_CATEGORY"  # InjecAgent direct-har
 
 # name -> (property, one-line description, produced-by evals)
 METRICS: dict[str, tuple[str, str, str]] = {
-    OVER_AUTHORIZATION_ACCEPTS: ("PLAN_FIDELITY", "bad prompt accepted at the plan layer", "fpfn, freeform"),
-    PERMITTED_INJECTIONS: ("ADVERSARIAL_ROBUSTNESS", "forced injection / off-plan call permitted at runtime", "fpfn, l2_replay, unexpected_attacks"),
+    OVER_AUTHORIZATION_ACCEPTS: ("PLAN_FIDELITY", "bad prompt accepted at the plan layer", "fpfn"),
+    PERMITTED_INJECTIONS: ("ADVERSARIAL_ROBUSTNESS", "forced injection / off-plan call permitted at runtime", "fpfn, unexpected_attacks"),
     UNHELD_DANGEROUS_FLOWS: ("ENFORCEMENT_FIDELITY", "untrusted->control call not held by the gate", "grill_eval, grill_scenario"),
     BLOCKED_INJECTIONS: ("ADVERSARIAL_ROBUSTNESS", "forced injections the gateway blocked", "toolcall_eval, e2e_eval"),
     TOTAL_INJECTIONS: ("ADVERSARIAL_ROBUSTNESS", "forced injections attempted", "toolcall_eval, e2e_eval"),
-    OVER_REJECTIONS: ("AUTHORIZATION_FIDELITY", "legitimate prompt/call wrongly denied", "fpfn, freeform, l2_replay"),
-    ACCEPTANCE_RATE: ("SYNTHESIS", "fraction of tasks whose plan was accepted", "fpfn, freeform"),
+    OVER_REJECTIONS: ("AUTHORIZATION_FIDELITY", "legitimate prompt/call wrongly denied", "fpfn"),
+    ACCEPTANCE_RATE: ("SYNTHESIS", "fraction of tasks whose plan was accepted", "fpfn"),
     OVER_GATED_SAFE_FLOWS: ("ENFORCEMENT_FIDELITY", "safe flow needlessly held for confirmation", "grill_eval"),
     SUITE_FILTER_RECALL: ("ROUTING", "fraction of prompts whose needed suite was kept", "filter_recall"),
     DROPPED_NEEDED_SUITES: ("ROUTING", "prompts whose needed suite was dropped", "filter_recall"),
@@ -108,7 +108,7 @@ METRICS: dict[str, tuple[str, str, str]] = {
     PROMPT_TOKENS: ("COST", "the Planner prompt tokens", "fpfn"),
     COMPLETION_TOKENS: ("COST", "the Planner completion tokens", "fpfn"),
     VALUE_LEAK_COUNT: ("INTEGRITY", "untrusted value handed back to the agent", "grill_eval"),
-    OFF_INTENT_COUNT: ("PLAN_FIDELITY", "accepted plan called the wrong tools", "freeform"),
+    OFF_INTENT_COUNT: ("PLAN_FIDELITY", "accepted plan called the wrong tools", "(retired: freeform harness removed 2026-08-02)"),
     PLAN_REJECTED: ("SYNTHESIS", "plans denied at the plan layer", "grill_eval, fpfn"),
     # Primary PAuth funnel. Under/excess are one reference-fidelity comparison.
     FEASIBILITY_EXPRESSIBLE: (

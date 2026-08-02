@@ -29,7 +29,7 @@ def _armed(code):
     prepared = prepare(code, s.tool_names(), s.tool_signer())
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), s.tool_signer())
     rep = execute_generated_code(
-        prepared.source, enf, s.tool_params(), s.runner_factory(s.make_env())
+        prepared.source, enf, s.tool_params(), s.tool_executor_factory(s.make_env())
     )
     return prepared, enf, rep
 

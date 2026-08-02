@@ -11,7 +11,7 @@
 1. **決定的な中核は決定的なままにする。** どの Planner 戦略も、`pauth.prepare()` が
    構文解析・スライス導出・ルールコンパイルを行う制限付き `run()` コードを出力する。
    その検証を迂回したり、ルールを直接出力したりする Planner は認めない
-   (`docs/GLOSSARY.md` の Planner / GrammarValidator と `docs/ARCHITECTURE.md` §1.1 を参照)。
+   (`docs/SYSTEM_MODEL.md` の Planner / GrammarValidator と `docs/SYSTEM_MODEL.md` 第 6 部「結合境界と帰結」を参照)。
 2. **エージェント向けフィードバックは値を含まないままにする。** エージェントのモデル文脈に
    再流入する拒否理由は、オペランド値を一切含んではならない — プロンプトインジェクションの
    ペイロードになりうるためである。`gateway/runtime/feedback.py` を参照。
@@ -23,7 +23,7 @@
 - `gateway/` — 実行時: Planner 戦略、呼び出し単位の執行、ツールプロバイダ
   (MCP / OpenAPI / スイート)、HTTP 配信、入口処理、デプロイスクリプト、
   Claude Code フック。
-- `eval/` — 測定ランナー(FP/FN、自由形式 Planner)。
+- `eval/` — 測定ランナー(FP/FN、E2E、評価ファネル)。
 - `tests/` — 単体テストに加えて、実験アダプタとフィクスチャ。
 - `docs/` — 設計文書: アーキテクチャ、脅威モデル、自己ホスティング、入口設計、
   Planner 戦略候補、設計状況。
@@ -44,7 +44,6 @@ LLM の planner / 判定器の経路だけで、決定的なテストとオフ�
 
 ```bash
 .venv/bin/python -m pytest tests/ -q                          # full suite, offline
-.venv/bin/python -m tests.test_recognizer --backend fixture   # Planner recognizer, no key
 .venv/bin/python -m eval.fpfn --suites shopping               # FP/FN measurement, no key
 ```
 

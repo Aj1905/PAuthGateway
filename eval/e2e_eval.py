@@ -18,9 +18,9 @@ task's forced injections. It reports, per task and in aggregate:
 SCOPE / honesty. This measures the prompt->execution flow of the *authorized
 plan* plus forced-injection defense. It is NOT yet a live autonomous agent that
 dynamically deviates under live injection -- that final rung needs an agent
-runner (e.g. AgentDojo's) and is a separate step; the counters here are exactly
+benchmark harness (e.g. AgentDojo's) and is a separate step; the counters here are exactly
 what it would reuse. the Planner *quality* (does the plan match the prompt) is measured
-separately by eval/freeform.py and eval/fpfn.py.
+separately by eval/fpfn.py.
 
 Run:  .venv/bin/python -m eval.e2e_eval
 """
@@ -139,7 +139,7 @@ def _derive_trace(task: E2ETask) -> list[tuple[str, list[Any]]]:
     prepared = prepare(task.code, suite.tool_names(), suite.tool_signer())
     enforcer = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     report = execute_generated_code(
-        prepared.source, enforcer, suite.tool_params(), suite.runner_factory(suite.make_env())
+        prepared.source, enforcer, suite.tool_params(), suite.tool_executor_factory(suite.make_env())
     )
     if report.crashed:
         return []

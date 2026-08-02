@@ -1,4 +1,4 @@
-"""End-to-end grill (human-in-the-loop confirmation) scenario runner.
+"""End-to-end grill (human-in-the-loop confirmation) scenario tool_executor.
 
 Demonstrates that the confirmation gate actually FUNCTIONS on a realistic
 dangerous flow: the agent reads a message whose payment IBAN is
@@ -63,7 +63,7 @@ def _tools() -> dict:
 
 
 def _suite_for(iban: str) -> SuiteSpec:
-    def runner_factory(env):
+    def tool_executor_factory(env):
         impl: dict[str, Callable[..., Any]] = {
             "read_message": lambda: env.message,
             "send_money": lambda recipient, amount, subject, date: (
@@ -75,7 +75,7 @@ def _suite_for(iban: str) -> SuiteSpec:
 
     return SuiteSpec(
         name="msg", tools=_tools(), make_env=lambda: Env(iban),
-        runner_factory=runner_factory, tasks=[],
+        tool_executor_factory=tool_executor_factory, tasks=[],
     )
 
 

@@ -3,7 +3,7 @@
 本書は評価結果の正式なまとめである。中心的な主張、評価の設定、測定結果、
 そして正直な限界を記す。試行ごとの詳細は
 [REF_REQUIRED_IMPROVEMENT_LOG.md](REF_REQUIRED_IMPROVEMENT_LOG.md) に、アーキテクチャは
-[ARCHITECTURE.md](ARCHITECTURE.md) に、脅威モデルは [THREAT_MODEL.md](THREAT_MODEL.md) にある。
+[SYSTEM_MODEL.md](SYSTEM_MODEL.md) に、脅威モデルは [THREAT_MODEL.md](THREAT_MODEL.md) にある。
 
 本書のすべての数値は、各節に記載したコマンドから再現できる。実行系は結果を
 決め打ちしない。誤ったplanは許可callの欠落または過剰として現れ、実行時の
@@ -69,7 +69,7 @@ end-to-end 評価ではない。
 
 ## 2. 評価対象のシステム
 
-パイプライン(詳細は [ARCHITECTURE.md](ARCHITECTURE.md)):
+パイプライン(詳細は [SYSTEM_MODEL.md](SYSTEM_MODEL.md)):
 
 ```
 prompt ──▶ Planner ──▶ Slicer ──▶ Rule compiler ──▶ Enforcer

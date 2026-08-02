@@ -123,7 +123,7 @@ _IMPL: dict[str, Callable[..., Any]] = {
 }
 
 
-def runner_factory(env: DiningEnv) -> Callable[[str, dict[str, Any]], Any]:
+def tool_executor_factory(env: DiningEnv) -> Callable[[str, dict[str, Any]], Any]:
     def run(tool: str, kwargs: dict[str, Any]) -> Any:
         return _IMPL[tool](env, **kwargs)
 
@@ -266,6 +266,6 @@ def build_suite() -> SuiteSpec:
         name="dining",
         tools=_TOOLS,
         make_env=make_env,
-        runner_factory=runner_factory,
+        tool_executor_factory=tool_executor_factory,
         tasks=_TASKS,
     )

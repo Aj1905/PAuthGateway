@@ -22,9 +22,9 @@ PAuthGateway は執行点をエージェントの**外側**に移す:
 - **判定は決定的** — 許可の判断を LLM は行わない。LLM を使うのは計画生成だけで、スライス導出、ルールコンパイル、執行は決定的である。
 - **観測はゲートウェイが所有する** — 各ツール結果は署名付き envelope として記録されるため、偽造された値が後段の検査を誘導できない。
 
-設計: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) ·
+設計: [`docs/SYSTEM_MODEL.md`](docs/SYSTEM_MODEL.md) ·
 脅威モデル: [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) ·
-用語: [`docs/GLOSSARY.md`](docs/GLOSSARY.md)
+用語: [`docs/SYSTEM_MODEL.md`](docs/SYSTEM_MODEL.md)
 
 ## これは何で*ない*か
 
@@ -251,24 +251,23 @@ benchmarks/
   injecagent_adapter.py, tau_bench_adapter.py   additional framework adapters
 eval/
   check.py            one-command fixed forced-attack control check
-  fpfn.py             FP/FN + acceptance runner (paper Table 2 / Fig. 10)
+  fpfn.py             FP/FN + acceptance harness (paper Table 2 / Fig. 10)
   funnel.py           parameterized lifecycle + reference-fidelity evaluation
   metrics.py          canonical metric vocabulary and reporting groups
-  gates.py            per-metric attribution (see docs/GLOSSARY.md)
+  gates.py            per-metric attribution (see docs/SYSTEM_MODEL.md)
 docs/
   EVALUATION.md       central claim, results, limitations  ← start here for the science
-  ARCHITECTURE.md     whole-system logical design
+  SYSTEM_MODEL.md     whole-system logical design and precise definitions
   THREAT_MODEL.md     defense boundary (in / out of scope)
-  GLOSSARY.md         precise definitions
 ```
 
 各文書の役割はファイル名が示す。ここでは目的別の読み順と、`docs/` の外にある
 文書だけを挙げる。
 
 - **導入する人**: [README](README.md)（本書）→ [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) → [`gateway/hooks/README.md`](gateway/hooks/README.md)
-- **設計を知りたい人**: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) → [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) → [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md)
-- **評価を知りたい人**: [`docs/EVALUATION.md`](docs/EVALUATION.md) → [`docs/GLOSSARY.md`](docs/GLOSSARY.md) → [`docs/REF_REQUIRED_IMPROVEMENT_LOG.md`](docs/REF_REQUIRED_IMPROVEMENT_LOG.md)（履歴）
-- **論文執筆**: [`paper/PAuthGateway/AUTHORING_GUIDE.md`](paper/PAuthGateway/AUTHORING_GUIDE.md)
+- **設計を知りたい人**: [`docs/SYSTEM_MODEL.md`](docs/SYSTEM_MODEL.md) → [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) → [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md)
+- **評価を知りたい人**: [`docs/EVALUATION.md`](docs/EVALUATION.md) → [`docs/SYSTEM_MODEL.md`](docs/SYSTEM_MODEL.md) → [`docs/REF_REQUIRED_IMPROVEMENT_LOG.md`](docs/REF_REQUIRED_IMPROVEMENT_LOG.md)（履歴）
+- **論文執筆**: [`paper/PAuthGateway/`](paper/PAuthGateway/)
 
 ---
 

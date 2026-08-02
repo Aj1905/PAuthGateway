@@ -163,23 +163,23 @@ upstream tool/SaaS/MCP server
 正準名と生成処理は `gateway/planning/planner.py` を正とする。本書では一覧を
 複製しない。
 
-未実装候補の状態は `DESIGN_STATUS.md`「Planner 戦略の発展」、設計上の比較は
-`PLANNING_STRATEGIES.md` に置く。将来の設定ファイルや UI も同じ正準名を使い、
-`ARCHITECTURE.md` §1.1 の Planner 境界を変えない。
+各戦略(`P3`–`P5` を含む)の状態と設計契約は `SYSTEM_MODEL.md` 第 2 部
+ノード 1 の登録表に置く。将来の設定ファイルや UI も同じ正準名を使い、
+`SYSTEM_MODEL.md` の Planner 境界を変えない。
 
 ## 自己ホストの基盤
 
 最小の自己ホスト型アプリ:
 
 1. **設定可能な上流レジストリ**
-   - MCP/HTTP/SaaS の tool ソースを登録する。
+   - MCP/HTTP/SaaS 向けのツールアダプタを登録する。
    - tool スキーマ、パラメータの順序、返り値スキーマを保持する。
    - 明示的に名前空間を分けない限り、tool 名の衝突を拒否する。
    - HTTP API については、OpenAPI 仕様を `SuiteSpec` に反映する。
    - 上流 API 仕様の変化を検出し、新しい tool 面を受け入れる前に利用者へ通知できる報告を発行する。
 
 2. **Ingress アダプタ**
-   - tool 境界が見える MCP/HTTP から始める。
+   - tool 境界を観測できる MCP/HTTP から始める。
    - Claude Code フックは製品の核ではなく、互換アダプタとして維持する。
    - プロトコル固有のアダプタは、エージェントによる書き換えを信頼せずにプロンプトと tool 呼び出しを露出できる場合に限って追加する。
 
@@ -193,10 +193,10 @@ upstream tool/SaaS/MCP server
    - envelope の署名鍵は配備の内部に留める。
 
 5. **運用面**
-   - tool ソースと Planner モードのための単一の設定ファイル。
+   - ツールアダプタと Planner モードのための単一の設定ファイル。
    - 上流 tool と Planner 資格情報の健全性検査。
-   - 導入時のソース単位の strict/log モード。
-   - 設定済み OpenAPI ソースに対する定期的な API 仕様監視。
+   - 導入時のツールアダプタ単位の strict/log モード。
+   - 設定済み OpenAPI アダプタに対する定期的な API 仕様監視。
 
 ## API 仕様の反映と変更通知
 
@@ -230,6 +230,110 @@ OpenAPI に基づくスイートはゲートウェイ設定に登録できる。
 この監視器は、変化した仕様、追加/削除された tool、変化したパラメータ一覧を記述する JSON を出力する。自己ホスト配備では、その JSON をメール、Slack、アプリの UI 通知、あるいは再起動/再読み込みの作業の流れにつなげられる。
 
 現在の制限: 稼働中の `gateway/serving/http_server.py` は、変更された OpenAPI 仕様をホットリロードしない。次の層では、認証付きの再読み込みエンドポイントか、変更後の tool 面を利用者が受け入れた後に監督プロセスが管理する再起動を追加すべきである。
+
+## 現在の配備形態: Sakura 上のセルフホスト、Monocle による管理(短期)
+
+抽象が特定の配備先へ漏れ込まないこと(`SYSTEM_MODEL.md` 第 6 部の不変条件
+「すべての抽象は配備境界の上に載っている」)を原則として保つ。以下は現行の
+具体形態である。
+
+```
+                         ┌──────────────────────┐
+                         │  USER (laptop / SSH) │
+                         └──────────┬───────────┘
+                                    │  ssh / web shell
+                                    ▼
+   ┌─────────────────────────────────────────────────────────────────┐
+   │ Sakura Internet VM   (provisioned and managed by Monocle)       │
+   │                                                                 │
+   │  ┌─────────────────────────────────────────────────────────┐    │
+   │  │  systemd unit: claude-code                              │    │
+   │  │   └─ hooks: submit_prompt.sh / pretool.sh               │    │
+   │  └────────────┬────────────────────────────────────────────┘    │
+   │               │ localhost HTTP (127.0.0.1:8081)                 │
+   │               ▼                                                 │
+   │  ┌─────────────────────────────────────────────────────────┐    │
+   │  │  systemd unit: gateway-http                             │    │
+   │  │   - gateway/serving/http_server.py --config /etc/gateway.json   │    │
+   │  │   - in-memory sessions, restart loses state             │    │
+   │  └────────────┬────────────────────────────────────────────┘    │
+   │               │                                                 │
+   │     ┌─────────┴───────────────────────┐                         │
+   │     │ stdio subprocess MCPs           │ HTTP MCPs              │
+   │     ▼                                 ▼                         │
+   │  ┌────────────────────┐   ┌────────────────────────────────┐    │
+   │  │  @mcp/filesystem,  │   │  internal MCP HTTP shims,      │    │
+   │  │  @mcp/git, etc.    │   │  bound to 127.0.0.1            │    │
+   │  └────────────────────┘   └─────────────┬──────────────────┘    │
+   │                                         │ outbound HTTPS         │
+   └─────────────────────────────────────────┼────────────────────────┘
+                                             │
+                                             ▼  (Sakura egress, private route preferred)
+                                ┌────────────────────────┐
+                                │  public SaaS APIs       │
+                                │  (Gmail, Linear, ...)   │
+                                └────────────────────────┘
+```
+
+運用上の選択:
+
+* **1 VM、1 ゲートウェイ、1 ユーザー。** この段階ではマルチテナントは対象外。
+  セッションの分離は Claude Code の ``session_id`` による。
+* **状態。** セッションはプロセスのメモリ上にあり、``systemctl restart`` で
+  失われる。ユーザーがプロンプトを出し直せば済むうちは許容する。長時間走る
+  タスクが現実のものになったら見直す。
+* **秘密情報(credential broker モデル、S4)。** ゲートウェイが SaaS の資格情報を
+  **保持し、実行する**。このモデルの定義と、旧モデルを破棄した論拠は
+  `SYSTEM_MODEL.md` 第 1 部「Credential broker(S4)」を正とする。ここで
+  決めるのは配備上の受容だけである: 鍵の集約点になる危険は、このセルフホスト
+  形態(ユーザー自身の VM 上で動く 1 VM / 1 ユーザー)を前提とすることで
+  受け入れる。broker 実装の要件: スイートごとに分離した保管、ローテーション、
+  アクセス監査。(実装は最初の実 SaaS 統合と併せて行う。)
+* **ネットワーク。** ``gateway-http`` は ``127.0.0.1`` に束縛されるため、HTTP
+  API に外部から到達することはできない。hook はローカルなので到達できる。
+  ローカル区間に TLS はない。公開 SaaS への外向き通信は、Sakura の標準の
+  egress と、Monocle が提供する私設経路を併用する。
+* **ログ/可観測性。** ゲートウェイと hook スクリプトは stderr に書き、
+  systemd の journal がそれを捕捉し、Monocle が journal を集約する。
+* **バックアップ/復旧。** セッションは揮発とする。設定とスイート登録は平文の
+  ファイルであり、Monocle の VM イメージ管理が面倒を見る。
+* **更新。** アプリケーションは VM 上の Python ソースである。更新の適用は
+  ``git pull`` + ``systemctl restart gateway-http``、(hook スクリプトが変わった
+  場合は)Claude Code の設定の再読み込み。
+
+利点と欠点:
+
+* (+) 安価で、全体を自分たちで掌握でき、hook 呼び出しの遅延が小さい。
+* (+) 特定の業者への束縛がない。スタック全体が Linux VM 上のファイルにすぎない。
+* (-) 単一障害点。VM が 1 台落ちれば Claude Code が使えなくなる。
+* (-) 拡張は手作業。1 ユーザーには十分だが、多数には耐えない。
+* (-) 再起動でセッションが失われる。
+
+### コードベースと配備の対応
+
+| 抽象 | セルフホストでの役割 |
+|---|---|
+| `gateway/serving/http_server.py` | VM 上の systemd unit |
+| `gateway/ingress/agent_channel.py` | 変更なし。セッション状態は `_Session` 境界で外部化できる |
+| `gateway/providers/registry.py` + `gateway/serving/config.py` | ディスク上の `gateway.json` |
+| `gateway/providers/mcp_suite.py` HTTP | localhost の MCP 群 |
+| `gateway/providers/mcp_suite.py` stdio | VM 上のサブプロセス MCP 群 |
+| `gateway/runtime/policy.py` | 配備ごとの JSON |
+| `gateway/providers/suite_filter.py` | 変更なし。スイート数が増えたら埋め込みに基づく採点器を検討 |
+
+## 運用上の注意
+
+* Claude Code を開く前に、ゲートウェイのデーモン
+  (`gateway/serving/http_server.py`)を起動すること。session store を有効にした
+  配備では、再起動時に plan fingerprint と実行試行を復元し、`succeeded` /
+  `indeterminate` call の再 dispatch を拒否する。EnvelopeStore と HMAC 鍵は
+  まだ復元しないため、再起動前の結果に依存する後続 call は fail-closed となり、
+  シームレスには続行できない。session store が無効なら、再起動時に active
+  session は失われる。
+* JSON の `SessionStore` は単一 Gateway プロセス用である。active-active 配備で
+  同じ session を複数プロセスが処理する場合は、operation ID に対する conditional
+  write / CAS を持つ共有データストアが必要であり、JSON ファイルの共有では
+  at-most-once を主張できない。
 
 ## 最初の版で目指さないこと
 

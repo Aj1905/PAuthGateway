@@ -117,7 +117,7 @@ _GATEWAY_TOOLS = {
 def _gateway_suite() -> SuiteSpec:
     env = _Env()
 
-    def runner(tool: str, kwargs: dict[str, Any]) -> Any:
+    def tool_executor(tool: str, kwargs: dict[str, Any]) -> Any:
         env.calls.append((tool, kwargs))
         return {"value": kwargs["value"]}
 
@@ -125,7 +125,7 @@ def _gateway_suite() -> SuiteSpec:
         name="tiny",
         tools=_GATEWAY_TOOLS,
         make_env=lambda: env,
-        runner_factory=lambda _env: runner,
+        tool_executor_factory=lambda _env: tool_executor,
         tasks=[],
     )
 

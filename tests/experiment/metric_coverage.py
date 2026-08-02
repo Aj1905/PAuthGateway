@@ -43,7 +43,7 @@ def _ref_trace(suite, code):
         return None
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
-                                 suite.runner_factory(suite.make_env()))
+                                 suite.tool_executor_factory(suite.make_env()))
     if rep.crashed or rep.denied:
         return None
     return [(e.tool, [str(a) for a in e.args]) for e in rep.events if e.decision.permit]
@@ -107,7 +107,7 @@ def score_framework(name, suite, plan_of, ref_of, limit=None):
         agg[RELIABILITY_RUNTIME_CRASH_FREE][1] += 1
         enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
         rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
-                                     suite.runner_factory(suite.make_env()))
+                                     suite.tool_executor_factory(suite.make_env()))
         conformant = not rep.denied
         agg[CONFORMANCE_PLAN_TRACE_PERMITTED][0] += conformant
         agg[CONFORMANCE_PLAN_TRACE_PERMITTED][1] += 1

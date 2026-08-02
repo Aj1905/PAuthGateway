@@ -25,7 +25,7 @@ def _armed_enforcer(suite, task):
     prepared = prepare(task.reference_code, tools, signer)
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), signer)
     execute_generated_code(
-        prepared.source, enf, params, suite.runner_factory(suite.make_env())
+        prepared.source, enf, params, suite.tool_executor_factory(suite.make_env())
     )
     return enf
 

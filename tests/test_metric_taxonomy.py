@@ -95,7 +95,7 @@ class _FakeSuite:
     def make_env(self):
         return object()
 
-    def runner_factory(self, _env):
+    def tool_executor_factory(self, _env):
         def run(_name, _kwargs):
             raise RuntimeError("tool failed")
 
@@ -129,7 +129,7 @@ class _MinimalSuite:
     def make_env(self):
         return object()
 
-    def runner_factory(self, _env):
+    def tool_executor_factory(self, _env):
         def run(_name, _kwargs):
             raise AssertionError("no tools expected")
 

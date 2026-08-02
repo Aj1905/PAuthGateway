@@ -84,7 +84,7 @@ def _run(scn: Scenario, poisoned: bool, confirmer) -> tuple[Any, bool]:
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     env = scn.make_poison() if poisoned else scn.make_benign()
     report = execute_generated_code(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(env)
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(env)
     )
     docs = {n: s.doc for n, s in suite.tools.items()}
     taint = broad_taint_map(task.reference_code, docs, scn.source_trust)
@@ -185,7 +185,7 @@ class _BatchEnv:
         self.paid_at_barrier: list | None = None
 
 
-def _batch_runner(env):
+def _batch_tool_executor(env):
     def run(tool, kwargs):
         if tool == "read_bills":
             return {"a": env.a, "b": env.b}
@@ -236,7 +236,7 @@ class _AmountOracle:
 
 def _run_batch(poisoned: bool, confirmer):
     suite = SuiteSpec(name="batch", tools=_BATCH_TOOLS, make_env=lambda: _BatchEnv(poisoned),
-                      runner_factory=_batch_runner, tasks=[])
+                      tool_executor_factory=_batch_tool_executor, tasks=[])
     prepared = prepare(_BATCH_PLAN, suite.tool_names(), suite.tool_signer())
     env = _BatchEnv(poisoned)
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
@@ -245,7 +245,7 @@ def _run_batch(poisoned: bool, confirmer):
     tmap = broad_taint_map(_BATCH_PLAN, docs, trust)
     rec = _BarrierRecorder(confirmer, env)
     rep = execute_with_batched_confirmation(
-        prepared.source, enf, suite.tool_params(), _batch_runner(env),
+        prepared.source, enf, suite.tool_params(), _batch_tool_executor(env),
         taint_map=tmap, docs=docs, confirmer=rec)
     return env, rep
 

@@ -1,16 +1,16 @@
-"""Test data split into three layers (L1 / L2 / L3).
+"""Shared test infrastructure and hand-labelled corpora.
 
-The split matches what the system actually accepts/rejects at each layer:
+The former self-made L1/L2/L3 dataset layers were removed (2026-08-02):
+benchmark frameworks (AgentDojo etc.) supply task/reference data instead.
 
-* **L1 (``l1_prompts``)** -- ``(prompt, expected_accept)`` and grading hints.
-  Used to measure the recognizer (gateway/planning/core.py) and the LLM the Planner path
-  (gateway/planning/agentic_planner.py + eval/freeform.py).
+What remains here is NOT replaceable by those frameworks:
 
-* **L2 (``l2_scenarios``)** -- ``(prompt, [(tool, args, expected_permit)])``.
-  Used by the end-to-end gateway runner (eval/l2_replay.py): every
-  scripted agent step asserts a verdict against the gateway's enforcer.
-
-* **L3 (``l3_references``)** -- ``(reference_code, [forced_injections])``.
-  Used to bypass the Planner and validate the deterministic Slicer/Rule-compiler/runtime enforcement directly.
-  Mirrors paper sec. 5.1 / 5.2.
+* ``mock_mcp_server.py`` / ``mock_mcp_stdio.py`` -- fake MCP servers (HTTP /
+  stdio) used to test the MCP suite providers in
+  ``gateway/providers/mcp_suite.py``.
+* ``grill_cases.py`` -- labelled dangerous-flow corpus for ``eval/grill_eval.py``.
+* ``filter_cases.py`` -- labelled suite-filter recall corpus for
+  ``eval/filter_recall.py``.
+* ``extract_real_prompts.py`` / ``real_external_prompts.jsonl`` -- real user
+  prompts extracted from Claude Code transcripts (output is gitignored).
 """

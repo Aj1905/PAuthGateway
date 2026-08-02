@@ -54,6 +54,8 @@ class ReasonCode(enum.Enum):
     PRECHECK_DENIED = "precheck_denied"
     SIDE_CHANNEL_DENIED = "side_channel_denied"
     TOOL_ERROR = "tool_error"
+    INDETERMINATE_TOOL_OUTCOME = "indeterminate_tool_outcome"
+    EXECUTION_STATE_ERROR = "execution_state_error"
 
 
 _TEMPLATES: dict[ReasonCode, str] = {
@@ -86,6 +88,10 @@ _TEMPLATES: dict[ReasonCode, str] = {
         "outbound actions through approved, task-scoped tools.",
     ReasonCode.TOOL_ERROR:
         "Tool {tool} failed to execute.",
+    ReasonCode.INDETERMINATE_TOOL_OUTCOME:
+        "The outcome of tool {tool} is unknown; automatic retry is blocked.",
+    ReasonCode.EXECUTION_STATE_ERROR:
+        "Tool {tool} cannot run because its execution state was not safely recorded.",
 }
 
 
@@ -168,7 +174,11 @@ def build_agent_feedback(
 # ``build_agent_feedback``. Misclassification only picks a different safe
 # template -- it can never leak a value.
 _CLASSIFY_RULES: tuple[tuple[str, ReasonCode], ...] = (
+    ("indeterminate tool outcome", ReasonCode.INDETERMINATE_TOOL_OUTCOME),
+    ("execution state error", ReasonCode.EXECUTION_STATE_ERROR),
     ("already consumed", ReasonCode.RULE_CONSUMED),
+    ("execution attempt already exists", ReasonCode.RULE_CONSUMED),
+    ("replay", ReasonCode.RULE_CONSUMED),
     ("complete", ReasonCode.PLAN_COMPLETE),
     ("no active session", ReasonCode.SESSION_REJECTED),
     ("not active yet", ReasonCode.STAGE_INACTIVE),

@@ -130,7 +130,7 @@ def build_suite(reference: bool = True) -> SuiteSpec:
     def make_env():
         return copy.deepcopy(base_data)
 
-    def runner_factory(data):
+    def tool_executor_factory(data):
         def run(tool: str, kwargs: dict[str, Any]) -> Any:
             res = tools_map[tool].invoke(data, **kwargs)
             if isinstance(res, str) and res[:1] in "{[":
@@ -158,7 +158,7 @@ def build_suite(reference: bool = True) -> SuiteSpec:
 
     return SuiteSpec(
         name="tau_retail", tools=tools, make_env=make_env,
-        runner_factory=runner_factory, tasks=tasks,
+        tool_executor_factory=tool_executor_factory, tasks=tasks,
     )
 
 

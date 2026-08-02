@@ -84,11 +84,18 @@ class PolicyAwareEnforcer(Enforcer):
     use.
     """
 
-    def __init__(self, rules: list[Rule], store, tool_signer, policy: PolicySpec) -> None:
-        super().__init__(rules, store, tool_signer)
+    def __init__(
+        self,
+        rules: list[Rule],
+        store,
+        tool_signer,
+        policy: PolicySpec,
+        ordered_tools: set[str] | None = None,
+    ) -> None:
+        super().__init__(rules, store, tool_signer, ordered_tools=ordered_tools)
         self._policy = policy
 
-    def check(self, tool: str, args: list[Any]) -> Decision:
+    def check(self, tool: str, args: list[Any], *, live: bool = False) -> Decision:
         rules = self.rules_by_tool.get(tool, [])
         if not rules:
             return Decision(False, None, f"no rule exists for tool '{tool}' (default-deny)")
@@ -110,6 +117,15 @@ class PolicyAwareEnforcer(Enforcer):
             if not guard_ok:
                 reasons.append(f"{rule.key}: guard predicate is false")
                 continue
+            if live:
+                order_ok, order_reason = self._order_ok(rule)
+                if not order_ok:
+                    reasons.append(f"{rule.key}: {order_reason}")
+                    continue
+                token = (rule.key, ())
+                if self._unavailable(token):
+                    reasons.append(f"{rule.key}: {self._unavailable_reason(token)}")
+                    continue
             try:
                 expected = [ev.eval(expr) for expr in rule.arg_exprs]
             except (NotConcretizable, TamperedEnvelopeError) as exc:
@@ -138,6 +154,7 @@ class PolicyAwareEnforcer(Enforcer):
                     f" (free operands: {sorted(set(mismatches) & self._policy.free_positions.get(tool, set()))})"
                     if mismatches else ""
                 ),
+                token=(rule.key, ()),
             )
 
         return Decision(

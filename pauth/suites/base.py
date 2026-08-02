@@ -1,7 +1,7 @@
 """Framework-neutral suite interface.
 
 Both the self-contained shopping suite and the AgentDojo adapter produce
-:class:`SuiteSpec` objects, so the experiment runner is agnostic to where the
+:class:`SuiteSpec` objects, so the experiment harness is agnostic to where the
 tasks come from.
 """
 
@@ -11,6 +11,10 @@ import dataclasses
 from typing import Any, Callable
 
 from ..codegen import ToolDoc
+
+# The gateway-owned execution part: (tool name, kwargs) -> result. It executes
+# individual permitted tool calls, never the generated ``run()`` code itself.
+ToolExecutor = Callable[[str, dict[str, Any]], Any]
 
 
 @dataclasses.dataclass
@@ -51,7 +55,7 @@ class SuiteSpec:
     name: str
     tools: dict[str, ToolSpec]
     make_env: Callable[[], Any]
-    runner_factory: Callable[[Any], Callable[[str, dict[str, Any]], Any]]
+    tool_executor_factory: Callable[[Any], ToolExecutor]
     tasks: list[TaskSpec]
 
     def tool_names(self) -> set[str]:

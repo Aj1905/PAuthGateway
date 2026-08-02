@@ -44,7 +44,7 @@ def _probe(suite):
             return None
         enf = Enforcer(prep.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
         rep = execute_generated_code(prep.source, enf, suite.tool_params(),
-                                     suite.runner_factory(suite.make_env()))
+                                     suite.tool_executor_factory(suite.make_env()))
         return rep.crashed
     return probe
 
@@ -56,7 +56,7 @@ def _runs_clean(suite, code):
         return False, "grammar"
     enf = Enforcer(prep.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prep.source, enf, suite.tool_params(),
-                                 suite.runner_factory(suite.make_env()))
+                                 suite.tool_executor_factory(suite.make_env()))
     if rep.crashed:
         return False, rep.crashed[:60]
     if rep.denied:

@@ -52,7 +52,7 @@ def classify(ut, spec, params):
         return None, None
     if not gt:
         return None, None
-    runner = spec.runner_factory(spec.make_env())
+    tool_executor = spec.tool_executor_factory(spec.make_env())
     colls: list[dict[str, set]] = []      # prior list-results, each field->values
     numeric: list[tuple[str, list]] = []  # (field, [values]) for aggregate checks
 
@@ -91,7 +91,7 @@ def classify(ut, spec, params):
 
         # record this call's result as a possible collection
         try:
-            res = runner(fc.function, dict(fc.args))
+            res = tool_executor(fc.function, dict(fc.args))
             if isinstance(res, list) and res:
                 fields = _collections(res)
                 colls.append(fields)

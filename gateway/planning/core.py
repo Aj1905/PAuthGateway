@@ -11,12 +11,6 @@ from typing import Any, Callable
 
 RUN_VERSION = "0.1"
 
-# Prompt-level fixtures (PromptCase, RECOGNIZER_CASES) live in
-# tests/fixtures/l1_prompts.py. They are imported here for the LLM translator
-# and the fixture translator's per-case logic; downstream callers should
-# import them directly from the fixture module.
-from tests.fixtures.l1_prompts import PromptCase, RECOGNIZER_CASES
-
 
 @dataclasses.dataclass
 class VerificationResult:
@@ -31,16 +25,6 @@ class TranslationAttempt:
     attempt: int
     raw: str
     verification: VerificationResult
-
-
-@dataclasses.dataclass
-class CaseResult:
-    case: PromptCase
-    attempts: list[TranslationAttempt]
-    accepted: bool
-    accepted_run: dict[str, Any] | None
-    pauth_prepare_ok: bool
-    pauth_prepare_detail: str
 
 
 def canonical_json(value: dict[str, Any]) -> str:
@@ -236,38 +220,6 @@ def verify_run(prompt: str, raw_candidate: str) -> VerificationResult:
     )
 
 
-def fixture_translate(prompt: str, attempt: int, previous_error: str | None = None) -> str:
-    """Deterministic stand-in for an LLM, useful for repeatable gate tests."""
-    expected = recognize_prompt(prompt)
-    if expected is None:
-        # Simulate an over-eager translator hallucinating structure from vague NL.
-        bogus = _base_run(
-            "shopping",
-            "fixed_product_checkout",
-            prompt,
-            [
-                {"tool": "get_product_details", "args": [_lit("headphones")], "when": []},
-                {
-                    "tool": "send_money",
-                    "args": [_lit("usual account"), _lit(0), _lit("payment"), _lit("today")],
-                    "when": [],
-                },
-            ],
-        )
-        return pretty_json(bogus)
-
-    candidate = copy.deepcopy(expected)
-    if attempt == 1 and prompt != RECOGNIZER_CASES[2].prompt:
-        # Corrupt one field on the first attempt.  The gate should reject it and
-        # accept the exact canonical output on retry.
-        last_action = candidate["allow"][-1]
-        for arg in last_action["args"]:
-            if arg.get("kind") == "literal" and isinstance(arg.get("value"), str):
-                arg["value"] = "attacker@evil.example"
-                break
-    return pretty_json(candidate)
-
-
 def load_env_file(root: Path) -> None:
     env_path = root / ".env"
     if not env_path.exists():
@@ -278,48 +230,6 @@ def load_env_file(root: Path) -> None:
             continue
         key, _, value = line.partition("=")
         os.environ.setdefault(key.strip(), value.strip().strip("'\""))
-
-
-def build_llm_translator(
-    model: str,
-    root: Path,
-    temperature: float,
-) -> Callable[[str, int, str | None], str]:
-    load_env_file(root)
-    if not os.environ.get("OPENAI_API_KEY"):
-        raise RuntimeError("OPENAI_API_KEY is not set; use --backend fixture or configure .env")
-
-    from openai import OpenAI
-
-    client = OpenAI()
-
-    system = (
-        "You translate user tasks into strict run() JSON. Output only one JSON object. "
-        "Do not explain. Do not add permissions not explicitly requested. "
-        "Use this top-level shape exactly: run_version, suite, intent, source_prompt, allow. "
-        "Each allow item has tool, args, when. Args are objects with kind literal/ref and value. "
-        "When predicates have left, op, right. If uncertain, still output your best JSON; "
-        "a separate verifier will reject invalid translations."
-    )
-
-    examples = "\n\n".join(
-        f"PROMPT:\n{case.prompt}\nRAN:\n{pretty_json(recognize_prompt(case.prompt) or {})}"
-        for case in RECOGNIZER_CASES
-        if case.expected_accept
-    )
-
-    def translate(prompt: str, attempt: int, previous_error: str | None = None) -> str:
-        response = client.chat.completions.create(
-            model=model,
-            temperature=temperature,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": f"Examples:\n{examples}\n\nPROMPT:\n{prompt}\nRAN:"},
-            ],
-        )
-        return response.choices[0].message.content or ""
-
-    return translate
 
 
 def translate_with_gate(

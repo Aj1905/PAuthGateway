@@ -4,7 +4,7 @@ This component check presents each harness-generated off-plan or tampered call
 to the Enforcer and exits non-zero if any tested call is permitted. Passing is
 evidence about this finite probe set, not proof over all policies or attacks.
 
-The runner also prints its legacy over-rejection diagnostic for visibility. It
+This script also prints its legacy over-rejection diagnostic for visibility. It
 is not combined with the forced-attack result into an exact-fidelity score.
 
 Frameworks: the offline suites (shopping, dining, injecagent) always run with no

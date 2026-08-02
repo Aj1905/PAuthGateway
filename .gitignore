@@ -32,6 +32,9 @@ docs/slides/*/*
 # graphify tool output — generated caches/reports, regenerable
 graphify-out/
 
+# local scratch — not part of the repo
+tmp/
+
 # LaTeX build artifacts
 paper/PAuthGateway/build/
 paper/**/*.aux

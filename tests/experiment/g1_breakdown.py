@@ -68,7 +68,7 @@ def analyze(ut, spec, params):
         return None, []
 
     env = spec.make_env()
-    runner = spec.runner_factory(env)
+    tool_executor = spec.tool_executor_factory(env)
     pool: set = set()
     blob_parts: list[str] = [ut.PROMPT]
     failing: list[tuple] = []
@@ -81,7 +81,7 @@ def analyze(ut, spec, params):
                 continue
             failing.append((fc.function, key, val))
         try:  # execute -> expose this call's fields (structured) + raw text (prose)
-            res = runner(fc.function, dict(fc.args))
+            res = tool_executor(fc.function, dict(fc.args))
             for fv in flatten(wrap(res)).values():
                 if not isinstance(fv, (list, dict)):
                     pool.add(_norm(fv))

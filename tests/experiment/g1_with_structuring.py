@@ -49,7 +49,7 @@ def g1(ut, spec, params, *, structuring: bool, use_sum: bool) -> bool | None:
         return None
     if not gt:
         return None
-    runner = spec.runner_factory(spec.make_env())
+    tool_executor = spec.tool_executor_factory(spec.make_env())
     pool: set = set()
     for fc in gt:
         for _key, val in fc.args.items():
@@ -59,7 +59,7 @@ def g1(ut, spec, params, *, structuring: bool, use_sum: bool) -> bool | None:
                 continue
             return False
         try:
-            res = runner(fc.function, dict(fc.args))
+            res = tool_executor(fc.function, dict(fc.args))
             for fv in flatten(wrap(res)).values():
                 if not isinstance(fv, (list, dict)):
                     pool.add(_norm(fv))

@@ -86,7 +86,7 @@ class Task:
 @dataclasses.dataclass
 class Corpus:
     name: str
-    suite: Any                                  # SuiteSpec-like: tool_names/signer/params/make_env/runner_factory
+    suite: Any                                  # SuiteSpec-like: tool_names/signer/params/make_env/tool_executor_factory
     tasks: list[Task]
     adj: Any = None                             # AgentDojo suite handle (for gate1/injections), else None
 
@@ -184,7 +184,7 @@ def _agentdojo_gate_footprint(interactive: bool = False) -> None:
             narrow = static_taint_map(p.read_text(), docs, SourceTrust.fail_closed())
             enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), spec.tool_signer())
             rep = execute_generated_code(prepared.source, enf, spec.tool_params(),
-                                         spec.runner_factory(spec.make_env()))
+                                         spec.tool_executor_factory(spec.make_env()))
             se = [e for e in rep.events if e.decision.permit and is_side_effecting(e.tool)]
             gcalls = [(e, i) for e in se for (t, i) in narrow if t == e.tool and i < len(e.args)]
             if gcalls:
@@ -269,7 +269,7 @@ def _authorize_footprint() -> None:
                     continue
                 enf = Enforcer(prep.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
                 rep = execute_generated_code(prep.source, enf, suite.tool_params(),
-                                             suite.runner_factory(suite.make_env()))
+                                             suite.tool_executor_factory(suite.make_env()))
                 if rep.crashed is not None or rep.denied:
                     continue
                 nse = sum(1 for e in rep.events if e.decision.permit and is_side_effecting(e.tool))
@@ -284,7 +284,7 @@ def _authorize_footprint() -> None:
             prep = prepare(best, suite.tool_names(), suite.tool_signer())
             enf = Enforcer(prep.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
             rep = execute_generated_code(prep.source, enf, suite.tool_params(),
-                                         suite.runner_factory(suite.make_env()))
+                                         suite.tool_executor_factory(suite.make_env()))
             trace = [(e.tool, list(e.args)) for e in rep.events if e.decision.permit]
             gt = [(fc.function, _positional(fc, suite.tool_params()))
                   for fc in ut.ground_truth(suite.make_env())]
@@ -315,7 +315,7 @@ def _authorize_footprint() -> None:
             env0 = suite.make_env(); pre0 = copy.deepcopy(env0)
             enf0 = Enforcer(prep.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
             execute_generated_code(prep.source, enf0, suite.tool_params(),
-                                   suite.runner_factory(env0))
+                                   suite.tool_executor_factory(env0))
             try:
                 base_out += bool(ut.utility("", pre0, env0))
             except Exception:  # noqa: BLE001
@@ -325,7 +325,7 @@ def _authorize_footprint() -> None:
             env = suite.make_env(); pre = copy.deepcopy(env)
             enf2 = Enforcer(prep.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
             hrep = execute_with_human_authorization(
-                prep.source, enf2, suite.tool_params(), suite.runner_factory(env),
+                prep.source, enf2, suite.tool_params(), suite.tool_executor_factory(env),
                 proposer=StaticProposer(proposals), confirmer=TrustingConfirmer(),
                 docs=docs, ledger=GrantLedger())
             confirms += len(proposals)
@@ -398,7 +398,7 @@ def _ref_trace(suite, code):
         return None
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
-                                 suite.runner_factory(suite.make_env()))
+                                 suite.tool_executor_factory(suite.make_env()))
     if rep.crashed or rep.denied:
         return None
     return [(e.tool, [str(a) for a in e.args]) for e in rep.events if e.decision.permit]
@@ -479,7 +479,7 @@ def measure(corpus: Corpus, task: Task, mode: str) -> dict[str, str]:
     pre = copy.deepcopy(env)
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
-                                 suite.runner_factory(env))
+                                 suite.tool_executor_factory(env))
     permitted_trace = [
         (e.tool, list(e.args)) for e in rep.events if e.decision.permit
     ]
@@ -576,7 +576,7 @@ def _bestof_plan(suite, task, scratch_dir, n=None):
             return (-1, 0)
         enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
         rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
-                                     suite.runner_factory(suite.make_env()))
+                                     suite.tool_executor_factory(suite.make_env()))
         clean = rep.crashed is None and not rep.denied
         nse = sum(1 for e in rep.events if e.decision.permit and is_side_effecting(e.tool))
         return (1 if clean else 0, nse)   # clean first, then most side-effecting

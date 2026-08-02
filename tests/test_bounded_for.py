@@ -24,7 +24,7 @@ def _armed():
     prepared = prepare(_LOOP, suite.tool_names(), suite.tool_signer())
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     execute_generated_code(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(suite.make_env())
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(suite.make_env())
     )
     return enf
 
@@ -57,7 +57,7 @@ def _loop_trace():
     prepared = prepare(_LOOP, suite.tool_names(), suite.tool_signer())
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(suite.make_env())
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(suite.make_env())
     )
     return [(e.tool, list(e.args)) for e in rep.events]
 
@@ -115,7 +115,7 @@ def test_read_then_write_loop_no_false_positive():
     prepared = prepare(code, s.tool_names(), s.tool_signer())
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), s.tool_signer())
     rep = execute_generated_code(
-        prepared.source, enf, s.tool_params(), s.runner_factory(s.make_env())
+        prepared.source, enf, s.tool_params(), s.tool_executor_factory(s.make_env())
     )
     assert rep.crashed is None
     assert not rep.denied, [e.decision.reason for e in rep.denied]

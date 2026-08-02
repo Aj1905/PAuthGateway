@@ -10,7 +10,7 @@ untrusted source), and the confirmation gate finally handles it. Same treatment
 as SaaS data, plus a taint -- exactly the design.
 
 This wraps a SuiteSpec without touching the AgentDojo adapter: it adds the tool
-and intercepts it in the runner, delegating everything else.
+and intercepts it in the tool_executor, delegating everything else.
 """
 
 from __future__ import annotations
@@ -46,9 +46,9 @@ def augment_with_structuring(spec: SuiteSpec) -> SuiteSpec:
     """Return a copy of ``spec`` with ``structure_text`` available to plans."""
     tools = dict(spec.tools)
     tools["structure_text"] = STRUCTURE_TOOL
-    base_factory = spec.runner_factory
+    base_factory = spec.tool_executor_factory
 
-    def runner_factory(env):
+    def tool_executor_factory(env):
         base = base_factory(env)
 
         def run(tool, kwargs):
@@ -58,4 +58,4 @@ def augment_with_structuring(spec: SuiteSpec) -> SuiteSpec:
 
         return run
 
-    return dataclasses.replace(spec, tools=tools, runner_factory=runner_factory)
+    return dataclasses.replace(spec, tools=tools, tool_executor_factory=tool_executor_factory)

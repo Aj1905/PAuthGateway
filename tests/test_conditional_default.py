@@ -26,7 +26,7 @@ def _armed():
     prepared = prepare(_MERGE, suite.tool_names(), suite.tool_signer())
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     execute_generated_code(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(suite.make_env())
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(suite.make_env())
     )
     return enf
 
@@ -67,7 +67,7 @@ def test_if_else_branches_guarded_offbranch_denied():
     prepared = prepare(_IFELSE, suite.tool_names(), suite.tool_signer())
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     execute_generated_code(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(suite.make_env())
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(suite.make_env())
     )
     ok = lambda v: check_injection(enf, "send_money", [v, 10.0, "x", "2024-01-01"]).permit
     # msg env: m.amount = 10 > 0, so the C-branch (m.iban) is on-path; the else

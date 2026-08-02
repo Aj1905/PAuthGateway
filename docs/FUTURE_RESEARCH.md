@@ -1,6 +1,6 @@
 # 追加研究の候補
 
-本書は、現行の論文計画(`paper/PAuthGateway/AUTHORING_GUIDE.md`)の範囲外と判断した
+本書は、現行の論文計画(`paper/PAuthGateway/`)の範囲外と判断した
 が、将来の研究として検討価値のある候補を記録する。各候補には「なぜ今やらないか」
 を必ず残す。採用を決めた時点で、参照論文は `paper/README.md` の規則に従って
 `references.bib` とフォルダに正式に追加する(それまでは bib に入れない)。

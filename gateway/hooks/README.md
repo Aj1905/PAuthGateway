@@ -27,7 +27,7 @@
 ```
 
 これは起動したままにしておく。再起動するとすべての有効なセッションが失われる
-(`--session-store PATH` で計画再構築の入力を永続化できる。旧 `issues` B1)。
+(`--session-store PATH` で計画再構築の入力を永続化できる)。
 
 任意で `--audit-log PATH` を追加すると、permit/deny/accept/reject の判定が
 JSONL として追記される(運用者向け; 値を含みうるため、エージェントが読めない
@@ -67,7 +67,7 @@ JSONL として追記される(運用者向け; 値を含みうるため、エ�
 | `GATEWAY_MODE_TOOL` | `strict` / `log` | `log` | ツール呼び出しに対する同じ設定。統合の検証中は既定の `log` のままにし、強制対象のツール集合が固まったら `strict` に切り替える。 |
 | `GATEWAY_MODE` | `strict` / `log` | — | より具体的な変数が未設定のときの代替。 |
 | `PAUTH_PLANNER_STRATEGY` | `deterministic` / `llm-freeform` / `auto` / `sufficiency-tightness` / `interactive-structuring` / `specialized-codegen` / `formal-semantic` | `auto` | Planner 戦略を選ぶ(未設定なら `AgentChannel` の既定 `auto`)。 |
-| `PAUTH_PLANNER_SUITE` | suite 名 | — | `llm-freeform` と `sufficiency-tightness` に必須。`auto` では LLM フォールバック先を有効にする。例: `shopping`。 |
+| `PAUTH_PLANNER_SUITE` | suite 名 | — | `llm-freeform`、`sufficiency-tightness`、`interactive-structuring`、`specialized-codegen`、`formal-semantic` に必須。`auto` では LLM フォールバック先を有効にする。例: `shopping`。 |
 | `PAUTH_PLANNER_MODEL` | model id | `gpt-4.1` | LLM を用いる戦略のモデル。 |
 | `PAUTH_PLANNER_MAX_RETRIES` | 整数 | `3` | 検証器フィードバックループの再試行予算。 |
 | `PAUTH_PLANNER_ENABLE_JUDGE` | 真偽値 | `true` | `llm-freeform`、`auto` の LLM フォールバック、`sufficiency-tightness` の意味判定器を有効化する。 |
@@ -127,14 +127,16 @@ sudo AGENT_USER=pauth-agent GATEWAY_HOST=127.0.0.1 GATEWAY_PORT=8081 gateway/dep
   `strict` モードでは Claude Code を即座にブロックする。`PAUTH_PLANNER_SUITE`
   を設定して `PAUTH_PLANNER_STRATEGY=llm-freeform` に切り替えるか、認識器を
   拡張する。
-* **登録済みだが未実装の戦略** → `interactive-structuring`、
-  `specialized-codegen`、`formal-semantic` は `PlanGenerationError` となり、
-  `accepted=false`、`rule_count=0` を返す。Gateway には計画生成失敗を記録した
-  セッションが残り、同じ channel では再計画できない。これは Planner の計画生成失敗であり、
-  Enforcer の拒否ではない。
+* **必須設定を欠く戦略** → `llm-freeform` / `sufficiency-tightness` /
+  `interactive-structuring` / `specialized-codegen` / `formal-semantic` は
+  `PAUTH_PLANNER_SUITE` 未設定だと `PlanGenerationError` となり、
+  `accepted=false`、`rule_count=0` を返す。`interactive-structuring` は、
+  プロンプトに制御値が欠けている場合も(hooks 経路には質問を返す対話面が
+  ないため)同様に明示的な理由付きで拒否する。これは Planner の計画生成
+  失敗であり、Enforcer の拒否ではない。
 * **計画にないツール** → `pretool.sh` は REJECT を報告する。`strict` モード
   では Claude Code はそのツールを実行できない。`log` モードでは続行するが、
   拒否はログに記録される。強制に踏み切る前に Claude Code の実際の挙動を
   測るのに有用である。
 
-システム全体の設計は `docs/ARCHITECTURE.md` を参照。
+システム全体の設計は `docs/SYSTEM_MODEL.md` を参照。

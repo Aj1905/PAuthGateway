@@ -121,7 +121,7 @@ def helper_sum(iterable: Any, key: Any = None) -> Any:
     return total
 
 
-# Execution-time helper table (used by the sandboxed runner in enforcer.py).
+# Execution-time helper table (used by the sandboxed plan executor in enforcer.py).
 EXEC_HELPERS: dict[str, Any] = {
     "len": helper_len,
     "min": lambda it, key: helper_min(it, key),

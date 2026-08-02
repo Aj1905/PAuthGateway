@@ -26,7 +26,7 @@ class Env:
         self.sent: list = []
 
 
-def _runner(env):
+def _tool_executor(env):
     impl = {
         "get_users": lambda: env.users,
         "notify": lambda recipients: env.sent.append(recipients) or {"ok": True},
@@ -61,10 +61,10 @@ def run():
 
 
 def _armed(code):
-    suite = SuiteSpec(name="c", tools=_TOOLS, make_env=Env, runner_factory=_runner, tasks=[])
+    suite = SuiteSpec(name="c", tools=_TOOLS, make_env=Env, tool_executor_factory=_tool_executor, tasks=[])
     prepared = prepare(code, suite.tool_names(), suite.tool_signer())
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
-    execute_generated_code(prepared.source, enf, suite.tool_params(), suite.runner_factory(suite.make_env()))
+    execute_generated_code(prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(suite.make_env()))
     return enf
 
 

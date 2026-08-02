@@ -52,7 +52,7 @@ def main() -> None:
             env = spec.make_env()
             pre = copy.deepcopy(env)
             enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), signer)
-            rep = execute_generated_code(prepared.source, enf, params, spec.runner_factory(env))
+            rep = execute_generated_code(prepared.source, enf, params, spec.tool_executor_factory(env))
             ok = rep.crashed is None and not rep.denied
             g5_pass = False
             if ok:

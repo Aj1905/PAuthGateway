@@ -26,7 +26,7 @@ class Env:
         self.saved: list = []
 
 
-def _runner(env):
+def _tool_executor(env):
     impl = {
         "get_record": lambda: env.rec,
         "save": lambda record: env.saved.append(record) or {"ok": True},
@@ -54,15 +54,15 @@ def run():
 
 
 def _armed():
-    suite = SuiteSpec(name="d", tools=_TOOLS, make_env=Env, runner_factory=_runner, tasks=[])
+    suite = SuiteSpec(name="d", tools=_TOOLS, make_env=Env, tool_executor_factory=_tool_executor, tasks=[])
     prepared = prepare(PLAN, suite.tool_names(), suite.tool_signer())
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
-    execute_generated_code(prepared.source, enf, suite.tool_params(), suite.runner_factory(suite.make_env()))
+    execute_generated_code(prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(suite.make_env()))
     return enf
 
 
 def test_dict_literal_accepted_and_runs():
-    suite = SuiteSpec(name="d", tools=_TOOLS, make_env=Env, runner_factory=_runner, tasks=[])
+    suite = SuiteSpec(name="d", tools=_TOOLS, make_env=Env, tool_executor_factory=_tool_executor, tasks=[])
     prepared = prepare(PLAN, suite.tool_names(), suite.tool_signer())
     assert prepared.rules  # grammar accepts the dict literal
 

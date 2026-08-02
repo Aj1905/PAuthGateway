@@ -10,7 +10,7 @@ For every user task we:
 4. **Forced-injection runs** -- offer each spurious call to the enforcer.  A
    *false negative* (FN) is a forced injection that is permitted.
 
-The runner only *measures*; it never assumes the result is zero.  Run with
+This harness only *measures*; it never assumes the result is zero.  Run with
 ``--help`` for options.
 
     python -m eval.fpfn --suites shopping          # no API key
@@ -128,11 +128,11 @@ def _runtime_probe(suite: SuiteSpec):
     tool_params = suite.tool_params()
 
     def probe(code: str) -> str | None:
-        runner = suite.runner_factory(suite.make_env())
+        tool_executor = suite.tool_executor_factory(suite.make_env())
 
         def make(name: str):
             def call(*args: Any) -> Any:
-                return wrap(runner(name, dict(zip(tool_params.get(name, []), args))))
+                return wrap(tool_executor(name, dict(zip(tool_params.get(name, []), args))))
             return call
 
         ns: dict[str, Any] = {name: make(name) for name in tool_params}
@@ -234,11 +234,11 @@ def run_task(
 
     # ---- Benign run (runtime enforcement) -------------------------------------------
     env = suite.make_env()
-    runner = suite.runner_factory(env)
+    tool_executor = suite.tool_executor_factory(env)
     store = EnvelopeStore(KeyRing())
     enforcer = Enforcer(prepared.rules, store, suite.tool_signer())
     report = execute_generated_code(
-        prepared.source, enforcer, suite.tool_params(), runner
+        prepared.source, enforcer, suite.tool_params(), tool_executor
     )
     denied = [
         f"{e.tool}({', '.join(map(repr, e.args))}) :: {e.decision.reason}"

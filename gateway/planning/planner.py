@@ -24,6 +24,10 @@ from .sufficiency_tightness import (
     generate_sufficiency_tightness,
 )
 
+# P3-P5 planner classes live in their own modules; imported lazily inside
+# build_planner to avoid import cycles (those modules import PlanDraft /
+# PlanGenerationError from here).
+
 
 class PlanGenerationError(Exception):
     """Raised when a planner cannot produce a candidate restricted program."""
@@ -265,22 +269,6 @@ class AutoPlanner:
         return self.freeform.generate(prompt, suite_loader)
 
 
-@dataclasses.dataclass(frozen=True)
-class NotYetImplementedPlanner:
-    """Registered strategy slot that intentionally fails until implemented."""
-
-    strategy: str
-
-    def generate(
-        self,
-        prompt: str,
-        suite_loader: Callable[[str], SuiteSpec],
-    ) -> PlanDraft:
-        raise PlanGenerationError(
-            f"planner strategy {self.strategy!r} is registered but not implemented yet"
-        )
-
-
 def build_cache_path(
     cache_dir: str | Path | None,
     *,
@@ -313,6 +301,7 @@ def build_planner(
     cache_dir: str | Path | None = None,
     enable_judge: bool = True,
     judge_model: str | None = None,
+    clarifier: Callable[[list[str]], dict[str, str]] | None = None,
 ) -> Planner:
     """Construct a planner strategy by name.
 
@@ -372,4 +361,58 @@ def build_planner(
         if freeform is None:
             raise PlanGenerationError("planner strategy 'llm-freeform' requires suite_name")
         return freeform
-    return NotYetImplementedPlanner(canonical)
+    if canonical == STRATEGY_SPECIALIZED_CODEGEN:
+        from .specialized_codegen import SpecializedCodegenPlanner
+
+        if not suite_name:
+            raise PlanGenerationError(
+                "planner strategy 'specialized-codegen' requires suite_name"
+            )
+        return SpecializedCodegenPlanner(
+            suite_name=suite_name,
+            model=model,
+            max_retries=max_retries,
+            cache_path=build_cache_path(
+                cache_dir,
+                strategy=STRATEGY_SPECIALIZED_CODEGEN,
+                prompt=prompt,
+                model=model,
+                max_retries=max_retries,
+                enable_judge=False,
+            ),
+        )
+    if canonical == STRATEGY_FORMAL_SEMANTIC:
+        from .formal_semantic import FormalSemanticPlanner
+
+        if not suite_name:
+            raise PlanGenerationError(
+                "planner strategy 'formal-semantic' requires suite_name"
+            )
+        return FormalSemanticPlanner(suite_name=suite_name)
+    if canonical == STRATEGY_INTERACTIVE_STRUCTURING:
+        from .interactive_structuring import InteractiveStructuringPlanner
+
+        if not suite_name:
+            raise PlanGenerationError(
+                "planner strategy 'interactive-structuring' requires suite_name"
+            )
+        return InteractiveStructuringPlanner(
+            suite_name=suite_name,
+            model=model,
+            max_retries=max_retries,
+            cache_path=build_cache_path(
+                cache_dir,
+                strategy=STRATEGY_INTERACTIVE_STRUCTURING,
+                prompt=prompt,
+                model=model,
+                max_retries=max_retries,
+                enable_judge=enable_judge,
+                judge_model=judge_model,
+            ),
+            enable_judge=enable_judge,
+            judge_model=judge_model,
+            clarifier=clarifier,
+        )
+    raise PlanGenerationError(
+        f"planner strategy {canonical!r} has no constructor in build_planner"
+    )

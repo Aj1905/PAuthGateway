@@ -308,7 +308,7 @@ def build_mcp_suite_from_transport(
 
     The transport is owned by the returned suite -- it stays alive for
     the life of the gateway. Callers that need explicit cleanup can
-    access it via the suite's runner closure (or, in practice, just
+    access it via the suite's tool_executor closure (or, in practice, just
     leave it to process exit).
     """
     signer = signer or name
@@ -329,11 +329,11 @@ def build_mcp_suite_from_transport(
         )
         param_order[tool_entry["name"]] = order
 
-    # The env carries the transport so the runner can issue calls.
+    # The env carries the transport so the tool_executor can issue calls.
     def make_env() -> _Transport:
         return transport
 
-    def runner_factory(env: _Transport) -> Callable[[str, dict[str, Any]], Any]:
+    def tool_executor_factory(env: _Transport) -> Callable[[str, dict[str, Any]], Any]:
         def run(tool: str, kwargs: dict[str, Any]) -> Any:
             if tool not in param_order:
                 raise ValueError(f"unknown MCP tool {tool!r} on suite {name!r}")
@@ -357,7 +357,7 @@ def build_mcp_suite_from_transport(
         name=name,
         tools=tool_specs,
         make_env=make_env,
-        runner_factory=runner_factory,
+        tool_executor_factory=tool_executor_factory,
         tasks=[],
     )
 

@@ -13,8 +13,8 @@ collisions raise at registry-construction time so the user has to pick a
 namespacing scheme explicitly.
 
 A merged suite's ``make_env`` returns a dict keyed by source-suite name;
-``runner_factory`` returns a dispatcher that routes each tool call to
-the originating suite's runner. ``tool_signer`` is the union of the
+``tool_executor_factory`` returns a dispatcher that routes each tool call to
+the originating suite's tool_executor. ``tool_signer`` is the union of the
 underlying signers, so envelopes are tagged with the source signer and
 PAuth's cross-service deduplication (``pauth.rules.compile_rules``)
 keeps working unchanged.
@@ -30,7 +30,7 @@ from pauth.suites.base import SuiteSpec, TaskSpec, ToolSpec
 
 @dataclasses.dataclass
 class _MergedEnv:
-    """Container so the runner can recover each suite's env by name."""
+    """Container so the tool_executor can recover each suite's env by name."""
 
     envs: dict[str, Any]
 
@@ -56,7 +56,7 @@ def merge_suites(
     With ``namespace=False`` (default) a tool-name collision raises
     ``ValueError`` -- unchanged behaviour. With ``namespace=True`` (D2) every
     tool is renamed to ``<source>__<tool>`` so collisions are impossible; the
-    generated code and rules use the namespaced name, and the runner maps it
+    generated code and rules use the namespaced name, and the tool_executor maps it
     back to the owning suite's original tool.
     """
     merged_tools: dict[str, ToolSpec] = {}
@@ -85,16 +85,16 @@ def merge_suites(
     def make_env() -> _MergedEnv:
         return _MergedEnv(envs={n: s.make_env() for n, s in suites.items()})
 
-    def runner_factory(merged_env: _MergedEnv) -> Callable[[str, dict[str, Any]], Any]:
-        runners: dict[str, Callable[[str, dict[str, Any]], Any]] = {
-            n: s.runner_factory(merged_env.envs[n]) for n, s in suites.items()
+    def tool_executor_factory(merged_env: _MergedEnv) -> Callable[[str, dict[str, Any]], Any]:
+        tool_executors: dict[str, Callable[[str, dict[str, Any]], Any]] = {
+            n: s.tool_executor_factory(merged_env.envs[n]) for n, s in suites.items()
         }
 
         def run(tool: str, kwargs: dict[str, Any]) -> Any:
             owner = tool_owner.get(tool)
             if owner is None:
                 raise ValueError(f"no source suite owns tool {tool!r}")
-            return runners[owner](original_name[tool], kwargs)
+            return tool_executors[owner](original_name[tool], kwargs)
 
         return run
 
@@ -107,7 +107,7 @@ def merge_suites(
         name=name,
         tools=merged_tools,
         make_env=make_env,
-        runner_factory=runner_factory,
+        tool_executor_factory=tool_executor_factory,
         tasks=merged_tasks,
     )
 

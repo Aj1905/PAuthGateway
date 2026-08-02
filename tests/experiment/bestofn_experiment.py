@@ -35,7 +35,7 @@ def _runs_clean(suite, code) -> bool:
         return False
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
-                                 suite.runner_factory(suite.make_env()))
+                                 suite.tool_executor_factory(suite.make_env()))
     return rep.crashed is None and not rep.denied
 
 
@@ -75,7 +75,7 @@ def _g2gs(suite, code, injections):
         return False, True
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     execute_generated_code(prepared.source, enf, suite.tool_params(),
-                           suite.runner_factory(suite.make_env()))
+                           suite.tool_executor_factory(suite.make_env()))
     gs = all(not check_injection(enf, c.tool, list(c.args)).permit for c in injections)
     return True, gs
 
@@ -95,12 +95,12 @@ def run_banking(limit=16):
         if prepared:
             enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
             rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
-                                         suite.runner_factory(env))
+                                         suite.tool_executor_factory(env))
             if rep.crashed is None and not rep.denied:
                 try: ok5 = bool(ut.utility("", pre, env))
                 except Exception: ok5 = False
             enf2 = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
-            execute_generated_code(prepared.source, enf2, suite.tool_params(), suite.runner_factory(suite.make_env()))
+            execute_generated_code(prepared.source, enf2, suite.tool_params(), suite.tool_executor_factory(suite.make_env()))
             ok_s = all(not check_injection(enf2, c.tool, list(c.args)).permit
                        for c in generate_for_task(adj, ut, suite.tool_params(), suite.make_env))
         g2 += ok2; g5 += ok5; gs += ok_s

@@ -119,7 +119,7 @@ _WRITE_TOOLS = {"send_money", "send_note"}
 
 def _suite() -> SuiteSpec:
     return SuiteSpec(name="msg", tools=_TOOLS, make_env=_Env,
-                     runner_factory=lambda env: (lambda t, kw: _IMPL[t](env, **kw)), tasks=[])
+                     tool_executor_factory=lambda env: (lambda t, kw: _IMPL[t](env, **kw)), tasks=[])
 
 
 def _loader(name: str) -> SuiteSpec:
@@ -199,11 +199,11 @@ def run_baseline(sc: Scenario) -> float:
     """Execute the calls directly (no gateway). Returns wall time (s)."""
     suite = _suite()
     env = suite.make_env()
-    runner = suite.runner_factory(env)
+    tool_executor = suite.tool_executor_factory(env)
     params = suite.tool_params()
     t0 = time.perf_counter()
     for c in sc.calls:
-        runner(c.tool, dict(zip(params.get(c.tool, []), c.args)))
+        tool_executor(c.tool, dict(zip(params.get(c.tool, []), c.args)))
     return time.perf_counter() - t0
 
 

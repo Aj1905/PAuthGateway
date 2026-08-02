@@ -11,7 +11,12 @@ import ast
 import dataclasses
 import hashlib
 
-from .grammar import parse_and_validate, strip_dead_code, validate_semantics
+from .grammar import (
+    GRAMMAR_PROFILE_EXTENDED,
+    parse_and_validate,
+    strip_dead_code,
+    validate_semantics,
+)
 from .normalize import normalize_run
 from .rules import Rule, compile_rules
 from .slicing import Slice, derive_slices
@@ -139,18 +144,27 @@ def prepare(
     code: str,
     tool_names: set[str],
     tool_service: dict[str, str] | None = None,
+    *,
+    grammar_profile: str = GRAMMAR_PROFILE_EXTENDED,
 ) -> PreparedTask:
     """Run the Planner's output through validation (grammar), the Slicer (slices) and the Rule compiler (rules).
 
     Raises :class:`pauth.grammar.RestrictedGrammarError` if the code violates
     the restricted grammar.
+
+    ``grammar_profile`` selects the grammar version (experiment axis G):
+    ``"g2"`` (default, this repo's extended grammar) or ``"g1"`` (the paper's
+    Appendix A DSL as published). Under ``"g1"`` the Tier-1 normalization is
+    also skipped, since it widens the acceptance surface beyond the paper.
     """
-    func = parse_and_validate(code)
+    func = parse_and_validate(code, profile=grammar_profile)
     func = strip_dead_code(func, tool_names)
-    # Tier-1 semantics-preserving normalization: rewrite reject-but-safe forms
-    # (call-as-argument, straight-line reassignment) into the slicer's canonical
-    # form. Does not change behavior, so the deterministic core is untouched.
-    func = normalize_run(func)
+    if grammar_profile == GRAMMAR_PROFILE_EXTENDED:
+        # Tier-1 semantics-preserving normalization: rewrite reject-but-safe
+        # forms (call-as-argument, straight-line reassignment) into the
+        # slicer's canonical form. Does not change behavior, so the
+        # deterministic core is untouched.
+        func = normalize_run(func)
     validate_semantics(func, tool_names)
     slices = derive_slices(func, tool_names)
     rules = compile_rules(slices, tool_service)

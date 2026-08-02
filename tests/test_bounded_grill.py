@@ -58,7 +58,7 @@ def _executed_enforcer():
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     report = execute_generated_code(
         prepared.source, enf, suite.tool_params(),
-        suite.runner_factory(installments.make_env()),
+        suite.tool_executor_factory(installments.make_env()),
     )
     return suite, task, enf, report
 

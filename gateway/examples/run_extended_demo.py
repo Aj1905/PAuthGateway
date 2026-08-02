@@ -118,7 +118,7 @@ def run():
 '''
     prepared = prepare(code, suite.tool_names(), suite.tool_signer())
     env = suite.make_env()
-    runner = suite.runner_factory(env)
+    tool_executor = suite.tool_executor_factory(env)
     keyring = KeyRing()
     store = EnvelopeStore(keyring)
 
@@ -136,7 +136,7 @@ def run():
         args = [kwargs[p] for p in suite.tool_params()[tool_name]]
         decision = enforcer.check(tool_name, args)
         assert decision.permit, f"{tool_name} unexpectedly denied: {decision.reason}"
-        result = runner(tool_name, kwargs)
+        result = tool_executor(tool_name, kwargs)
         enforcer.record(decision.rule, wrap(result))
 
     # Now: same recipient/amount/date, but subject tampered. Without the
@@ -175,7 +175,7 @@ def _make_dummy_suite(name: str, descriptions: dict[str, str]) -> SuiteSpec:
         name=name,
         tools=tools,
         make_env=lambda: None,
-        runner_factory=lambda _env: (lambda t, k: None),
+        tool_executor_factory=lambda _env: (lambda t, k: None),
         tasks=[],
     )
 

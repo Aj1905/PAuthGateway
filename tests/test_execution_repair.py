@@ -38,10 +38,12 @@ class _FakeClient:
     def __init__(self, outputs: list[str]) -> None:
         self._outputs = outputs
         self.calls = 0
+        self.request_kwargs: list[dict] = []
         self.chat = types.SimpleNamespace(
             completions=types.SimpleNamespace(create=self._create))
 
-    def _create(self, **_kw) -> _FakeResp:
+    def _create(self, **kwargs) -> _FakeResp:
+        self.request_kwargs.append(kwargs)
         out = self._outputs[min(self.calls, len(self._outputs) - 1)]
         self.calls += 1
         return _FakeResp(out)
@@ -86,3 +88,21 @@ def test_no_executor_preserves_old_behavior():
     )
     assert res.code.strip() == CRASHING.strip()
     assert not any(h.startswith("runtime:") for h in res.failure_history)
+
+
+@pytest.mark.parametrize("model", ["gpt-4.1", "gpt-5.1"])
+def test_openai_generation_uses_common_output_cap_and_provider_temperature(model):
+    client = _FakeClient([CLEAN])
+    generate_code_with_self_repair(
+        "list the items",
+        TOOLS,
+        model=model,
+        max_retries=0,
+        cache_path=None,
+        client=client,
+        enable_judge=False,
+        executor=None,
+    )
+    request = client.request_kwargs[0]
+    assert request["max_completion_tokens"] == 4096
+    assert "temperature" not in request

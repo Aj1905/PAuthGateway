@@ -6,7 +6,7 @@ server. Only the two RPCs PAuth needs are implemented:
 
 * ``tools/list`` -- returns the shopping suite's tools with
   JSON-schema-ish ``inputSchema`` blocks.
-* ``tools/call`` -- routes the call to the in-process shopping runner.
+* ``tools/call`` -- routes the call to the in-process shopping tool_executor.
 
 Run::
 
@@ -68,7 +68,7 @@ def _doc_to_input_schema(doc) -> dict[str, Any]:
 
 _SUITE = build_shopping_suite()
 _ENV = _SUITE.make_env()
-_RUNNER = _SUITE.runner_factory(_ENV)
+_RUNNER = _SUITE.tool_executor_factory(_ENV)
 
 
 def _tools_list() -> dict[str, Any]:

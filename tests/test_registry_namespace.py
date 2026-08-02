@@ -22,7 +22,7 @@ def _ping_suite(reply: str) -> SuiteSpec:
     impl: dict[str, Callable[..., Any]] = {"ping": lambda msg: f"{reply}:{msg}"}
     return SuiteSpec(
         name="x", tools=tools, make_env=lambda: object(),
-        runner_factory=lambda env: (lambda tool, kw: impl[tool](**kw)), tasks=[],
+        tool_executor_factory=lambda env: (lambda tool, kw: impl[tool](**kw)), tasks=[],
     )
 
 
@@ -41,9 +41,9 @@ def test_namespace_resolves_collision():
     assert docs == {"a__ping", "b__ping"}
 
 
-def test_namespaced_runner_routes_to_owning_suite():
+def test_namespaced_tool_executor_routes_to_owning_suite():
     merged = merge_suites("m", {"a": _ping_suite("A"), "b": _ping_suite("B")}, namespace=True)
-    run = merged.runner_factory(merged.make_env())
+    run = merged.tool_executor_factory(merged.make_env())
     assert run("a__ping", {"msg": "hi"}) == "A:hi"
     assert run("b__ping", {"msg": "hi"}) == "B:hi"
 

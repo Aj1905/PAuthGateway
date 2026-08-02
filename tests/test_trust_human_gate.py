@@ -42,7 +42,7 @@ def _real_trace() -> list[tuple[str, list]]:
     prepared = prepare(_CODE, suite.tool_names(), suite.tool_signer())
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     report = execute_generated_code(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(suite.make_env())
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(suite.make_env())
     )
     return [(e.tool, list(e.args)) for e in report.events]
 

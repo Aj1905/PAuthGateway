@@ -28,7 +28,7 @@ def test_reference_code_is_valid_and_executes_cleanly():
         enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
         report = execute_generated_code(
             prepared.source, enf, suite.tool_params(),
-            suite.runner_factory(suite.make_env()),
+            suite.tool_executor_factory(suite.make_env()),
         )
         # The structured max()/min()-over-a-collection plan runs without a crash
         # (the shape AgentDojo travel could not express with its string returns).
@@ -43,7 +43,7 @@ def test_all_forced_injections_are_denied():
         enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
         execute_generated_code(
             prepared.source, enf, suite.tool_params(),
-            suite.runner_factory(suite.make_env()),
+            suite.tool_executor_factory(suite.make_env()),
         )
         for inj in task.forced_injections:
             assert not check_injection(enf, inj.tool, inj.args).permit, f"{task.id}:{inj.tool}"

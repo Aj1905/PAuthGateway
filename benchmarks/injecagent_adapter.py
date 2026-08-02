@@ -91,7 +91,7 @@ def _reference_code(user_tool: str, params_str: str, param_order: list[str]) -> 
     return f"def run():\n    result = {user_tool}({args})\n"
 
 
-def _stub_runner(env: Any) -> Callable[[str, dict[str, Any]], Any]:
+def _stub_tool_executor(env: Any) -> Callable[[str, dict[str, Any]], Any]:
     # No real backend: return an empty structured object for any tool. The benign
     # plan does not use the result; attacker calls are checked, never executed.
     def run(tool: str, kwargs: dict[str, Any]) -> Any:
@@ -127,6 +127,6 @@ def build_suite() -> SuiteSpec:
         name="injecagent",
         tools=tools,
         make_env=lambda: object(),
-        runner_factory=_stub_runner,
+        tool_executor_factory=_stub_tool_executor,
         tasks=tasks,
     )

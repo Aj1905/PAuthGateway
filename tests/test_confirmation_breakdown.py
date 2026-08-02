@@ -28,7 +28,7 @@ def _executed_enforcer(env=None):
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     execute_generated_code(
         prepared.source, enf, suite.tool_params(),
-        suite.runner_factory(env or websum.make_env()),
+        suite.tool_executor_factory(env or websum.make_env()),
     )
     send_rule = next(r for r in prepared.rules if r.tool == "send_money")
     return enf, send_rule

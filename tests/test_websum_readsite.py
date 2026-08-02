@@ -32,7 +32,7 @@ def _suite_prepared():
 def _enf(suite, prepared):
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     execute_generated_code(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(websum.make_env())
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(websum.make_env())
     )
     return enf
 
@@ -46,7 +46,7 @@ def test_plan_prepares_and_runs_clean():
     assert prepared.rules
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     report = execute_generated_code(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(websum.make_env())
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(websum.make_env())
     )
     assert not report.crashed
     sends = [e for e in report.events if e.tool == "send_money"]

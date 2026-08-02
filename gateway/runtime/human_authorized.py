@@ -168,7 +168,7 @@ def authorize_proposals(
 
 def redeem_and_execute(
     actions: list[ProposedAction], *, ledger: GrantLedger, docs: dict[str, Any],
-    tool_params: dict[str, list[str]], tool_runner: Callable[[str, dict[str, Any]], Any],
+    tool_params: dict[str, list[str]], tool_executor: Callable[[str, dict[str, Any]], Any],
 ) -> tuple[list[CallEvent], list[ProposedAction], list[str]]:
     """EXECUTOR phase (may be a separate service across a trust boundary): execute
     each action ONLY by redeeming a matching single-use grant. An action with no
@@ -184,7 +184,7 @@ def redeem_and_execute(
             continue
         params = tool_params.get(action.tool, [])
         try:
-            raw = tool_runner(action.tool, dict(zip(params, action.args)))
+            raw = tool_executor(action.tool, dict(zip(params, action.args)))
         except Exception as exc:  # noqa: BLE001 -- tool-level failure
             tool_errors.append(f"{action.tool}: {type(exc).__name__}: {exc}")
             continue
@@ -199,7 +199,7 @@ def execute_with_human_authorization(
     plan_code: str,
     enforcer: Enforcer,
     tool_params: dict[str, list[str]],
-    tool_runner: Callable[[str, dict[str, Any]], Any],
+    tool_executor: Callable[[str, dict[str, Any]], Any],
     *,
     proposer: Proposer,
     confirmer: Any,
@@ -211,13 +211,13 @@ def execute_with_human_authorization(
     split makes the single-use, fully-bound grant the exact unit of what one human
     approval permits -- a replayed or spliced injection finds no grant."""
     ledger = ledger or GrantLedger()
-    plan_rep = execute_generated_code(plan_code, enforcer, tool_params, tool_runner)
+    plan_rep = execute_generated_code(plan_code, enforcer, tool_params, tool_executor)
 
     proposals = proposer.propose()
     approved, rejected = authorize_proposals(
         proposals, confirmer=confirmer, ledger=ledger, docs=docs, tool_params=tool_params)
     executed, denied_reuse, tool_errors = redeem_and_execute(
-        approved, ledger=ledger, docs=docs, tool_params=tool_params, tool_runner=tool_runner)
+        approved, ledger=ledger, docs=docs, tool_params=tool_params, tool_executor=tool_executor)
 
     return HumanAuthReport(
         events=list(plan_rep.events), human_authorized=executed, rejected=rejected,
@@ -237,7 +237,7 @@ def gate_agent_stream(
     agent_calls: list[tuple],
     enforcer: Enforcer,
     tool_params: dict[str, list[str]],
-    tool_runner: Callable[[str, dict[str, Any]], Any],
+    tool_executor: Callable[[str, dict[str, Any]], Any],
     *,
     confirmer: Any,
     docs: dict[str, Any],
@@ -270,7 +270,7 @@ def gate_agent_stream(
         if not is_side_effecting(tool):
             params = tool_params.get(tool, [])
             try:
-                raw = tool_runner(tool, dict(zip(params, args)))
+                raw = tool_executor(tool, dict(zip(params, args)))
             except Exception:  # noqa: BLE001 -- a read failure is not a gate decision
                 raw = None
             reads.append((tool, args, raw))
@@ -280,7 +280,7 @@ def gate_agent_stream(
         if decision.permit:                      # in-plan side-effect: enforcer authorized
             params = tool_params.get(tool, [])
             try:
-                raw = tool_runner(tool, dict(zip(params, args)))
+                raw = tool_executor(tool, dict(zip(params, args)))
             except Exception:  # noqa: BLE001
                 raw = None
             executed.append(CallEvent(tool, args, decision))
@@ -293,7 +293,7 @@ def gate_agent_stream(
             [action], confirmer=confirmer, ledger=ledger, docs=docs, tool_params=tool_params)
         rejected.extend(rej)
         ev, _denied, _errs = redeem_and_execute(
-            approved, ledger=ledger, docs=docs, tool_params=tool_params, tool_runner=tool_runner)
+            approved, ledger=ledger, docs=docs, tool_params=tool_params, tool_executor=tool_executor)
         executed.extend(ev)
         human_authorized.extend(ev)
 

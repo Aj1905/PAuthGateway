@@ -64,7 +64,7 @@ def test_enforcer_rederives_the_value_and_holds_fn0():
     prepared = prepare(PLAN, suite.tool_names(), suite.tool_signer())
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(suite.make_env())
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(suite.make_env())
     )
     sends = [e for e in rep.events if e.tool == "send_money" and e.decision.permit]
     assert sends and sends[0].args[0] == BILL_IBAN and abs(sends[0].args[1] - BILL_AMOUNT) < 1e-6

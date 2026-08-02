@@ -349,7 +349,7 @@ def select_valid_plans(
                     prepared.source,
                     enforcer,
                     spec.tool_params(),
-                    spec.runner_factory(spec.make_env()),
+                    spec.tool_executor_factory(spec.make_env()),
                 )
                 clean = report.crashed is None and not report.denied
                 side_effects = sum(

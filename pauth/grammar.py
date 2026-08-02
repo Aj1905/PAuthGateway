@@ -105,13 +105,35 @@ _FORBIDDEN = {
 # construction the enforcer re-derives (like a list); taint propagates through it.
 
 
-def parse_and_validate(code: str) -> ast.FunctionDef:
+# Grammar profiles (the experiment axis G in docs/SYSTEM_MODEL.md):
+#   G1 = the paper's Appendix A DSL as published: flat if only, no else/elif,
+#        no for-loops, no comprehensions, no dict literals, strict single
+#        assignment per name. (The underscore/dunder-attribute ban is kept in
+#        both profiles: it is a sandbox-security fix that does not change the
+#        acceptance of any legitimate paper program.)
+#   G2 = this repo's extended grammar (default): everything G1 accepts, plus
+#        else/elif, nested if up to depth 3, bounded (nested) for, dict
+#        literals, single-generator comprehensions, and the two blessed
+#        assignment merges in validate_semantics.
+GRAMMAR_PROFILE_PAPER = "g1"
+GRAMMAR_PROFILE_EXTENDED = "g2"
+
+
+def parse_and_validate(
+    code: str, *, profile: str = GRAMMAR_PROFILE_EXTENDED
+) -> ast.FunctionDef:
     """Parse ``code`` and check its *syntax* against the restricted grammar.
 
     Returns the validated ``run`` function definition.  Semantic checks (which
     calls are allowed) happen later, in :func:`validate_semantics`, after dead
     code is stripped.
+
+    ``profile`` selects the grammar version: :data:`GRAMMAR_PROFILE_EXTENDED`
+    (default, this repo's grammar) or :data:`GRAMMAR_PROFILE_PAPER` (the
+    paper's Appendix A DSL as published).
     """
+    if profile not in (GRAMMAR_PROFILE_PAPER, GRAMMAR_PROFILE_EXTENDED):
+        raise ValueError(f"unknown grammar profile {profile!r}")
     try:
         tree = ast.parse(code)
     except SyntaxError as exc:  # noqa: BLE001
@@ -149,7 +171,46 @@ def parse_and_validate(code: str) -> ast.FunctionDef:
     _check_bounded_for(func)
     _check_comprehensions(func)
     _check_lambdas(func)
+    if profile == GRAMMAR_PROFILE_PAPER:
+        _check_paper_profile(func)
     return func
+
+
+def _check_paper_profile(func: ast.FunctionDef) -> None:
+    """G1: reject every construct this repo added on top of the paper's DSL."""
+    _PAPER_FORBIDDEN: dict[type, str] = {
+        ast.For: "for-loops are forbidden (rule 2a) [G1]",
+        ast.ListComp: "comprehensions contain implicit loops (rule 2a1) [G1]",
+        ast.Lambda: "lambdas are not in the grammar [G1]",
+        ast.Dict: "dict literals are not in the grammar [G1]",
+    }
+    for node in ast.walk(func):
+        for forbidden, reason in _PAPER_FORBIDDEN.items():
+            if isinstance(node, forbidden):
+                raise RestrictedGrammarError(reason)
+    for stmt in func.body:
+        if isinstance(stmt, ast.If):
+            if stmt.orelse:
+                raise RestrictedGrammarError(
+                    "else / elif blocks are forbidden (rule 10) [G1]"
+                )
+            for inner in stmt.body:
+                if isinstance(inner, ast.If):
+                    raise RestrictedGrammarError(
+                        "nested if statements are forbidden (rule 10) [G1]"
+                    )
+    assigned: dict[str, int] = {}
+    for node in ast.walk(func):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    assigned[target.id] = assigned.get(target.id, 0) + 1
+    reassigned = sorted(name for name, count in assigned.items() if count > 1)
+    if reassigned:
+        raise RestrictedGrammarError(
+            "variables are re-assigned (rules 14a/14f) [G1]: "
+            + ", ".join(reassigned)
+        )
 
 
 def _is_docstring(stmt: ast.stmt) -> bool:

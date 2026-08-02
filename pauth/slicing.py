@@ -29,6 +29,7 @@ class Slice:
     arg_exprs: list[ast.expr]     # positional operand expressions
     guards: list[ast.expr]        # path conditions (asserts), unsplit
     lets: dict[str, ast.expr]     # let-bindings referenced by the closure
+    seq: int = 0                  # program order among ALL call statements
     # Bounded for(s): the call runs once per element of an enclosing loop. For
     # NESTED loops, ``loops`` lists them outer->inner as ``(var, iter_expr)``; the
     # rule is quantified over the NESTED enumeration (each inner ``iter`` evaluated
@@ -108,6 +109,7 @@ def derive_slices(func: ast.FunctionDef, tool_names: set[str]) -> list[Slice]:
 
     slices: list[Slice] = []
     counts: dict[str, int] = {}
+    seq = 0
     for stmt, guard, loops in stmts:
         call = _tool_call_of(stmt, tool_names)
         if call is None:
@@ -115,7 +117,8 @@ def derive_slices(func: ast.FunctionDef, tool_names: set[str]) -> list[Slice]:
         tool = call_name(call)
         idx = counts.get(tool, 0)
         counts[tool] = idx + 1
-        slices.extend(_build_slices(call, tool, idx, guard, assigns, loops))
+        slices.extend(_build_slices(call, tool, idx, guard, assigns, loops, seq))
+        seq += 1
     return slices
 
 
@@ -138,6 +141,7 @@ def _build_slices(
     guard: list[ast.expr],
     assigns: dict[str, list[tuple[ast.expr, list[ast.expr], int]]],
     loops: list | None = None,
+    seq: int = 0,
 ) -> list[Slice]:
     """Dependency-closure the call, forking on any disjunctive variable.
 
@@ -201,6 +205,6 @@ def _build_slices(
         out.append(Slice(
             tool=tool, call_index=idx, call_node=call,
             arg_exprs=arg_exprs, guards=ordered_guards, lets=ordered_lets,
-            loops=list(loops),
+            loops=list(loops), seq=seq,
         ))
     return out

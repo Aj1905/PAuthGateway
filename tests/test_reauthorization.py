@@ -58,7 +58,7 @@ class _StaticPlanner:
 def _armed() -> tuple[Gateway, _Env]:
     env = _Env()
 
-    def runner(tool: str, kwargs: dict[str, Any]) -> Any:
+    def tool_executor(tool: str, kwargs: dict[str, Any]) -> Any:
         args = tuple(kwargs[param] for param in _TOOLS[tool].params)
         env.executed.append((tool, args))
         return {"ok": True}
@@ -67,7 +67,7 @@ def _armed() -> tuple[Gateway, _Env]:
         name="tiny",
         tools=_TOOLS,
         make_env=lambda: env,
-        runner_factory=lambda _env: runner,
+        tool_executor_factory=lambda _env: tool_executor,
         tasks=[],
     )
 

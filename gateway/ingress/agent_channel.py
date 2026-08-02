@@ -110,6 +110,8 @@ class ToolCallResponse:
     reason: str = ""
     return_value: Any | None = None
     reauthorization_required: bool = False
+    authorization_permit: bool = False
+    execution_status: str = "not_dispatched"
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -194,13 +196,24 @@ class AgentChannel:
         suite_loader: Callable[[str], SuiteSpec],
         *,
         audit_log: "AuditLog | None" = None,
+        restored_execution_state: dict[str, Any] | None = None,
+        execution_state_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
-        self._gateway = Gateway(suite_loader, audit_log=audit_log)
+        self._gateway = Gateway(
+            suite_loader,
+            audit_log=audit_log,
+            restored_execution_state=restored_execution_state,
+            execution_state_sink=execution_state_sink,
+        )
         self._prompt_received = False
 
     def status(self) -> dict[str, Any]:
         """Value-free session status for health checks (no operand values)."""
         return {"prompt_received": self._prompt_received, **self._gateway.status()}
+
+    def execution_state(self) -> dict[str, Any] | None:
+        """Operator-only durable attempt snapshot; never returned to the agent."""
+        return self._gateway.current_execution_state()
 
     # ------------------------------------------------------------------
     # Primary entry: receive a typed message, return a typed response.
@@ -296,6 +309,8 @@ class AgentChannel:
             reason=wire_reason,
             return_value=rv,
             reauthorization_required=result.reauthorization_required,
+            authorization_permit=result.authorization_permit,
+            execution_status=result.execution_status.value,
         )
 
 

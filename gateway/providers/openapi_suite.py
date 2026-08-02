@@ -468,7 +468,7 @@ def build_openapi_suite(
             headers=dict(headers or {}),
         )
 
-    def runner_factory(env: _OpenAPIEnv) -> Callable[[str, dict[str, Any]], Any]:
+    def tool_executor_factory(env: _OpenAPIEnv) -> Callable[[str, dict[str, Any]], Any]:
         def run(tool: str, kwargs: dict[str, Any]) -> Any:
             op = env.operations.get(tool)
             if op is None:
@@ -481,7 +481,7 @@ def build_openapi_suite(
         name=name,
         tools=tool_specs,
         make_env=make_env,
-        runner_factory=runner_factory,
+        tool_executor_factory=tool_executor_factory,
         tasks=[],
     )
 

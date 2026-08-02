@@ -71,7 +71,7 @@ _TOOLS = {
 def _suite() -> SuiteSpec:
     return SuiteSpec(
         name="msg", tools=_TOOLS, make_env=Env,
-        runner_factory=lambda env: (lambda tool, kw: _IMPL[tool](env, **kw)),
+        tool_executor_factory=lambda env: (lambda tool, kw: _IMPL[tool](env, **kw)),
         tasks=[],
     )
 

@@ -36,7 +36,7 @@ def _trace(suite, code) -> list | None:
         return None
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
-                                 suite.runner_factory(suite.make_env()))
+                                 suite.tool_executor_factory(suite.make_env()))
     if rep.crashed or rep.denied:
         return []
     return [(e.tool, [str(a) for a in e.args]) for e in rep.events if e.decision.permit]
@@ -49,7 +49,7 @@ def _gs(suite, code, injections) -> bool:
         return True  # no plan -> nothing authorized -> trivially FN=0
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     execute_generated_code(prepared.source, enf, suite.tool_params(),
-                           suite.runner_factory(suite.make_env()))
+                           suite.tool_executor_factory(suite.make_env()))
     for c in injections:
         if check_injection(enf, c.tool, list(c.args)).permit:
             return False

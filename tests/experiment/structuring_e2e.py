@@ -35,7 +35,7 @@ def _g5(suite, ut, code) -> tuple[bool, str]:
     pre = copy.deepcopy(env)
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
     rep = execute_generated_code(prepared.source, enf, suite.tool_params(),
-                                 suite.runner_factory(env))
+                                 suite.tool_executor_factory(env))
     if rep.crashed or rep.denied:
         return False, f"crashed={rep.crashed} denied={bool(rep.denied)}"
     try:

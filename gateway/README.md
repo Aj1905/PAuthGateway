@@ -13,31 +13,12 @@
 ある。曖昧な prompt は、人間なら意図を合理的に推測できる場合であっても拒否
 される。
 
-## 実行方法
+## 現状
 
-オフラインの決定的 fixture 変換器:
-
-```bash
-.venv/bin/python -m tests.test_recognizer --backend fixture
-```
-
-任意で使える LLM 変換器:
-
-```bash
-.venv/bin/python -m tests.test_recognizer --backend llm --model gpt-4.1-mini --temperature 0.2
-```
-
-この runner は次を行う:
-
-- 自然言語のタスク prompt を複数用意する;
-- 変換器に run() JSON を生成させる;
-- 決定的ゲートが結果を拒否した場合、OK になるか安全上限に達するまで同じ
-  prompt で再試行する;
-- 未対応の prompt や injection を含む prompt が拒否されることを検証する;
-- 受理された run() 文書に変異を加え、すべての変異が拒否されることを検証する;
-- 受理された run() 文書を PAuth 形式の `run()` コードに変換して
-  `pauth.prepare()` を実行し、受理ケースがスライス／ルール生成まで進むことを
-  確認する。
+専用の実験ハーネス(`tests/test_recognizer.py`)と自作の prompt データセット
+(fixture L1)は、ベンチマークフレームワーク(AgentDojo など)への移行に
+伴い 2026-08-02 に削除した。認識器そのものは `gateway/planning/core.py` の
+`recognize_prompt` として残り、Planner 戦略 `recognizer` / `auto` が使う。
 
 ## 解釈
 

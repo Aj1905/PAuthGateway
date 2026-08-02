@@ -1,1 +1,1 @@
-"""gateway.runtime — see docs/ARCHITECTURE.md §1.1 boundaries."""
+"""gateway.runtime — see docs/SYSTEM_MODEL.md Part 6, coupling boundaries."""

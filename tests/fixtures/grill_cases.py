@@ -99,7 +99,7 @@ _TOOLS = {
 def build_suite() -> SuiteSpec:
     return SuiteSpec(
         name="grill", tools=_TOOLS, make_env=Env,
-        runner_factory=lambda env: (lambda tool, kw: _impl(env)[tool](**kw)),
+        tool_executor_factory=lambda env: (lambda tool, kw: _impl(env)[tool](**kw)),
         tasks=[],
     )
 

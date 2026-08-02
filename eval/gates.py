@@ -106,7 +106,7 @@ def gate1_expressible(ut, spec, params, docs=None) -> tuple[bool | None, str]:
         return None, "empty ground_truth"
     docs = docs or {n: s.doc for n, s in spec.tools.items()}
     pol = PrecheckPolicy()
-    runner = spec.runner_factory(spec.make_env())
+    tool_executor = spec.tool_executor_factory(spec.make_env())
     pool: set = set()       # available scalar values (literal / field / structured)
     base_nums: set = set()  # ORIGINAL numbers only -- arithmetic never feeds itself
     text_blob = ut.PROMPT   # reachable untrusted text (prompt + tool returns)
@@ -152,7 +152,7 @@ def gate1_expressible(ut, spec, params, docs=None) -> tuple[bool | None, str]:
                 continue
             return False, f"CONTROL {fc.function}.{key}={val!r} not literal/field/computed/extractable"
         try:  # execute to expose this call's fields / structured values for later args
-            res = runner(fc.function, dict(fc.args))
+            res = tool_executor(fc.function, dict(fc.args))
             text_blob += "\n" + str(res)
             sv = structure(str(res))
             for fv in flatten(wrap(res)).values():
@@ -264,12 +264,12 @@ def _permissive_runtime_crash(suite, code: str) -> str | None:
     value. This isolates runtime code failure from policy denial.
     """
     params = suite.tool_params()
-    runner = suite.runner_factory(suite.make_env())
+    tool_executor = suite.tool_executor_factory(suite.make_env())
 
     def make_wrapper(name):
         def wrapper(*args):
             try:
-                return wrap(runner(name, dict(zip(params.get(name, []), args))))
+                return wrap(tool_executor(name, dict(zip(params.get(name, []), args))))
             except Exception:  # noqa: BLE001 -- tool failure is not a plan crash
                 return None
         return wrapper
@@ -372,7 +372,7 @@ def eval_suite(suite_name: str) -> list[GateRow]:
         env = spec.make_env()
         pre = copy.deepcopy(env)
         enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), signer)
-        rep = execute_generated_code(prepared.source, enf, params, spec.runner_factory(env))
+        rep = execute_generated_code(prepared.source, enf, params, spec.tool_executor_factory(env))
         planner_trace = [(e.tool, list(e.args)) for e in rep.events if e.decision.permit]
         roundtrip = "pass" if not rep.denied else "fail"
 

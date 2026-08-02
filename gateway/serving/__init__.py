@@ -1,1 +1,1 @@
-"""gateway.serving — see docs/ARCHITECTURE.md §1.1 boundaries."""
+"""gateway.serving — see docs/SYSTEM_MODEL.md Part 6, coupling boundaries."""

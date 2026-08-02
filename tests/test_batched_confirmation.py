@@ -26,7 +26,7 @@ class PayEnv:
         self.confirm_time_paid: list | None = None
 
 
-def _pay_runner(env):
+def _pay_tool_executor(env):
     def run(tool, kwargs):
         if tool == "read_bills":
             return {"a": env.a, "b": env.b}
@@ -59,7 +59,7 @@ def run():
 
 def _armed_pay():
     suite = SuiteSpec(name="p", tools=_PAY_TOOLS, make_env=PayEnv,
-                      runner_factory=_pay_runner, tasks=[])
+                      tool_executor_factory=_pay_tool_executor, tasks=[])
     prepared = prepare(PAY_PLAN, suite.tool_names(), suite.tool_signer())
     env = suite.make_env()
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
@@ -99,7 +99,7 @@ def test_both_gated_pays_deferred_to_one_barrier():
     prepared, enf, env, suite, tmap = _armed_pay()
     conf = _Recorder([True, True], env)
     rep = execute_with_batched_confirmation(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(env),
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(env),
         taint_map=tmap, docs={n: s.doc for n, s in _PAY_TOOLS.items()}, confirmer=conf)
     # both gated calls were collected BEFORE any confirmation (one barrier)
     assert len(rep.deferred) == 2
@@ -112,7 +112,7 @@ def test_rejected_action_never_executes_fn0():
     prepared, enf, env, suite, tmap = _armed_pay()
     conf = _Recorder([True, False], env)          # approve alice, reject bob
     rep = execute_with_batched_confirmation(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(env),
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(env),
         taint_map=tmap, docs={n: s.doc for n, s in _PAY_TOOLS.items()}, confirmer=conf)
     assert len(rep.deferred) == 2
     assert env.paid == [("alice", 100.0)]         # only the approved one ran
@@ -123,7 +123,7 @@ def test_handover_announced_once_after_barrier_before_commit():
     prepared, enf, env, suite, tmap = _armed_pay()
     conf = _AnnouncingRecorder([True, False], env)
     execute_with_batched_confirmation(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(env),
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(env),
         taint_map=tmap, docs={n: s.doc for n, s in _PAY_TOOLS.items()}, confirmer=conf)
     # announced exactly once, with the barrier's tally, after BOTH confirms and
     # before ANY commit -- so "no further confirmation" is true when displayed
@@ -139,7 +139,7 @@ class DocEnv:
         self.shared: list = []
 
 
-def _doc_runner(env):
+def _doc_tool_executor(env):
     def run(tool, kwargs):
         if tool == "create_doc":
             env.created.append(kwargs["name"])
@@ -165,7 +165,7 @@ def run():
 
 def test_non_gated_side_effect_with_result_dependency_runs_inline():
     suite = SuiteSpec(name="d", tools=_DOC_TOOLS, make_env=DocEnv,
-                      runner_factory=_doc_runner, tasks=[])
+                      tool_executor_factory=_doc_tool_executor, tasks=[])
     prepared = prepare(DOC_PLAN, suite.tool_names(), suite.tool_signer())
     env = suite.make_env()
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
@@ -180,7 +180,7 @@ def test_non_gated_side_effect_with_result_dependency_runs_inline():
             raise AssertionError("no barrier interaction -> no handover announce")
 
     rep = execute_with_batched_confirmation(
-        prepared.source, enf, suite.tool_params(), suite.runner_factory(env),
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(env),
         taint_map=tmap, docs={n: s.doc for n, s in _DOC_TOOLS.items()}, confirmer=_NoConfirm())
     assert rep.deferred == []                     # nothing gated -> nothing deferred
     assert env.created == ["notes"]

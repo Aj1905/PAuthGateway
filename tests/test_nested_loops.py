@@ -36,7 +36,7 @@ class Env:
         self.sink: list = []
 
 
-def _runner(env):
+def _tool_executor(env):
     impl = {
         "get_letters": lambda: env.letters,
         "get_numbers": lambda: env.numbers,
@@ -65,7 +65,7 @@ _TOOLS = {
 
 def _suite():
     return SuiteSpec(name="nl", tools=_TOOLS, make_env=Env,
-                     runner_factory=_runner, tasks=[])
+                     tool_executor_factory=_tool_executor, tasks=[])
 
 
 PRODUCT = '''\
@@ -90,7 +90,7 @@ def _armed(code, tool):
     suite = _suite()
     prepared = prepare(code, suite.tool_names(), suite.tool_signer())
     enf = Enforcer(prepared.rules, EnvelopeStore(KeyRing()), suite.tool_signer())
-    execute_generated_code(prepared.source, enf, suite.tool_params(), suite.runner_factory(suite.make_env()))
+    execute_generated_code(prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(suite.make_env()))
     return enf, prepared
 
 

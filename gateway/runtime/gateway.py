@@ -38,8 +38,10 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import enum
 import math
 import struct
+import threading
 from pathlib import Path
 from typing import Any, Callable
 
@@ -70,6 +72,7 @@ from gateway.runtime.audit import AuditLog
 from gateway.runtime.confirmation import (
     PendingConfirmation,
     SourceTrust,
+    is_side_effecting,
     provenance_reference,
     reduction_breakdown,
     taint_map,
@@ -88,6 +91,22 @@ from gateway.runtime.protection import (
 )
 
 _MAX_PENDING_REAUTHORIZATIONS = 32
+
+
+def _ordered_tools(rules) -> set[str] | None:
+    """Side-effecting tools whose plan order the enforcer must uphold.
+
+    Opt-in via ``PAUTH_ENFORCE_CALL_ORDER=1``: with data-independent
+    side-effecting calls (e.g. lower-limit-then-send), program order carries
+    meaning that operand matching alone cannot see. Off by default because the
+    batched-barrier flow legitimately defers side effects past later reads and
+    honours partial rejections, which strict ordering would deny.
+    """
+    import os
+
+    if os.environ.get("PAUTH_ENFORCE_CALL_ORDER", "").lower() not in {"1", "true", "yes"}:
+        return None
+    return {r.tool for r in rules if is_side_effecting(r.tool)}
 
 
 def _confirm_key(value: Any) -> Any:
@@ -172,6 +191,14 @@ class SubmissionResult:
     rule_count: int = 0
 
 
+class ExecutionStatus(str, enum.Enum):
+    """Execution outcome, kept separate from the authorization decision."""
+
+    NOT_DISPATCHED = "not_dispatched"
+    SUCCEEDED = "succeeded"
+    INDETERMINATE = "indeterminate"
+
+
 @dataclasses.dataclass
 class CallResult:
     """Outcome of one tool call routed through the gateway.
@@ -188,6 +215,8 @@ class CallResult:
     agent_reason: str | None = None
     reauthorization_required: bool = False
     reauthorized: bool = False
+    authorization_permit: bool = False
+    execution_status: ExecutionStatus = ExecutionStatus.NOT_DISPATCHED
 
 
 @dataclasses.dataclass(frozen=True)
@@ -207,7 +236,7 @@ class _Session:
     run_doc: dict[str, Any] | None
     rejection_reason: str | None
     enforcer: Enforcer | None
-    runner: Callable[[str, dict[str, Any]], Any] | None
+    tool_executor: Callable[[str, dict[str, Any]], Any] | None
     tool_params: dict[str, list[str]]
     generated_code: str | None = None
     execution_plan: ExecutionPlan | None = None
@@ -240,7 +269,7 @@ class _CompositeState:
 
     prompt: str
     plan: CompositePlan
-    runner: Callable[[str, dict[str, Any]], Any]
+    tool_executor: Callable[[str, dict[str, Any]], Any]
     tool_params: dict[str, list[str]]
     tool_names: set[str]
     tool_signer: dict[str, str]
@@ -280,6 +309,8 @@ class Gateway:
         side_channel_policy: SideChannelPolicy | None = None,
         isolated_runtime: bool = False,
         audit_log: AuditLog | None = None,
+        restored_execution_state: dict[str, Any] | None = None,
+        execution_state_sink: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         """``suite_loader(name)`` returns the real-tool ``SuiteSpec`` for ``name``.
 
@@ -301,8 +332,14 @@ class Gateway:
         # None check: AuditLog defines __len__, so an empty one is falsy and
         # `audit_log or AuditLog()` would wrongly discard an injected empty log.
         self._audit = audit_log if audit_log is not None else AuditLog()
+        self._restored_execution_state = restored_execution_state
+        self._execution_state_sink = execution_state_sink
         self._session: _Session | None = None
         self._composite: _CompositeState | None = None
+        # Per-Gateway, not process-global: calls in one task are serialized
+        # across the complete check -> tool_executor -> record state transition while
+        # independent Gateway sessions remain concurrent.
+        self._execution_lock = threading.RLock()
 
     def audit_log(self) -> list:
         """Structured permit/deny/accept/reject events (operator-facing)."""
@@ -404,7 +441,7 @@ class Gateway:
         state = _CompositeState(
             prompt=prompt,
             plan=plan,
-            runner=suite.runner_factory(env),
+            tool_executor=suite.tool_executor_factory(env),
             tool_params=suite.tool_params(),
             tool_names=suite.tool_names(),
             tool_signer=suite.tool_signer(),
@@ -466,7 +503,10 @@ class Gateway:
         # Non-accumulation: the previous stage's enforcer is discarded; its
         # rules can never authorize again. The envelope store is shared so
         # later guards/operands still reference earlier signed observations.
-        state.enforcer = Enforcer(prepared.rules, state.store, state.tool_signer)
+        state.enforcer = Enforcer(
+            prepared.rules, state.store, state.tool_signer,
+            ordered_tools=_ordered_tools(prepared.rules),
+        )
         state.any_rules = state.any_rules or bool(prepared.rules)
         return None
 
@@ -512,7 +552,7 @@ class Gateway:
         if state.complete or state.enforcer is None:
             return CallResult(False, "composite plan complete (default-deny)", None)
 
-        decision = state.enforcer.check(tool, args)
+        decision = state.enforcer.check(tool, args, live=True)
         if not decision.permit:
             return CallResult(False, decision.reason, None)
         assert decision.rule is not None
@@ -527,14 +567,26 @@ class Gateway:
 
         gate = self._pre_execution_gate(state, decision.rule, tool, args)
         if gate is not None:
+            gate.authorization_permit = True
             return gate
 
-        result = self._execute_authorized_tool(state, tool, args, decision.reason)
+        result = self._execute_authorized_tool(
+            state,
+            tool,
+            args,
+            decision.reason,
+            enforcer=state.enforcer,
+            token=decision.token,
+        )
         if not result.permit:
             return result
         raw = result.return_value
 
-        state.enforcer.record(decision.rule, wrap(raw))
+        record_failure = self._record_authorized_result(
+            state.enforcer, decision.rule, decision.token, raw
+        )
+        if record_failure is not None:
+            return record_failure
         state.consumed.add(decision.rule.key)
         # Bind stage variables from the gateway's own observation so later
         # guards evaluate against what *we* saw, not what the agent claims.
@@ -563,27 +615,103 @@ class Gateway:
         tool: str,
         args: list[Any],
         reason: str,
+        *,
+        enforcer: Enforcer | None = None,
+        token: tuple | None = None,
     ) -> CallResult:
-        """Validate arguments and run a call that the enforcer authorized."""
+        """Validate, durably reserve, and run an authorized call."""
         params = state.tool_params.get(tool, [])
         if len(params) != len(args):
             return CallResult(
                 permit=False,
                 reason=f"arity mismatch for {tool}: expected {len(params)}, got {len(args)}",
                 return_value=None,
+                authorization_permit=True,
             )
 
-        runner = state.runner
-        assert runner is not None
+        if enforcer is not None:
+            try:
+                begun = enforcer.begin(token)
+            except Exception as exc:  # noqa: BLE001 -- tool_executor must stay untouched
+                return CallResult(
+                    permit=False,
+                    reason=(
+                        "execution state error: execution attempt could not be durably "
+                        f"recorded: {type(exc).__name__}: {exc}"
+                    ),
+                    return_value=None,
+                    authorization_permit=True,
+                )
+            if not begun:
+                return CallResult(
+                    permit=False,
+                    reason="execution attempt already exists (replay blocked)",
+                    return_value=None,
+                    authorization_permit=True,
+                )
+
+        tool_executor = state.tool_executor
+        assert tool_executor is not None
         try:
-            raw = runner(tool, dict(zip(params, args)))
-        except Exception as exc:  # noqa: BLE001 -- tool-level failure is not a denial
+            raw = tool_executor(tool, dict(zip(params, args)))
+        except Exception as exc:  # noqa: BLE001 -- dispatched outcome is unknown
+            persistence_detail = ""
+            if enforcer is not None:
+                try:
+                    enforcer.mark_indeterminate(token)
+                except Exception as state_exc:  # pre-run started tombstone remains
+                    persistence_detail = (
+                        "; indeterminate-state persistence failed: "
+                        f"{type(state_exc).__name__}: {state_exc}"
+                    )
             return CallResult(
                 permit=False,
-                reason=f"tool execution error: {type(exc).__name__}: {exc}",
+                reason=(
+                    "indeterminate tool outcome: tool_executor raised "
+                    f"{type(exc).__name__}: {exc}{persistence_detail}"
+                ),
                 return_value=None,
+                authorization_permit=True,
+                execution_status=ExecutionStatus.INDETERMINATE,
             )
-        return CallResult(permit=True, reason=reason, return_value=raw)
+        return CallResult(
+            permit=True,
+            reason=reason,
+            return_value=raw,
+            authorization_permit=True,
+            execution_status=ExecutionStatus.SUCCEEDED,
+        )
+
+    @staticmethod
+    def _record_authorized_result(
+        enforcer: Enforcer,
+        rule: Any,
+        token: tuple | None,
+        raw: Any,
+    ) -> CallResult | None:
+        """Finalize envelope + attempt state, or retain a fail-closed tombstone."""
+        try:
+            enforcer.record(rule, wrap(raw), token)
+        except Exception as exc:  # noqa: BLE001 -- external effect may already exist
+            persistence_detail = ""
+            try:
+                enforcer.mark_indeterminate(token)
+            except Exception as state_exc:
+                persistence_detail = (
+                    "; indeterminate-state persistence failed: "
+                    f"{type(state_exc).__name__}: {state_exc}"
+                )
+            return CallResult(
+                permit=False,
+                reason=(
+                    "indeterminate tool outcome: result finalization failed: "
+                    f"{type(exc).__name__}: {exc}{persistence_detail}"
+                ),
+                return_value=None,
+                authorization_permit=True,
+                execution_status=ExecutionStatus.INDETERMINATE,
+            )
+        return None
 
     def _confirmation_gate(
         self, state: "_Session | _CompositeState", tool: str, args: list[Any]
@@ -793,8 +921,29 @@ class Gateway:
         env = suite.make_env()
         keyring = KeyRing()
         store = EnvelopeStore(keyring)
-        enforcer = Enforcer(prepared.rules, store, suite.tool_signer())
-        runner = suite.runner_factory(env)
+        enforcer = Enforcer(
+            prepared.rules, store, suite.tool_signer(),
+            ordered_tools=_ordered_tools(prepared.rules),
+        )
+        try:
+            enforcer.configure_execution_state(
+                prepared.execution_plan.source_sha256,
+                self._restored_execution_state,
+                self._execution_state_sink,
+            )
+        except Exception as exc:  # noqa: BLE001 -- malformed restore must fail closed
+            reason = (
+                "execution state restore denied (default-deny): "
+                f"{type(exc).__name__}: {exc}"
+            )
+            self._session = self._rejected_session(
+                prompt,
+                reason,
+                run_doc=draft.run_doc,
+                generated_code=draft.code if generated_code_on_success else None,
+            )
+            return SubmissionResult(accepted=False, reason=reason)
+        tool_executor = suite.tool_executor_factory(env)
 
         docs_by_name = {t.name: t for t in suite.tool_docs()}
         _gsrc = taint_map(
@@ -805,7 +954,7 @@ class Gateway:
             run_doc=draft.run_doc,
             rejection_reason=None,
             enforcer=enforcer,
-            runner=runner,
+            tool_executor=tool_executor,
             tool_params=suite.tool_params(),
             generated_code=draft.code if generated_code_on_success else None,
             execution_plan=prepared.execution_plan,
@@ -839,7 +988,7 @@ class Gateway:
             run_doc=run_doc,
             rejection_reason=reason,
             enforcer=None,
-            runner=None,
+            tool_executor=None,
             tool_params={},
             generated_code=generated_code,
         )
@@ -860,7 +1009,17 @@ class Gateway:
         (``gateway/runtime/feedback.py``) that is safe to surface to the
         agent's model context: it carries no attacker-controlled bytes by
         construction.
+
+        The complete live transition is serialized per Gateway. In
+        particular, another call cannot pass ``Enforcer.check`` until this
+        call has either been held/denied or executed and consumed by
+        ``Enforcer.record``.
         """
+        with self._execution_lock:
+            return self._handle_tool_call_serialized(tool, args)
+
+    def _handle_tool_call_serialized(self, tool: str, args: list[Any]) -> CallResult:
+        """Run one tool-call transition while ``_execution_lock`` is held."""
         # Side channels (Bash/shell/exec) are denied unconditionally: the
         # gateway cannot reason about what they do, so it never authorizes them
         # (the no-raw-side-channels precondition). Out-of-band execution that never reaches
@@ -949,6 +1108,10 @@ class Gateway:
             decision = "permit"
         elif code == ReasonCode.PENDING_CONFIRMATION:
             decision = "pending"
+        elif result.execution_status == ExecutionStatus.INDETERMINATE:
+            decision = "indeterminate"
+        elif code == ReasonCode.EXECUTION_STATE_ERROR:
+            decision = "error"
         else:
             decision = "deny"
         self._audit.record(
@@ -968,7 +1131,7 @@ class Gateway:
                 reason="no active session (submit a user prompt first)",
                 return_value=None,
             )
-        if session.enforcer is None or session.runner is None:
+        if session.enforcer is None or session.tool_executor is None:
             return CallResult(
                 permit=False,
                 reason=f"default-deny: {session.rejection_reason}",
@@ -989,7 +1152,7 @@ class Gateway:
             result.reauthorized = True
             return result
 
-        decision = session.enforcer.check(tool, args)
+        decision = session.enforcer.check(tool, args, live=True)
         if not decision.permit:
             if classify_reason(decision.reason) == ReasonCode.NO_RULE:
                 held = self._hold_plan_external_call(
@@ -1005,13 +1168,28 @@ class Gateway:
 
         gate = self._pre_execution_gate(session, decision.rule, tool, args)
         if gate is not None:
+            gate.authorization_permit = True
             return gate
 
-        result = self._execute_authorized_tool(session, tool, args, decision.reason)
+        result = self._execute_authorized_tool(
+            session,
+            tool,
+            args,
+            decision.reason,
+            enforcer=session.enforcer,
+            token=decision.token,
+        )
         if not result.permit:
             return result
         assert decision.rule is not None
-        session.enforcer.record(decision.rule, wrap(result.return_value))
+        record_failure = self._record_authorized_result(
+            session.enforcer,
+            decision.rule,
+            decision.token,
+            result.return_value,
+        )
+        if record_failure is not None:
+            return record_failure
         return result
 
     @staticmethod
@@ -1095,12 +1273,12 @@ class Gateway:
         )
 
     # ------------------------------------------------------------------
-    # Introspection (for the experiment runner, not for the agent).
+    # Introspection (for the experiment harness, not for the agent).
     # ------------------------------------------------------------------
     def current_plan(self) -> dict[str, Any] | None:
         """Return the active ``run()`` document, or ``None`` if no plan exists.
 
-        Exposed for the experiment runner only. The agent must not see this.
+        Exposed for the experiment harness only. The agent must not see this.
         """
         return self._session.run_doc if self._session else None
 
@@ -1114,6 +1292,12 @@ class Gateway:
         if self._session is None or self._session.execution_plan is None:
             return None
         return self._session.execution_plan.to_dict()
+
+    def current_execution_state(self) -> dict[str, Any] | None:
+        """Return the operator-only durable replay/attempt snapshot."""
+        if self._session is None or self._session.enforcer is None:
+            return None
+        return self._session.enforcer.execution_state()
 
     def current_planner_metadata(self) -> dict[str, Any] | None:
         """Return phase metrics for experiments, never for the agent context."""
@@ -1155,6 +1339,12 @@ class Gateway:
         This Python API is intentionally absent from ``AgentChannel``; only a
         trusted user/operator integration may call it.
         """
+        with self._execution_lock:
+            return self._reauthorize_serialized(reauthorization_id, approved)
+
+    def _reauthorize_serialized(
+        self, reauthorization_id: str, approved: bool
+    ) -> bool:
         if self._composite is not None or self._session is None:
             return False
         session = self._session
@@ -1197,6 +1387,10 @@ class Gateway:
     def confirm(self, confirmation_id: str, approved: bool) -> bool:
         """Resolve a pending confirmation. On approval the held call's value is
         whitelisted so the agent's retry of that exact call proceeds."""
+        with self._execution_lock:
+            return self._confirm_serialized(confirmation_id, approved)
+
+    def _confirm_serialized(self, confirmation_id: str, approved: bool) -> bool:
         state = self._active_state()
         if state is None or confirmation_id not in state.pending:
             return False
