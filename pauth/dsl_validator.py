@@ -1,4 +1,4 @@
-"""DSLValidator -- DSL parser and validator (paper Appendix A).
+"""DSLValidator -- parser for the operational Appendix A reconstruction and G2.
 
 The Planner step asks an LLM to generate a ``run`` function in a restrictive subset
 of Python.  Before any slice is derived we
@@ -178,7 +178,7 @@ def parse_and_validate(
 
 
 def _check_paper_profile(func: ast.FunctionDef) -> None:
-    """G1: reject every construct this repo added on top of the paper's DSL."""
+    """G1: enforce the operational Appendix A baseline in SYSTEM_MODEL.md."""
     _PAPER_FORBIDDEN: dict[type, str] = {
         ast.For: "for-loops are forbidden (rule 2a) [G1]",
         ast.ListComp: "comprehensions contain implicit loops (rule 2a1) [G1]",

@@ -1,4 +1,4 @@
-"""G1 (paper Appendix A DSL as published) vs G2 (extended, default) profiles."""
+"""G1 (operational Appendix A baseline) vs G2 (extended, default) profiles."""
 
 from __future__ import annotations
 
