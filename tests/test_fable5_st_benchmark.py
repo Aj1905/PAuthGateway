@@ -17,7 +17,7 @@ from eval.fable5_st_benchmark import (
     run_benchmark,
 )
 from eval.funnel import Corpus, Task
-from eval.metrics import REF_EXACT_AUTHORIZATION
+from eval.metrics import GT_EXACT_AUTHORIZATION
 from pauth.codegen import _cost
 
 
@@ -25,7 +25,7 @@ def _metric_row(task_key: str, passed: bool) -> dict:
     return {
         "task_key": task_key,
         "metrics": {
-            REF_EXACT_AUTHORIZATION: "pass" if passed else "fail",
+            GT_EXACT_AUTHORIZATION: "pass" if passed else "fail",
         },
     }
 

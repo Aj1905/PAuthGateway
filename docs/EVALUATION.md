@@ -2,7 +2,7 @@
 
 本書は評価結果の正式なまとめである。中心的な主張、評価の設定、測定結果、
 そして正直な限界を記す。試行ごとの詳細は
-[REF_NO_MISSING_IMPROVEMENT_LOG.md](REF_NO_MISSING_IMPROVEMENT_LOG.md) に、アーキテクチャは
+[GT_NO_MISSING_IMPROVEMENT_LOG.md](GT_NO_MISSING_IMPROVEMENT_LOG.md) に、アーキテクチャは
 [SYSTEM_MODEL.md](SYSTEM_MODEL.md) に、脅威モデルは [THREAT_MODEL.md](THREAT_MODEL.md) にある。
 
 本書のすべての数値は、各節に記載したコマンドから再現できる。実行系は結果を
@@ -48,9 +48,9 @@ end-to-end 評価ではない。
 
 ## 1. 中心的な主張
 
-> **過少認可と過剰認可は、参照忠実度という一つの比較における二つの誤り方向
+> **過少認可と過剰認可は、正解忠実度という一つの比較における二つの誤り方向
 > である。より強力な Planner は必要call充足を 27/97 から 47/97 に引き上げた
-> が、過剰callなしの成績を 83/97 から 44/97 に落とした。その結果、参照に対
+> が、過剰callなしの成績を 83/97 から 44/97 に落とした。その結果、正解に対
 > する過不足なしの認可は 27/97 から 24/97 に低下した。**
 
 以下では三つの帰結を測定する。
@@ -59,7 +59,7 @@ end-to-end 評価ではない。
    独立した前提条件または診断である。入れ子になった可用性の連鎖ではない。
 2. 必要call充足だけでは観測traceに含まれる余分なcallを減点できず、過剰call
    なしだけでは空のtraceが高く評価されてしまう。
-   `REF_EXACT_AUTHORIZATION` は両方の半分を要求することで、trace水準のこの
+   `GT_EXACT_AUTHORIZATION` は両方の半分を要求することで、trace水準のこの
    二つの退化を退ける。
 3. 検査した集合では固定の強制攻撃callはすべて拒否されたが、これは履歴依存の
    policy関係の全体を列挙するものではなく、policyの過剰許可がゼロであること
@@ -100,9 +100,9 @@ Planner が読むのは**信頼できるプロンプトとtoolスキーマだけ
 
 | フレームワーク | プロンプト形式 | 正解データ | 検査する範囲 |
 |-----------|-------------|--------------|-------------------|
-| **AgentDojo** v1 (banking, slack, travel, workspace) | 単一ターンの自然言語 | `ground_truth` call + `utility` | 参照忠実度 + タスク結果 |
+| **AgentDojo** v1 (banking, slack, travel, workspace) | 単一ターンの自然言語 | `ground_truth` call + `utility` | 正解忠実度 + タスク結果 |
 | **tau-bench retail** | 複数ターンの役割演技 | GT行動(utility なし) | 実行時開示値の網羅 |
-| **InjecAgent** | 攻撃中心 | 参照plan | 固定のラベル付き攻撃プローブ |
+| **InjecAgent** | 攻撃中心 | 正解plan | 固定のラベル付き攻撃プローブ |
 
 **指標の語彙**(正式名は [`eval/metrics.py`](../eval/metrics.py)):
 
@@ -112,19 +112,19 @@ SYNTHESIS_POLICY_COMPILED
 RELIABILITY_RUNTIME_CRASH_FREE
 CONFORMANCE_PLAN_TRACE_PERMITTED
 
-REF_NO_MISSING_CALLS
-REF_NO_EXCESS_CALLS
-REF_EXACT_AUTHORIZATION
+GT_NO_MISSING_CALLS
+GT_NO_EXCESS_CALLS
+GT_EXACT_AUTHORIZATION
 
 OUTCOME_TASK_COMPLETED
 AUX_INJECTIONS_DENIED
 COST_TOOL_CALLS
 ```
 
-三つの `REF_*` 指標は、許可されたmock trace 1本をベンチマークの参照と比較す
+三つの `GT_*` 指標は、許可されたmock trace 1本をベンチマークの正解と比較す
 る。不足と過剰は、同一の1対1の tool+制御オペランド照合器を用いる。これらは、
 コンパイル済みpolicyがあらゆる履歴にわたって認可しうるcallの全体を列挙する
-ものではない。百分率は、参照が存在するタスクの総数を分母とする。
+ものではない。百分率は、正解が存在するタスクの総数を分母とする。
 
 再現方法:
 
@@ -168,25 +168,25 @@ python -m eval.fpfn --suites all        # GPT-4.1 forced-injection sweep
 | SYNTHESIS_POLICY_COMPILED | 62/97 | 92/97 |
 | RELIABILITY_RUNTIME_CRASH_FREE | 51/62 | 88/92 |
 | CONFORMANCE_PLAN_TRACE_PERMITTED | 62/62 | 92/92 |
-| **REF_NO_MISSING_CALLS** | **27/97** | **47/97** |
-| **REF_NO_EXCESS_CALLS** | **83/97** | **44/97** |
-| **REF_EXACT_AUTHORIZATION** | **27/97** | **24/97** |
+| **GT_NO_MISSING_CALLS** | **27/97** | **47/97** |
+| **GT_NO_EXCESS_CALLS** | **83/97** | **44/97** |
+| **GT_EXACT_AUTHORIZATION** | **27/97** | **24/97** |
 | OUTCOME_TASK_COMPLETED | 14/97 | 22/97 |
 | COST_TOOL_CALLS(コンパイル済みplanあたり) | 2.2 | 3.2 |
 
-より強力な Planner は必要call充足を大きく引き上げる。同時に、参照と対応しな
+より強力な Planner は必要call充足を大きく引き上げる。同時に、正解と対応しな
 い許可callも大幅に増やす。過不足なしの認可は不足なしと過剰なしの両方を要求
 するため、結合した結果は3タスク低下する。前者の動きだけを「可用性の改善」と
 呼ぶことは、後者の動きを覆い隠し、システムの目的を誤って伝えることになる。
 
-`REF_NO_EXCESS_CALLS` は欠損planや無効なplanも含めて数える。空の
+`GT_NO_EXCESS_CALLS` は欠損planや無効なplanも含めて数える。空の
 traceには過剰がないからであり、これは意図した設計である。したがって空の
 traceは過剰callなしの半分では良い成績を取り、必要call充足と過不足なしでは
 不合格になる。逆に、必要callをすべて含みつつ対応しないcallも含むtraceは、
 必要call充足では良い成績を取りながら、過剰callなしと過不足なしでは不合格に
 なりうる。
 
-これらの数値は、制御オペランドを用いて許可trace 1本をベンチマーク参照1つと
+これらの数値は、制御オペランドを用いて許可trace 1本をベンチマークの正解1つと
 比較したものである。コンパイル済みpolicy関係の全体が 83、44、27、24 の過不
 足なしタスクを持つことを示すものではない。policy本来の過剰許可・過少許可を
 測るには、guard・履歴・envelope 状態にわたるpolicy空間のオラクルが必要であ
@@ -204,7 +204,7 @@ plan-policy整合)が分離される。
 
 実行時クラッシュなしは意図への忠実度ではない。`def run(): pass` はクラッシュ
 しないが必要callを欠く。plan-policy整合も意図への忠実度ではない。過剰に広い
-planからコンパイルされたpolicyは、そのplanを完全に許可できてしまう。参照忠
+planからコンパイルされたpolicyは、そのplanを完全に許可できてしまう。正解忠
 実度の対と、その両立を求める過不足なしは、依然として必要である。
 
 ---
@@ -229,7 +229,7 @@ Enforcer が拒否せざるを得ない場合(値が信頼できないデータ�
 
 | 指標 | 人間が確認しない(`headless`、Enforcer のみ) | + 人間認可 |
 |--------|-------------------------:|----------------------:|
-| REF_NO_MISSING_CALLS | 47 | **49 (+2)** |
+| GT_NO_MISSING_CALLS | 47 | **49 (+2)** |
 | OUTCOME (utility検証済み) | 22 | **29 (+7)** |
 | 自動化費用 | — | gate対象16タスクで27回の確認 |
 
@@ -242,8 +242,8 @@ callによってタスクが機能的には完了しうる一方で、厳密な�
 を持つ(完全な抽出を仮定した上限)。実際の抽出器と実際の人間はこれより悪い。
 
 本実験では、human grantを追加した後の過剰callなしの半分を再計算していない。
-したがって人間経路については `REF_NO_EXCESS_CALLS` も
-`REF_EXACT_AUTHORIZATION` も報告しない。+2 という結果を過不足なし認可の改善
+したがって人間経路については `GT_NO_EXCESS_CALLS` も
+`GT_EXACT_AUTHORIZATION` も報告しない。+2 という結果を過不足なし認可の改善
 として提示してはならない。
 
 grantの安全性の性質は

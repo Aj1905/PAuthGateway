@@ -21,7 +21,7 @@ PAuth ゲートウェイのシステムモデルの正本。`pauth/`、`gateway/
 - **地の文では日本語名を使う。** 英語名を使ってよいのは、定義行そのもの、
   コード・型名の引用(バッククォート)、図中の表記だけである。
 - **英語名の出典**は「元論文(2603.17170)の語 > コード識別子 > 造語」の
-  優先順で選ぶ。論文にもコードにもない造語の英語名には ※ を付す。
+  優先順で選ぶ。
 - **ノード名と通信形**(`Planner`、`ToolCallMessage` など)は英語名がコード
   に束縛された正式名であり、日本語名は解説のための呼び名である。コード
   識別子が名前そのものである語(`PendingConfirmation`、指標名
@@ -74,16 +74,16 @@ PAuth ゲートウェイ層 / ツール層 / SaaS 層)と、その間の情報�
 ```
 
 - **エージェント / agent.** 安全性保証対象となるエージェント。
-- **外殻 / shell ※.** エージェントと PAuth パイプラインの間に
+- **外殻 / shell.** エージェントと PAuth パイプラインの間に
   立つ層。エージェントの動きを**どこまで観測できるか**(= 保護レベル)を
   決める。内部の部品は第 1 部で定義する。
 - **PAuth パイプライン / PAuth pipeline.** ユーザープロンプトから実行時の認可判定までの中核の連鎖。
   「この呼び出しを許すか」を決め、守らせる。外殻が「観測する」を、パイプ
   ラインが「許す/止める」を分担する — この分担が二層を分けて描く理由である。
   内部のノードは第 2 部で、ノード間を流れる情報は第 3 部で定義する。
-- **計画時・実行時 / plan-time, run-time ※.** パイプラインの二つの局面。計画時はタスクの最初に
+- **計画時・実行時 / plan-time, run-time.** パイプラインの二つの局面。計画時はタスクの最初に
   一度だけ走り、実行時はツール呼び出しのたびに毎回走る。
-- **認可判定 / authorization decision ※.** どのツール呼び出しも、**例外なく**認可判定
+- **認可判定 / authorization decision.** どのツール呼び出しも、**例外なく**認可判定
   (Enforcer)を通ってからしか実行されない — 素通りの経路はない。結果は
   三つだけ: 自動で許す、自動で止める、機械では確かめられないときに人間
   (Confirmer)へ問い合わせて保留する(この保留の仕組みが図中の確認
@@ -107,7 +107,7 @@ PAuth ゲートウェイ層 / ツール層 / SaaS 層)と、その間の情報�
 
 # 第 1 部 — 外殻のノード
 
-エージェントとPAuthパイプラインを接続する層。
+エージェントと PAuth パイプラインを接続する層。
 外殻は「何を観測できるか」(保護レベル)を決め、パイプラインが認可の保証を
 与える。実装対応と運用は第 6 部、接続戦略の設計は `INGRESS_DESIGN.md` を
 正とする。
@@ -164,11 +164,11 @@ PAuth ゲートウェイ層 / ツール層 / SaaS 層)と、その間の情報�
 
 ## 外殻の機構・挙動
 
-- **ingress の二水準 / two senses of ingress ※.** 「ingress」は二つの意味で使われる。(1) どの部品で
+- **ingress の二水準 / two senses of ingress.** 「ingress」は二つの意味で使われる。(1) どの部品で
   エージェントをつなぐか(上記の ingress アダプタ。第 6 部の "ingress" も
   この意味のみ)。(2) 往復の通信路のどの区間か(次項の方向モデル)。同義語
   ではないので注意。
-- **方向モデル / direction model ※.** エージェントとツールの間の往復を、四つの区間に分けた
+- **方向モデル / direction model.** エージェントとツールの間の往復を、四つの区間に分けた
   呼び方(`INGRESS_DESIGN.md`「方向モデル」が正)。
   プロンプトを見るのが **request-ingress**(agent → gateway)、中継が
   **request-egress**(gateway → provider)、ツール呼び出しを見るのが
@@ -219,7 +219,7 @@ Gateway が所有する ToolExecutor(実行部)と、その先の結合境界で
      │ (b) run コード                                │
      ▼                                                │
 ┌────────────────────┐                                │
-│ GrammarValidator       │────────────────────────────────┘
+│ GrammarValidator   │────────────────────────────────────┘
 └────┬───────────────┘
      │ (c) 検証済み run コード
      ▼
@@ -241,7 +241,7 @@ Gateway が所有する ToolExecutor(実行部)と、その先の結合境界で
 └────┬──────────────────────┘
      │ (f) tool call(ツール名 + 具体オペランド)
      ▼
-┌────────────────────┐   (g) 既存 envelope の参照   ┌─────────────────┐
+┌────────────────────┐   (g) 既存の封筒の参照       ┌─────────────────┐
 │ Enforcer           │◄────────────────────────────│ EnvelopeStore   │
 └────┬───────────────┘                             └────────▲────────┘
      │                                                      │
@@ -357,31 +357,31 @@ Planner 自体は戦略によって決定的にも非決定的にもなる。境
 
 このノードの機構・挙動:
 
-- **製品レベルの Planner 戦略名 / product-level Planner strategy name ※.** Planner をどの方式で動かすかを選ぶ設定名
+- **製品レベルの Planner 戦略名 / product-level Planner strategy name.** Planner をどの方式で動かすかを選ぶ設定名
   (`PAUTH_PLANNER_STRATEGY` など)。正準集合と生成処理は
   `gateway/planning/planner.py` の `KNOWN_STRATEGIES` と `build_planner()`。
 - **計画生成エラー / PlanGenerationError.** 計画を作れず、タスクを受け付け
   られなかった失敗。AgentChannel はプロンプトを不受理として返す。DSL 棄却
   (GrammarValidator)とも Enforcer の拒否とも別の失敗である。
-- **評価用の生成モード / evaluation generation mode ※.** 実験の比較のために `eval/` が使う生成方式の名前。
+- **評価用の生成モード / evaluation generation mode.** 実験の比較のために `eval/` が使う生成方式の名前。
   `oneshot` は一回生成して終わり、`agentic` は棄却理由や実行結果を LLM に
   返して作り直させる。製品レベルの戦略名とは別の名前空間。
-- **プロンプトの具体性要件 / prompt-concreteness requirement ※.** 自由生成の LLM Planner 経路では、使える
+- **プロンプトの具体性要件 / prompt-concreteness requirement.** 自由生成の LLM Planner 経路では、使える
   run() を生成できるだけの文字通りの定数(IBAN、件名、日付など)がユーザー
   プロンプトに含まれていなければならない。指定の足りないプロンプトは、
   設計上の意図として拒絶される。
-- **実行時修復 / runtime repair ※.** 候補の計画を模擬環境で試しに走らせ、途中で
+- **実行時修復 / runtime repair.** 候補の計画を模擬環境で試しに走らせ、途中で
   落ちたらその報告を LLM に返して直させる工程。直し切れなければ拒否番兵に
   置き換える。落ちる計画は根絶できるが、タスクの成功率は上がらない
   (何もしない計画は落ちもしないが、成功もしない)。
-- **拒否番兵 / refusal sentinel ※.** 最後の手段としての「何もしない」計画
+- **拒否番兵 / refusal sentinel.** 最後の手段としての「何もしない」計画
   (`def run(): pass`)。黙って間違ったことをする計画より、正直に何もしない
   方が安全だという判断(例: 金額不明のまま送金する代わりに、拒否する)。
-- **意図判定器 / intent judge ※.** 生成された計画がプロンプトの意図に合って
+- **意図判定器 / intent judge.** 生成された計画がプロンプトの意図に合って
   いるか(やり過ぎ・やり残しがないか)を、別の LLM に尋ねる検査。判定が
   ぶれるため、正解データ(`utility()` / `ground_truth()`、第 5 部)の方が
   望ましい。
-- **散文に埋もれた値 / prose-buried value ※.** 必要な値が自由な文章の中にしか
+- **散文に埋もれた値 / prose-buried value.** 必要な値が自由な文章の中にしか
   書かれていない状態(例: `.txt` の中の請求金額)。文字列を切り貼りできない
   この DSL では取り出せない。表現可能性(GrammarValidator の節の指標)が
   落ちる主因。
@@ -412,7 +412,7 @@ Planner 契約に従って制限付き run コードを返し、ルールを直�
 - **実行時クラッシュなし / RELIABILITY_RUNTIME_CRASH_FREE.** 生成した計画が
   最後まで落ちずに走れるか。執行を切った使い捨ての試走で測るので、早い段階の
   拒否が後のクラッシュを隠すことはない。ツールエラーは `None` を返し、その
-  `None` の誤用はクラッシュしうる(クラッシュの定義は実行部 / ToolExecutor の節)。
+  `None` の誤用はクラッシュしうる(クラッシュの定義は ToolExecutor の節)。
 
 ## 文法検証器 / GrammarValidator
 
@@ -425,8 +425,8 @@ Planner が書いたコードが、決められた書き方の枠(DSL、第 3 �
 このノードの機構・挙動:
 
 - **DSL 棄却 / DSL rejection.** コードが枠に収まらず、突き返されること。
-  Enforcer の拒否とは別の失敗(計画側の失敗)として評価ファネル
-  に数える。agentic 経路では、棄却理由がそのまま作り直しの材料になる。
+  Enforcer の拒否とは別の失敗(計画側の失敗)となる。
+  agentic 経路では、棄却理由がそのまま作り直しの材料になる。
 
 ### GrammarValidator 版番号の登録表
 
@@ -477,7 +477,7 @@ helper の第一引数を変数へ限定する一方で lambda 内のツール�
 
 ## スライサ / Slicer
 
-検証済みのrunコードを機械的に読み、ツール呼び出し一つごとの**スライス**
+検証済みの run コードを機械的に読み、ツール呼び出し一つごとの**スライス**
 (第 3 部)— どの値をどう作るか、どの条件で実行されるか — を取り出す。
 決定的。
 
@@ -490,8 +490,7 @@ helper の第一引数を変数へ限定する一方で lambda 内のツール�
 ## ルールコンパイラ / Rule compiler
 
 スライスを、実行時に照合できる**ルール**(第 3 部)に固める(論文
-Algorithm 1)。決定的。ここまで(Planner〜Rule compiler)が
-タスク開始時に一度だけ走り、以降は実行時(Enforcer 以降)に移る。
+Algorithm 1)。決定的。
 
 ### Rule compiler 版番号の登録表
 
@@ -523,22 +522,22 @@ Algorithm 1)。決定的。ここまで(Planner〜Rule compiler)が
   拒否の正誤は、その呼び出しが許されるべきだったかどうかだけで決まる。
 - 横取りされた呼び出しは、その値(制御オペランド)の出所を機械的に確かめ
   られるかどうかで、次の二つの経路のちょうど一方を取る。
-  - **自動認可経路 / auto-authorization path ※.** 出所を機械的に確かめられる
+  - **自動認可経路 / auto-authorization path.** 出所を機械的に確かめられる
     (プロンプト直書き、ツールの返り値、計算値)ので、人間なしで許否を
     決められる経路。人間が確認しない実行が完了できるのは、この経路
     だけである。
-  - **人間確認経路 / human-confirmation path ※.** 出所を機械では確かめられない
+  - **人間確認経路 / human-confirmation path.** 出所を機械では確かめられない
     (例: 文章から LLM が読み取った値、`verifiable=False`)ので、呼び出しを
     保留(`PendingConfirmation`、第 3 部)して人間に許否を尋ねる経路。人間の
     判断がそのまま結果になるため、誤った承認は過剰に、慎重すぎる却下は過少に
     なる。方針が human で人間が応答しなければ保留のまま完了しない。自動方針
     (reject / approve)なら即時に決まる。人間を
     介した配備(`InteractiveConfirmer`)では完了できる。
-- **確認ゲート / confirmation gate ※.** 確かめられない値が副作用のあるツール呼び出し
+- **確認ゲート / confirmation gate.** 確かめられない値が副作用のあるツール呼び出し
   に使われそうなとき、実行を止めて人間の返事を待たせる仕組み。人間確認経路の
   実装点(コード: `_confirmation_gate` → `PendingConfirmation` →
   `Confirmer`)。
-- **消費・リプレイ防止 / consumption and replay prevention ※.** 同じツール呼び出しを、計画に書かれた回数を超えて繰り返
+- **消費・リプレイ防止 / consumption and replay prevention.** 同じツール呼び出しを、計画に書かれた回数を超えて繰り返
   させない仕組み(ループは列挙の組ごとに数える)。回数を使い切るのは、実行
   して結果(封筒)が記録された時点。確認待ちの保留は回数を使わない。
   事後の照合(`live=False` の probe)は回数を見ず、純粋に「許されるか」だけ
@@ -554,14 +553,14 @@ Algorithm 1)。決定的。ここまで(Planner〜Rule compiler)が
   上の「実行済み」にも数えないが、その試行の再実行は拒む。保留された呼び出し
   と、実行前に引数の数が合わないとわかった呼び出しでは作らない。再起動時に
   `started` のまま残っていたものは `indeterminate` として復元する。
-- **順序執行 / call-order enforcement ※(opt-in).** 指定したツール(`ordered_tools`)について、計画に
+- **順序執行 / call-order enforcement(opt-in).** 指定したツール(`ordered_tools`)について、計画に
   書かれた順番どおりにしか実行させない追加の縛り
   (`PAUTH_ENFORCE_CALL_ORDER=1` で有効化)。計画上それより前にある対象の
   呼び出しが、すべて実行済みか、条件が偽で経路から外れていることを要求する。
   「確認してから送る」のような、データの受け渡しでは表現されない順序を守る
   ための拡張。一括関門確認の遅延実行・部分却下と衝突するため、既定は無効。
   データの受け渡しとして書かれた順序は、この機構がなくても常に守られる。
-- **自由オペランド / free operand ※.** 値の検査を免除するオペランド。検索語や
+- **自由オペランド / free operand.** 値の検査を免除するオペランド。検索語や
   自由記述の本文のように、金額や宛先と違って取引上の意味を持たない値に使う。
   配備者が `PolicyAwareEnforcer`(`gateway/runtime/policy.py`)で
   `(tool, parameter)` の組に印を付ける。
@@ -584,7 +583,7 @@ Confirmer の版は**確認 UX** — 保留されたツール呼び出しを、�
 | 版番号 | 確認 UX | 状態 |
 |---|---|---|
 | `C0` | 確認 UX なし: 保留を人間に見せる面を持たず、方針で即時自動判断する(human 方針は選べない — 構成エラー) | 実装済み |
-| `C1` | ツール呼び出し単位確認: ツール呼び出しを一件ずつ保留し、通常のエージェント通信とは別の確認用 API で判断を受け、承認済みの同じ呼び出しを再試行時に実行 | 基本機構は実装済み・対話 UI 未統合 |
+| `C1` | ツール呼び出し単位確認: ツール呼び出しを一件ずつ保留し、通常のエージェント通信とは別の確認用 API で判断を受け、承認済みの同じ呼び出しを再試行時に実行 | 実装済み・対話 UI 未統合 |
 | `C2` | 一括関門確認: 副作用の候補を集め、一つの確認時点で各呼び出しを個別に判断した後、承認された呼び出しだけを順に実行 | human 方針は試作のみ(`gateway/runtime/batched_confirmation.py`、Gateway 未統合)。自動方針では不変条件により即時判断に退化し、Gateway で利用可 |
 
 確認方針は三つ。実験 ID では UX 版番号へ方針を接尾辞として付ける。
@@ -626,7 +625,10 @@ run コードの実行と、許可されたツール呼び出しの実行は、�
   ごとに Enforcer の検査を通す)が担う。
 - **ツールアダプタ**は、ツールの schema と実際の実行機能を供給する差し替え
   可能なバックエンドであり、ノードではなく ToolExecutor の先(ツール層)に
-  立つ結合境界(運用は第 6 部)。実装境界は `pauth/suites/base.py`。
+  立つ結合境界(運用は第 6 部)。コード上の契約型は `pauth/suites/base.py` の
+  `SuiteSpec`(`tools`・`make_env`・`tool_executor_factory` の三点契約)。
+  地の文ではこの部品を常に「ツールアダプタ」と呼び、`SuiteSpec` はコード
+  識別子の引用としてだけ使う。
 
 このノードの機構・挙動:
 
@@ -638,15 +640,15 @@ run コードの実行と、許可されたツール呼び出しの実行は、�
   何も起きていない」と保証できる形で失敗したこと。コードのクラッシュとも
   拒否とも別物。副作用の有無を保証できない一般の例外や timeout を、この語で
   丸めてはならない。
-- **ツール結果不明 / indeterminate tool outcome ※.** 実行を頼んだ後、timeout や
+- **ツール結果不明 / indeterminate tool outcome.** 実行を頼んだ後、timeout や
   通信断などで、外部に効果が出たのかどうかを確かめられなくなった状態。拒否
   でもクラッシュでもツールエラーでもない。実行試行を `indeterminate` のまま
   残し、勝手にはやり直さない。
-- **実行状態障害 / execution-state failure ※.** 「これから実行する」という記録
+- **実行状態障害 / execution-state failure.** 「これから実行する」という記録
   (実行試行)を安全に残せなかったため、外部を呼ばずに止めた状態
   (fail-closed)。ルール不一致の拒否とも、実行後の結果不明とも別物。
 
-## PAuthパイプライン失敗の対照表
+## PAuth パイプライン失敗の対照表
 
 | 失敗 | 発生箇所 |
 |---|---|
@@ -671,7 +673,7 @@ run コードの実行と、許可されたツール呼び出しの実行は、�
   エージェントが外部のデータを読む*前に*捕まえるので、汚染されていない。
   通信形は **`PromptMessage`** — ingress アダプタが正規化
   し、AgentChannel が「最初に一度だけ」を守らせる。
-- **runコード / run code.** Planner が書く一本の関数。タスクの手順書で
+- **run コード / run code.** Planner が書く一本の関数。タスクの手順書で
   あり、DSL に収まっていなければならない。GrammarValidator が検査し、Slicer が
   読む。実行時にはこれが計画として走り、そのツール呼び出しが Enforcer を
   通る。本書で「計画」と言うときは、この run コードの実行内容を指す。
@@ -683,8 +685,7 @@ run コードの実行と、許可されたツール呼び出しの実行は、�
   こそ機械的に解析でき、スライスとルールを確実に作れる。同じ狭さが表現
   可能性(GrammarValidator の節の指標)の上限も決める。
 - **スライス / slice.** ツール呼び出し一つぶんの仕様書: 各値をどの式で作る
-  か+その呼び出しに至るための条件(guard)。Slicer が作り、
-  Rule compiler が読む。
+  か+その呼び出しに至るための条件(guard)。Slicer が作り、Rule compiler が読む。
 - **ガード / guard.** そのツール呼び出しが実行されるための条件。コードの分岐から
   機械的に決まる(`if C:` の中なら `C`、入れ子なら `C1 and C2`、`else` なら
   `not C`)。Enforcer は、すべての guard の成立を要求する。
@@ -732,8 +733,7 @@ run コードの実行と、許可されたツール呼び出しの実行は、�
   だから「許されたが結果不明」は `permit=false` でも、拒否として監査しては
   ならない。
 - **トレース / trace.** 一回の実行で観測されたツール呼び出しの並び。評価では、許された
-  呼び出しの列 `PERMITTED` を、手本の列 `REF` と比較する(第 4 部
-  「観測モデル」)。
+  ツール呼び出しの列 `PERMITTED` を、正解ツール呼び出し列 `GT` と比較する(第 4 部「観測モデル」)。
 
 ---
 
@@ -744,15 +744,14 @@ PAuth は、過不足ない権限を自動付与することを目指す。
 
 ## 観測モデル
 
-ベンチマークは有限の正解ツール呼び出し列を与え、模擬実行は有限の許可トレース
-を生成する。
+ベンチマークは有限の正解ツール呼び出し列を与え、模擬実行は有限の許可トレースを生成する。
 
 ```text
-REF       = benchmark reference calls
+GT        = benchmark ground-truth calls
 PERMITTED = calls permitted on one concrete generated-plan execution
 ```
 
-`REF` と `PERMITTED` は多重集合として比較する。重複するツール呼び出しは別々に数えるが、相対
+`GT` と `PERMITTED` は多重集合として比較する。重複するツール呼び出しは別々に数えるが、相対
 順序は採点しない。正解ツール呼び出し列のアダプタは、不足側・過剰側の双方でツール名
 +制御オペランド(第 3 部)を用いる。ベンチマークが utility 検査を提供する
 場合、制御以外の内容は `OUTCOME_TASK_COMPLETED` で別に評価する。
@@ -779,25 +778,31 @@ POLICY(h, call) = the policy decision for a call under execution history h
 | `RELIABILITY_RUNTIME_CRASH_FREE` | Planner — 生成コードの実行健全性(第 2 部) |
 | `CONFORMANCE_PLAN_TRACE_PERMITTED` | Slicer+Rule compiler — 計画を狭め過ぎていないか(第 2 部) |
 | `AUX_INJECTIONS_DENIED` | Enforcer — 固定攻撃の拒否(第 2 部) |
-| `REF_NO_MISSING_CALLS` | パイプライン全体 — 不足なしの半分(本部) |
-| `REF_NO_EXCESS_CALLS` | パイプライン全体 — 過剰なしの半分(本部) |
-| `REF_EXACT_AUTHORIZATION` | パイプライン全体 — 過不足なし(本部) |
+| `GT_NO_MISSING_CALLS` | パイプライン全体 — 不足なしの半分(本部) |
+| `GT_NO_EXCESS_CALLS` | パイプライン全体 — 過剰なしの半分(本部) |
+| `GT_EXACT_AUTHORIZATION` | パイプライン全体 — 過不足なし(本部) |
 | `OUTCOME_TASK_COMPLETED` | 系全体 — 目標状態への到達(本部) |
 | `COST_TOOL_CALLS` | 系全体 — 呼び出し数の費用(本部) |
 
-- **ツール呼び出しの不足なし / REF_NO_MISSING_CALLS.** 手本(`REF`)にある必須の
+- **ツール呼び出しの不足なし / GT_NO_MISSING_CALLS.** 正解ツール呼び出し列(`GT`)にある必須の
   呼び出しを、すべて許せたか(「不足なし」の半分)。照合はツール名+制御
   オペランドで行う。
-- **ツール呼び出しの過剰なし / REF_NO_EXCESS_CALLS.** 手本にない呼び出しを
+- **ツール呼び出しの過剰なし / GT_NO_EXCESS_CALLS.** 正解ツール呼び出し列にない呼び出しを
   許していないか(「過剰なし」の半分)。照合器は同じ。
-- **過不足なし / REF_EXACT_AUTHORIZATION.** 先行する二つの指標がともに合格
+- **過不足なし / GT_EXACT_AUTHORIZATION.** 先行する二つの指標がともに合格
   したときに限り、合格する。
 
   ```text
-  REF_EXACT_AUTHORIZATION
-    = REF_NO_MISSING_CALLS
-      AND REF_NO_EXCESS_CALLS
+  GT_EXACT_AUTHORIZATION
+    = GT_NO_MISSING_CALLS
+      AND GT_NO_EXCESS_CALLS
   ```
+
+改名の履歴(いずれも 2026-08-02、定義・値・分母は不変):
+`REF_REQUIRED_CALLS_PERMITTED` → `REF_NO_MISSING_CALLS` → `GT_NO_MISSING_CALLS`、
+`REF_NO_EXCESS_CALLS_PERMITTED` → `REF_NO_EXCESS_CALLS` → `GT_NO_EXCESS_CALLS`、
+`REF_EXACT_AUTHORIZATION` → `GT_EXACT_AUTHORIZATION`(GT = 正解 ground truth)。
+保存済みの実験成果物(`tests/experiment/results/`)は当時のキーのまま凍結してある。
 
 空の観測トレースは「過剰なし」の半分には合格しうるが、必須ツール呼び出しの網羅では
 不合格となる。必須ツール呼び出しをすべて含み、かつ余分なツール呼び出しも含むトレースは、
@@ -809,28 +814,28 @@ POLICY(h, call) = the policy decision for a call under execution history h
 ## 結果と費用(系全体の指標)
 
 - **タスク結果 / OUTCOME_TASK_COMPLETED.** 実行後の環境が、目標の状態に
-  なっているか(ベンチマークの `utility()` 検査)。手本どおりの呼び出しが
-  正しい結果を保証するわけではないので、参照忠実性とはずれうる。
+  なっているか(ベンチマークの `utility()` 検査)。正解どおりのツール呼び出しが
+  正しい結果を保証するわけではないので、正解忠実性とはずれうる。
 - **ツール呼び出し費用 / COST_TOOL_CALLS.** 一つの計画あたり、何回の呼び出しを許した
   かの平均。計画を作れなかったタスクは分母から除く。
 
 ## トレース比較の語
 
-`REF` 対 `PERMITTED` の比較で使う語。どのノードにも属さず、観測トレースの性質である。
+`GT` 対 `PERMITTED` の比較で使う語。どのノードにも属さず、観測トレースの性質である。
 
-- **過剰 / Excess.** 正解ツール呼び出し列と一致しない許可済みツール呼び出し。
-- **不足 / Missing.** 許可トレースと一致しない正解ツール呼び出し。計画の
+- **過剰 / Excess.** 正解ツール呼び出し列と一致しない認可済みツール呼び出し。
+- **不足 / Missing.** 認可済みツール呼び出しと一致しない正解ツール呼び出し。計画の
   抜け、拒否、クラッシュのいずれもが、観測上は同じ不足を生みうる(発生
   ノードの区別は第 2 部「失敗の対照表」)。
 
 ## 診断上の原因であり、最上位の軸ではない
 
-- **試行したが拒否 / attempted but denied ※.** 必須ツール呼び出しは
+- **試行したが拒否 / attempted but denied.** 必須ツール呼び出しは
   出されたが、Enforcer がそれを止めた。
-- **呼び出し前クラッシュ / pre-call crash ※.** 生成コードが必須ツール
+- **呼び出し前クラッシュ / pre-call crash.** 生成コードが必須ツール
   呼び出しに到達する前に失敗した。
 - **ツールエラー / tool error.** 許可されたツールが、認可の後に失敗した。
-- **ツール結果不明 / indeterminate tool outcome ※.** 許可されたツール
+- **ツール結果不明 / indeterminate tool outcome.** 許可されたツール
   呼び出しの送出後に、副作用の成否を証明できなくなった。不足にも既実行にも
   なりうるため、ツールエラーとして推測しない。
 
@@ -897,7 +902,7 @@ POLICY(h, call) = the policy decision for a call under execution history h
   達成されたかどうかは、AgentDojo の `security()` が実行後の出力と環境から
   判定する。
 - **ground_truth() / 正解ツール呼び出し列.** そのタスクの正しいツール呼び出し列として
-  AgentDojo が定める手本。表現可能性の判定と、参照照合の両半分の基準になる。
+  AgentDojo が定める手本。表現可能性の判定と、正解照合の両半分の基準になる。
   手本であって、他のやり方が正しくないことの証明ではない。
 - **utility() / 目標達成判定.** 実行後の環境が目標の状態に到達したかを、
   機械的に検査する AgentDojo の関数。`OUTCOME_TASK_COMPLETED` として報告
@@ -907,7 +912,7 @@ POLICY(h, call) = the policy decision for a call under execution history h
 
 - **枠組みの網羅範囲.** どのベンチマークも、測れるのは
   連鎖の一部だけ。手本(`ground_truth`)と結果検査(`utility`)の両方を持ち、
-  参照照合+結果の完全な比較を支えられるのは AgentDojo だけである。
+  正解照合+結果の完全な比較を支えられるのは AgentDojo だけである。
   InjecAgent と強制プローブは、主に固定の攻撃事例を供給する。
 
 ## 測定上の知見
@@ -941,7 +946,7 @@ POLICY(h, call) = the policy decision for a call under execution history h
 |---|---|---|---|
 | エージェント ingress | `PromptMessage` と `ToolCallMessage` | Claude hooks、InterceptingProxy(`gateway/serving/proxy.py`、執行の中核は実装済み、TLS/ネットワーク接続部は未着手)、独自クライアント | `gateway/ingress/agent_channel.py` |
 | Planner | 制限された命令型の `def run(...): ...`(執行点は GrammarValidator = `pauth/grammar_validator.py`) | 決定的認識器、LLM 自由生成、両者を使う `auto`、充足性・厳密性の二段生成、対話構造化・専用コード生成・形式意味解析(`P3`–`P5`、設計契約は第 2 部 Planner の節の登録表) | `gateway/planning/planner.py` |
-| ツールアダプタ | `tools`・`make_env`・`tool_executor_factory` の三点契約 | 買い物デモ、AgentDojo、MCP サーバー、OpenAPI 仕様、将来の SaaS アダプタ | `pauth/suites/base.py` |
+| ツールアダプタ | `SuiteSpec`(`tools`・`make_env`・`tool_executor_factory` の三点契約) | 買い物デモ、AgentDojo、MCP サーバー、OpenAPI 仕様、将来の SaaS アダプタ | `pauth/suites/base.py` |
 | 認可の中核 | コンパイル済みルール + 封筒に裏付けられたオペランド検査 | プロバイダごとに変わるべきではない | `pauth/` |
 
 用語に関する注意 — 本部の "ingress" は*アダプタ*の水準だけを指す。二水準の

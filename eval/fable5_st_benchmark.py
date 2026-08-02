@@ -53,9 +53,9 @@ from eval.metrics import (
     COST_TOOL_CALLS,
     FEASIBILITY_EXPRESSIBLE,
     OUTCOME_TASK_COMPLETED,
-    REF_EXACT_AUTHORIZATION,
-    REF_NO_EXCESS_CALLS,
-    REF_NO_MISSING_CALLS,
+    GT_EXACT_AUTHORIZATION,
+    GT_NO_EXCESS_CALLS,
+    GT_NO_MISSING_CALLS,
     RELIABILITY_RUNTIME_CRASH_FREE,
     SYNTHESIS_POLICY_COMPILED,
 )
@@ -86,7 +86,7 @@ EXPECTED_SUITE_COUNTS = {
 }
 EXPECTED_TASK_COUNT = 97
 ARMS = ("direct1", "st")
-PRIMARY_METRIC = REF_EXACT_AUTHORIZATION
+PRIMARY_METRIC = GT_EXACT_AUTHORIZATION
 SCHEMA_VERSION = 2
 
 METRICS = (
@@ -94,9 +94,9 @@ METRICS = (
     SYNTHESIS_POLICY_COMPILED,
     RELIABILITY_RUNTIME_CRASH_FREE,
     CONFORMANCE_PLAN_TRACE_PERMITTED,
-    REF_NO_MISSING_CALLS,
-    REF_NO_EXCESS_CALLS,
-    REF_EXACT_AUTHORIZATION,
+    GT_NO_MISSING_CALLS,
+    GT_NO_EXCESS_CALLS,
+    GT_EXACT_AUTHORIZATION,
     OUTCOME_TASK_COMPLETED,
     AUX_INJECTIONS_DENIED,
     COST_TOOL_CALLS,
@@ -1185,9 +1185,9 @@ def summarize(
             for row in st_rows
         ),
         "required_lost_coverage_to_final": sum(
-            row.get("coverage_metrics", {}).get(REF_NO_MISSING_CALLS)
+            row.get("coverage_metrics", {}).get(GT_NO_MISSING_CALLS)
             == "pass"
-            and row["metrics"].get(REF_NO_MISSING_CALLS) == "fail"
+            and row["metrics"].get(GT_NO_MISSING_CALLS) == "fail"
             for row in st_rows
         ),
     }

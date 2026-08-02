@@ -52,9 +52,9 @@ from eval.metrics import (
     COST_TOOL_CALLS,
     FEASIBILITY_EXPRESSIBLE,
     OUTCOME_TASK_COMPLETED,
-    REF_EXACT_AUTHORIZATION,
-    REF_NO_EXCESS_CALLS,
-    REF_NO_MISSING_CALLS,
+    GT_EXACT_AUTHORIZATION,
+    GT_NO_EXCESS_CALLS,
+    GT_NO_MISSING_CALLS,
     RELIABILITY_RUNTIME_CRASH_FREE,
     SYNTHESIS_POLICY_COMPILED,
 )
@@ -66,9 +66,9 @@ _LIFECYCLE = [
     CONFORMANCE_PLAN_TRACE_PERMITTED,
 ]
 _FIDELITY = [
-    REF_NO_MISSING_CALLS,
-    REF_NO_EXCESS_CALLS,
-    REF_EXACT_AUTHORIZATION,
+    GT_NO_MISSING_CALLS,
+    GT_NO_EXCESS_CALLS,
+    GT_EXACT_AUTHORIZATION,
 ]
 _ORDER = _LIFECYCLE + _FIDELITY + [OUTCOME_TASK_COMPLETED, AUX_INJECTIONS_DENIED]
 
@@ -345,8 +345,8 @@ def _authorize_footprint() -> None:
                 pass
 
     print("\n  -- mode=authorize: recovery through the REAL human-authorization path --")
-    print(f"    REF_REQUIRED_CALLS headless         {base_required}/97")
-    print(f"    REF_REQUIRED_CALLS + human ceiling  {auth_required}/97   "
+    print(f"    GT_NO_MISSING_CALLS headless         {base_required}/97")
+    print(f"    GT_NO_MISSING_CALLS + human ceiling  {auth_required}/97   "
           f"(+{auth_required - base_required}, env-extractable misses only)")
     print(f"    OUTCOME  headless (enforcer only)   {base_out}/97")
     print(f"    OUTCOME  + human-authorize          {auth_out}/97   (+{auth_out - base_out})")
@@ -429,9 +429,9 @@ def _set_reference_fidelity(metrics, excess, missing):
     """Populate both fidelity halves and their exact conjunction."""
     if excess is None or missing is None:
         return
-    metrics[REF_NO_MISSING_CALLS] = "pass" if missing == 0 else "fail"
-    metrics[REF_NO_EXCESS_CALLS] = "pass" if excess == 0 else "fail"
-    metrics[REF_EXACT_AUTHORIZATION] = (
+    metrics[GT_NO_MISSING_CALLS] = "pass" if missing == 0 else "fail"
+    metrics[GT_NO_EXCESS_CALLS] = "pass" if excess == 0 else "fail"
+    metrics[GT_EXACT_AUTHORIZATION] = (
         "pass" if missing == 0 and excess == 0 else "fail"
     )
 

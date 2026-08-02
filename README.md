@@ -67,10 +67,10 @@ banking               0       135         0     13  PASS
 RESULT: PASS -- no tested forced injection was permitted.
 ```
 
-この結果が対象とするのはハーネスが生成したラベル付き呼び出しである。未知の攻撃や、コンパイル済み policy が許可しうるすべての呼び出しに対する証明ではない。現在の評価は、必要な許可呼び出しと過剰な許可呼び出しを、一つの参照忠実性誤差の二方向として比較する。
+この結果が対象とするのはハーネスが生成したラベル付き呼び出しである。未知の攻撃や、コンパイル済み policy が許可しうるすべての呼び出しに対する証明ではない。現在の評価は、必要な許可呼び出しと過剰な許可呼び出しを、一つの正解忠実性誤差の二方向として比較する。
 
 **フレームワーク横断・モデル横断の完全な結果は
-[`docs/EVALUATION.md`](docs/EVALUATION.md) にある** — 厳密な参照認可、実行時診断、人間認可経路を含む。
+[`docs/EVALUATION.md`](docs/EVALUATION.md) にある** — 厳密な正解認可、実行時診断、人間認可経路を含む。
 
 ---
 
@@ -205,7 +205,7 @@ cp .env.example .env   # write OPENAI_API_KEY, then:
 .venv/bin/python -m eval.fpfn --suites banking --limit 3
 ```
 
-パラメータ化された funnel は、各段階の診断、参照忠実性の両半分、結果、攻撃プローブ、費用を、モデルとモードを横断して測定する([`docs/EVALUATION.md`](docs/EVALUATION.md) を参照):
+パラメータ化された funnel は、各段階の診断、正解忠実性の両半分、結果、攻撃プローブ、費用を、モデルとモードを横断して測定する([`docs/EVALUATION.md`](docs/EVALUATION.md) を参照):
 
 ```bash
 .venv/bin/python -m eval.funnel agentdojo --mode headless --planner bestof --model gpt-5.1 --structuring
@@ -220,7 +220,7 @@ cp .env.example .env   # write OPENAI_API_KEY, then:
 - **過剰拒否診断** — 生成された計画を実行し、すべての呼び出しを Enforcer に通す。一件でも拒否があれば、そのタスクに印を付ける。
 - **強制攻撃診断** — オペランドを改ざんした、あるいはタスク外のラベル付き呼び出しを、実行後の envelope ストアに対して Enforcer に提示する。許可されれば、その事例に印を付ける。
 
-これらの旧診断は有限の構成要素プローブであり、policy の過剰/過少許可の関係全体でも `REF_EXACT_AUTHORIZATION` でもない。スライス上の強制呼び出しは許可されうる。これはハーネスが単にすべてのプローブを拒否しているわけではないことを示しており、そうしたリプレイが悪意あるものかどうかは、ベンチマークのラベルと脅威モデルに依存する。
+これらの旧診断は有限の構成要素プローブであり、policy の過剰/過少許可の関係全体でも `GT_EXACT_AUTHORIZATION` でもない。スライス上の強制呼び出しは許可されうる。これはハーネスが単にすべてのプローブを拒否しているわけではないことを示しており、そうしたリプレイが悪意あるものかどうかは、ベンチマークのラベルと脅威モデルに依存する。
 
 ---
 
@@ -269,7 +269,7 @@ docs/
 
 - **導入する人**: [README](README.md)（本書）→ [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) → [`gateway/hooks/README.md`](gateway/hooks/README.md)
 - **設計を知りたい人**: [`docs/SYSTEM_MODEL.md`](docs/SYSTEM_MODEL.md) → [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) → [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md)
-- **評価を知りたい人**: [`docs/EVALUATION.md`](docs/EVALUATION.md) → [`docs/SYSTEM_MODEL.md`](docs/SYSTEM_MODEL.md) → [`docs/REF_NO_MISSING_IMPROVEMENT_LOG.md`](docs/REF_NO_MISSING_IMPROVEMENT_LOG.md)（履歴）
+- **評価を知りたい人**: [`docs/EVALUATION.md`](docs/EVALUATION.md) → [`docs/SYSTEM_MODEL.md`](docs/SYSTEM_MODEL.md) → [`docs/GT_NO_MISSING_IMPROVEMENT_LOG.md`](docs/GT_NO_MISSING_IMPROVEMENT_LOG.md)（履歴）
 - **論文執筆**: [`paper/PAuthGateway/`](paper/PAuthGateway/)
 
 ---

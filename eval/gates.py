@@ -32,9 +32,9 @@ from eval.metrics import (
     COST_TOOL_CALLS,
     FEASIBILITY_EXPRESSIBLE,
     OUTCOME_TASK_COMPLETED,
-    REF_EXACT_AUTHORIZATION,
-    REF_NO_EXCESS_CALLS,
-    REF_NO_MISSING_CALLS,
+    GT_EXACT_AUTHORIZATION,
+    GT_NO_EXCESS_CALLS,
+    GT_NO_MISSING_CALLS,
     RELIABILITY_RUNTIME_CRASH_FREE,
     SYNTHESIS_POLICY_COMPILED,
 )
@@ -252,7 +252,7 @@ def _fidelity_control(ut, spec, params, trace, docs) -> tuple[int | None, int | 
 
 def _deficiency_control(ut, spec, params, trace, docs) -> int | None:
     """Compatibility wrapper for older experiments: missing side of
-    REF_NO_MISSING_CALLS only."""
+    GT_NO_MISSING_CALLS only."""
     _, missing = _fidelity_control(ut, spec, params, trace, docs)
     return missing
 
@@ -437,9 +437,9 @@ def main() -> int:
         (OUTCOME_TASK_COMPLETED, "completed"),
     ]
     fidelity = [
-        (REF_NO_MISSING_CALLS, "required_calls_permitted"),
-        (REF_NO_EXCESS_CALLS, "no_excess_calls_permitted"),
-        (REF_EXACT_AUTHORIZATION, "exact_authorization"),
+        (GT_NO_MISSING_CALLS, "required_calls_permitted"),
+        (GT_NO_EXCESS_CALLS, "no_excess_calls_permitted"),
+        (GT_EXACT_AUTHORIZATION, "exact_authorization"),
         (AUX_INJECTIONS_DENIED, "injections_denied"),
     ]
     for title, metrics in (

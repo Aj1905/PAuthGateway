@@ -14,9 +14,9 @@ from eval.metrics import (
     CONFORMANCE_PLAN_TRACE_PERMITTED,
     FEASIBILITY_EXPRESSIBLE,
     METRICS,
-    REF_EXACT_AUTHORIZATION,
-    REF_NO_EXCESS_CALLS,
-    REF_NO_MISSING_CALLS,
+    GT_EXACT_AUTHORIZATION,
+    GT_NO_EXCESS_CALLS,
+    GT_NO_MISSING_CALLS,
     RELIABILITY_RUNTIME_CRASH_FREE,
     SYNTHESIS_POLICY_COMPILED,
 )
@@ -79,13 +79,13 @@ def test_exact_authorization_is_the_conjunction_of_both_fidelity_halves():
     ):
         measured = {}
         funnel._set_reference_fidelity(measured, excess, missing)
-        assert measured[REF_NO_MISSING_CALLS] == (
+        assert measured[GT_NO_MISSING_CALLS] == (
             "pass" if missing == 0 else "fail"
         )
-        assert measured[REF_NO_EXCESS_CALLS] == (
+        assert measured[GT_NO_EXCESS_CALLS] == (
             "pass" if excess == 0 else "fail"
         )
-        assert measured[REF_EXACT_AUTHORIZATION] == expected
+        assert measured[GT_EXACT_AUTHORIZATION] == expected
 
 
 class _FakeSuite:
@@ -147,9 +147,9 @@ def test_missing_or_invalid_plan_stays_in_fidelity_denominator(monkeypatch):
         measured = funnel.measure(corpus, task, "headless")
 
         assert measured[SYNTHESIS_POLICY_COMPILED] == "fail"
-        assert measured[REF_NO_MISSING_CALLS] == "fail"
-        assert measured[REF_NO_EXCESS_CALLS] == "pass"
-        assert measured[REF_EXACT_AUTHORIZATION] == "fail"
+        assert measured[GT_NO_MISSING_CALLS] == "fail"
+        assert measured[GT_NO_EXCESS_CALLS] == "pass"
+        assert measured[GT_EXACT_AUTHORIZATION] == "fail"
         assert measured[RELIABILITY_RUNTIME_CRASH_FREE] == "n/a"
         assert measured[CONFORMANCE_PLAN_TRACE_PERMITTED] == "n/a"
         assert measured[AUX_INJECTIONS_DENIED] == "n/a"
@@ -201,9 +201,9 @@ def test_primary_taxonomy_no_longer_splits_funnel_into_availability_and_security
         SYNTHESIS_POLICY_COMPILED: "SYNTHESIS",
         RELIABILITY_RUNTIME_CRASH_FREE: "RELIABILITY",
         CONFORMANCE_PLAN_TRACE_PERMITTED: "CONFORMANCE",
-        REF_NO_MISSING_CALLS: "REFERENCE_FIDELITY",
-        REF_NO_EXCESS_CALLS: "REFERENCE_FIDELITY",
-        REF_EXACT_AUTHORIZATION: "REFERENCE_FIDELITY",
+        GT_NO_MISSING_CALLS: "REFERENCE_FIDELITY",
+        GT_NO_EXCESS_CALLS: "REFERENCE_FIDELITY",
+        GT_EXACT_AUTHORIZATION: "REFERENCE_FIDELITY",
         AUX_INJECTIONS_DENIED: "ADVERSARIAL_ROBUSTNESS",
     }
     for metric, property_name in expected_properties.items():

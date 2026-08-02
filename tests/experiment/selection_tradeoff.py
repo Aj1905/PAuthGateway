@@ -23,9 +23,9 @@ from eval.metrics import (
     CONFORMANCE_PLAN_TRACE_PERMITTED,
     COST_TOOL_CALLS,
     OUTCOME_TASK_COMPLETED,
-    REF_EXACT_AUTHORIZATION,
-    REF_NO_EXCESS_CALLS,
-    REF_NO_MISSING_CALLS,
+    GT_EXACT_AUTHORIZATION,
+    GT_NO_EXCESS_CALLS,
+    GT_NO_MISSING_CALLS,
     RELIABILITY_RUNTIME_CRASH_FREE,
     SYNTHESIS_POLICY_COMPILED,
 )
@@ -85,9 +85,9 @@ def measure(policy):
         SYNTHESIS_POLICY_COMPILED,
         RELIABILITY_RUNTIME_CRASH_FREE,
         CONFORMANCE_PLAN_TRACE_PERMITTED,
-        REF_NO_MISSING_CALLS,
-        REF_NO_EXCESS_CALLS,
-        REF_EXACT_AUTHORIZATION,
+        GT_NO_MISSING_CALLS,
+        GT_NO_EXCESS_CALLS,
+        GT_EXACT_AUTHORIZATION,
         OUTCOME_TASK_COMPLETED,
     )
     agg = {k: 0 for k in measured}
@@ -113,9 +113,9 @@ def measure(policy):
                 excess, missing = _fidelity_control(
                     ut, suite, suite.tool_params(), [], docs
                 )
-                agg[REF_NO_MISSING_CALLS] += (missing == 0)
-                agg[REF_NO_EXCESS_CALLS] += (excess == 0)
-                agg[REF_EXACT_AUTHORIZATION] += (excess == 0 and missing == 0)
+                agg[GT_NO_MISSING_CALLS] += (missing == 0)
+                agg[GT_NO_EXCESS_CALLS] += (excess == 0)
+                agg[GT_EXACT_AUTHORIZATION] += (excess == 0 and missing == 0)
                 continue
             agg[SYNTHESIS_POLICY_COMPILED] += 1
             agg[RELIABILITY_RUNTIME_CRASH_FREE] += (
@@ -139,9 +139,9 @@ def measure(policy):
             excess, missing = _fidelity_control(
                 ut, suite, suite.tool_params(), trace, docs
             )
-            agg[REF_NO_MISSING_CALLS] += (missing == 0)
-            agg[REF_NO_EXCESS_CALLS] += (excess == 0)
-            agg[REF_EXACT_AUTHORIZATION] += (excess == 0 and missing == 0)
+            agg[GT_NO_MISSING_CALLS] += (missing == 0)
+            agg[GT_NO_EXCESS_CALLS] += (excess == 0)
+            agg[GT_EXACT_AUTHORIZATION] += (excess == 0 and missing == 0)
     agg[COST_TOOL_CALLS] = cost_calls / max(1, cost_n)
     return agg, considered
 
@@ -157,9 +157,9 @@ def main():
         SYNTHESIS_POLICY_COMPILED,
         RELIABILITY_RUNTIME_CRASH_FREE,
         CONFORMANCE_PLAN_TRACE_PERMITTED,
-        REF_NO_MISSING_CALLS,
-        REF_NO_EXCESS_CALLS,
-        REF_EXACT_AUTHORIZATION,
+        GT_NO_MISSING_CALLS,
+        GT_NO_EXCESS_CALLS,
+        GT_EXACT_AUTHORIZATION,
         OUTCOME_TASK_COMPLETED,
     ]
     for name in labels:
