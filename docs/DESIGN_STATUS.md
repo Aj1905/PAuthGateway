@@ -178,13 +178,12 @@ custom agent adapter      ┘
 
 ### Planner 戦略の発展
 
-計画時の Planner は差し替え可能である。三候補(`interactive-structuring` /
-`specialized-codegen` / `formal-semantic`)は Planner 版番号 `P3`–`P5` として
-予約済み・未実装であり、選択すると `PlanGenerationError` が発生し、Gateway は
-計画生成失敗を、Enforcer とルールを持たないセッションとして記録する。状態と
-設計契約(処理の流れ、導入条件、失敗要因)の正本は `SYSTEM_MODEL.md` 第 2 部
-ノード 1「Planner 版番号の登録表と予約済み設計契約」である。採用する場合も、
-`SYSTEM_MODEL.md` が定める Planner 契約を維持する。
+計画時の Planner は差し替え可能である。`interactive-structuring` /
+`specialized-codegen` / `formal-semantic` は Planner 版番号 `P3`–`P5` として
+実装済み(2026-08-02、いずれも未実験)。状態と契約の正本は
+`SYSTEM_MODEL.md` 第 2 部 Planner の節の登録表である。どの戦略も
+`SYSTEM_MODEL.md` が定める Planner 契約(制限付き `run()` を返し、ルールを
+直接生成しない)を維持する。
 
 ### API 仕様の反映
 

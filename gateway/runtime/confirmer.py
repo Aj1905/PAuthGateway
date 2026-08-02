@@ -23,9 +23,20 @@ the gate's protection depends on the human, and a benchmark must show that.
 from __future__ import annotations
 
 import dataclasses
-from typing import Protocol
+from typing import Callable, Protocol
 
 from gateway.runtime.confirmation import PendingConfirmation
+
+
+# Deployment-facing confirmation POLICY: who answers a held call. Orthogonal to
+# the confirmation-UX version (C0/C1/C2 -- when/how a human would be shown the
+# hold). Invariant: under the automatic policies (reject/approve) the UX version
+# has NO effect on execution results; only the "human" policy gives the UX
+# versions distinct behavior.
+POLICY_REJECT = "reject"    # safe side: every held call is denied
+POLICY_APPROVE = "approve"  # danger side: every held call is executed (comparison condition -- never a production default)
+POLICY_HUMAN = "human"      # a real person answers via the confirmation surface
+CONFIRMATION_POLICIES = frozenset({POLICY_REJECT, POLICY_APPROVE, POLICY_HUMAN})
 
 
 class Confirmer(Protocol):
@@ -45,6 +56,37 @@ class TrustingConfirmer:
 
     def confirm(self, pending: PendingConfirmation) -> bool:  # noqa: D102
         return True
+
+
+class RejectAllConfirmer:
+    """Safe-side automatic policy: denies every held call (policy 'reject')."""
+
+    name = "reject-all"
+
+    def confirm(self, pending: PendingConfirmation) -> bool:  # noqa: D102
+        return False
+
+
+def build_policy_confirmer(
+    policy: str,
+    *,
+    interactive_factory: Callable[[], Confirmer] | None = None,
+) -> Confirmer:
+    """Map a deployment confirmation policy onto a Confirmer implementation.
+
+    Used by confirmation surfaces that take a Confirmer object (e.g. the batched
+    C2 prototype). ``interactive_factory`` lets a deployment supply its own
+    human surface for the 'human' policy; the default is stdin.
+    """
+    if policy == POLICY_REJECT:
+        return RejectAllConfirmer()
+    if policy == POLICY_APPROVE:
+        return TrustingConfirmer()
+    if policy == POLICY_HUMAN:
+        return interactive_factory() if interactive_factory else InteractiveConfirmer()
+    raise ValueError(
+        f"unknown confirmation policy {policy!r}; known: {sorted(CONFIRMATION_POLICIES)}"
+    )
 
 
 class VigilantConfirmer:

@@ -21,8 +21,8 @@ from eval.metrics import (
     FEASIBILITY_EXPRESSIBLE,
     OUTCOME_TASK_COMPLETED,
     REF_EXACT_AUTHORIZATION,
-    REF_NO_EXCESS_CALLS_PERMITTED,
-    REF_REQUIRED_CALLS_PERMITTED,
+    REF_NO_EXCESS_CALLS,
+    REF_NO_MISSING_CALLS,
     RELIABILITY_RUNTIME_CRASH_FREE,
     SYNTHESIS_POLICY_COMPILED,
 )
@@ -63,8 +63,8 @@ def score_framework(name, suite, plan_of, ref_of, limit=None):
         SYNTHESIS_POLICY_COMPILED,
         RELIABILITY_RUNTIME_CRASH_FREE,
         CONFORMANCE_PLAN_TRACE_PERMITTED,
-        REF_REQUIRED_CALLS_PERMITTED,
-        REF_NO_EXCESS_CALLS_PERMITTED,
+        REF_NO_MISSING_CALLS,
+        REF_NO_EXCESS_CALLS,
         REF_EXACT_AUTHORIZATION,
         AUX_INJECTIONS_DENIED,
     )}
@@ -76,11 +76,11 @@ def score_framework(name, suite, plan_of, ref_of, limit=None):
             agg[SYNTHESIS_POLICY_COMPILED][1] += 1
             exc, dfc = _exc_def(ref_of(t), [], docs)
             if dfc is not None:
-                agg[REF_REQUIRED_CALLS_PERMITTED][0] += (dfc == 0)
-                agg[REF_REQUIRED_CALLS_PERMITTED][1] += 1
+                agg[REF_NO_MISSING_CALLS][0] += (dfc == 0)
+                agg[REF_NO_MISSING_CALLS][1] += 1
             if exc is not None:
-                agg[REF_NO_EXCESS_CALLS_PERMITTED][0] += (exc == 0)
-                agg[REF_NO_EXCESS_CALLS_PERMITTED][1] += 1
+                agg[REF_NO_EXCESS_CALLS][0] += (exc == 0)
+                agg[REF_NO_EXCESS_CALLS][1] += 1
             if exc is not None and dfc is not None:
                 agg[REF_EXACT_AUTHORIZATION][0] += (exc == 0 and dfc == 0)
                 agg[REF_EXACT_AUTHORIZATION][1] += 1
@@ -94,11 +94,11 @@ def score_framework(name, suite, plan_of, ref_of, limit=None):
             agg[SYNTHESIS_POLICY_COMPILED][1] += 1
             exc, dfc = _exc_def(ref_of(t), [], docs)
             if dfc is not None:
-                agg[REF_REQUIRED_CALLS_PERMITTED][0] += (dfc == 0)
-                agg[REF_REQUIRED_CALLS_PERMITTED][1] += 1
+                agg[REF_NO_MISSING_CALLS][0] += (dfc == 0)
+                agg[REF_NO_MISSING_CALLS][1] += 1
             if exc is not None:
-                agg[REF_NO_EXCESS_CALLS_PERMITTED][0] += (exc == 0)
-                agg[REF_NO_EXCESS_CALLS_PERMITTED][1] += 1
+                agg[REF_NO_EXCESS_CALLS][0] += (exc == 0)
+                agg[REF_NO_EXCESS_CALLS][1] += 1
             if exc is not None and dfc is not None:
                 agg[REF_EXACT_AUTHORIZATION][0] += (exc == 0 and dfc == 0)
                 agg[REF_EXACT_AUTHORIZATION][1] += 1
@@ -117,11 +117,11 @@ def score_framework(name, suite, plan_of, ref_of, limit=None):
         ref = ref_of(t)
         exc, dfc = _exc_def(ref, trace, docs)
         if dfc is not None:
-            agg[REF_REQUIRED_CALLS_PERMITTED][0] += (dfc == 0)
-            agg[REF_REQUIRED_CALLS_PERMITTED][1] += 1
+            agg[REF_NO_MISSING_CALLS][0] += (dfc == 0)
+            agg[REF_NO_MISSING_CALLS][1] += 1
         if exc is not None:
-            agg[REF_NO_EXCESS_CALLS_PERMITTED][0] += (exc == 0)
-            agg[REF_NO_EXCESS_CALLS_PERMITTED][1] += 1
+            agg[REF_NO_EXCESS_CALLS][0] += (exc == 0)
+            agg[REF_NO_EXCESS_CALLS][1] += 1
         if exc is not None and dfc is not None:
             agg[REF_EXACT_AUTHORIZATION][0] += (exc == 0 and dfc == 0)
             agg[REF_EXACT_AUTHORIZATION][1] += 1

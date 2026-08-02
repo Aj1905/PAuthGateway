@@ -1,9 +1,9 @@
-"""Human-authorization path: recover REF_REQUIRED_CALLS_PERMITTED losses the ENFORCER must deny, by
+"""Human-authorization path: recover REF_NO_MISSING_CALLS losses the ENFORCER must deny, by
 routing them to a human who holds FN=0 -- and measure the honest ceiling + cost.
 
 The existing confirmation path is a SECONDARY gate: it only lets a human APPROVE a
 call the enforcer ALREADY authorized (an untrusted-derived value that still flows
-through the plan's dataflow). It never engages the data-asymmetry REF_REQUIRED_CALLS_PERMITTED losses,
+through the plan's dataflow). It never engages the data-asymmetry REF_NO_MISSING_CALLS losses,
 where the enforcer DENIES because the plan has no rule for the value at all.
 
 This probe measures the human-AUTHORIZE path (the enforcer defers to a human on a
@@ -91,7 +91,7 @@ def _locate(value, prompt_l, env_l) -> str:
 
 
 def measure():
-    base_required = 0      # headless REF_REQUIRED_CALLS_PERMITTED (enforcer only)
+    base_required = 0      # headless REF_NO_MISSING_CALLS (enforcer only)
     ran_clean = 0
     recover_ceiling = 0    # + tasks whose every missing ctrl value is env-extractable
     planner_miss = 0       # tasks whose miss was a value already in the prompt
@@ -116,7 +116,7 @@ def measure():
             cands = sorted(td.glob("cand*.py"))
             if not cands:
                 continue
-            # pick the most-side-effecting clean candidate (the REF_REQUIRED_CALLS_PERMITTED=47 baseline)
+            # pick the most-side-effecting clean candidate (the REF_NO_MISSING_CALLS=47 baseline)
             best, bn, benf = None, -1, None
             for f in cands:
                 tr, enf = _trace(suite, f.read_text())

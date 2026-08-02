@@ -51,7 +51,7 @@
 
 ## 3. τ³-bench(release 固定)でのゲート込み可用性再測定
 
-- **状態**: 候補。現行の可用性測定は自前タスク群(`REF_REQUIRED_CALLS_PERMITTED` 系)。
+- **状態**: 候補。現行の可用性測定は自前タスク群(`REF_NO_MISSING_CALLS` 系)。
 - **参照**: `paper/Tau3Bench/README.md`(bib キー `sierra2026tau3bench`、追加済み)、
   `paper/Tau2Bench/README.md`(`barres2025tau2bench`)。
 - **概要**: 外部の標準ベンチで「gateway を挟んでも可用性が保たれる」ことを示せる

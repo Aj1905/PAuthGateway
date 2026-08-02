@@ -65,8 +65,8 @@ CONFORMANCE_PLAN_TRACE_PERMITTED = "CONFORMANCE_PLAN_TRACE_PERMITTED"
 # One reference-fidelity plane. Both halves use the same tool+control-operand
 # matcher; EXACT is their conjunction. These are about the permitted concrete
 # trace, not the complete compiled-policy relation.
-REF_REQUIRED_CALLS_PERMITTED = "REF_REQUIRED_CALLS_PERMITTED"
-REF_NO_EXCESS_CALLS_PERMITTED = "REF_NO_EXCESS_CALLS_PERMITTED"
+REF_NO_MISSING_CALLS = "REF_NO_MISSING_CALLS"
+REF_NO_EXCESS_CALLS = "REF_NO_EXCESS_CALLS"
 REF_EXACT_AUTHORIZATION = "REF_EXACT_AUTHORIZATION"
 
 OUTCOME_TASK_COMPLETED = "OUTCOME_TASK_COMPLETED"  # post-state utility; reported apart
@@ -123,10 +123,10 @@ METRICS: dict[str, tuple[str, str, str]] = {
     CONFORMANCE_PLAN_TRACE_PERMITTED: (
         "CONFORMANCE", "the compiled policy denied no call on the observed generated-plan trace", "gates, tau, injecagent"
     ),
-    REF_REQUIRED_CALLS_PERMITTED: (
+    REF_NO_MISSING_CALLS: (
         "REFERENCE_FIDELITY", "no required reference call missing from the permitted trace", "gates, tau"
     ),
-    REF_NO_EXCESS_CALLS_PERMITTED: (
+    REF_NO_EXCESS_CALLS: (
         "REFERENCE_FIDELITY", "no non-reference call present in the permitted trace", "gates, tau"
     ),
     REF_EXACT_AUTHORIZATION: (

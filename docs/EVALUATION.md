@@ -2,7 +2,7 @@
 
 本書は評価結果の正式なまとめである。中心的な主張、評価の設定、測定結果、
 そして正直な限界を記す。試行ごとの詳細は
-[REF_REQUIRED_IMPROVEMENT_LOG.md](REF_REQUIRED_IMPROVEMENT_LOG.md) に、アーキテクチャは
+[REF_NO_MISSING_IMPROVEMENT_LOG.md](REF_NO_MISSING_IMPROVEMENT_LOG.md) に、アーキテクチャは
 [SYSTEM_MODEL.md](SYSTEM_MODEL.md) に、脅威モデルは [THREAT_MODEL.md](THREAT_MODEL.md) にある。
 
 本書のすべての数値は、各節に記載したコマンドから再現できる。実行系は結果を
@@ -112,8 +112,8 @@ SYNTHESIS_POLICY_COMPILED
 RELIABILITY_RUNTIME_CRASH_FREE
 CONFORMANCE_PLAN_TRACE_PERMITTED
 
-REF_REQUIRED_CALLS_PERMITTED
-REF_NO_EXCESS_CALLS_PERMITTED
+REF_NO_MISSING_CALLS
+REF_NO_EXCESS_CALLS
 REF_EXACT_AUTHORIZATION
 
 OUTCOME_TASK_COMPLETED
@@ -168,8 +168,8 @@ python -m eval.fpfn --suites all        # GPT-4.1 forced-injection sweep
 | SYNTHESIS_POLICY_COMPILED | 62/97 | 92/97 |
 | RELIABILITY_RUNTIME_CRASH_FREE | 51/62 | 88/92 |
 | CONFORMANCE_PLAN_TRACE_PERMITTED | 62/62 | 92/92 |
-| **REF_REQUIRED_CALLS_PERMITTED** | **27/97** | **47/97** |
-| **REF_NO_EXCESS_CALLS_PERMITTED** | **83/97** | **44/97** |
+| **REF_NO_MISSING_CALLS** | **27/97** | **47/97** |
+| **REF_NO_EXCESS_CALLS** | **83/97** | **44/97** |
 | **REF_EXACT_AUTHORIZATION** | **27/97** | **24/97** |
 | OUTCOME_TASK_COMPLETED | 14/97 | 22/97 |
 | COST_TOOL_CALLS(コンパイル済みplanあたり) | 2.2 | 3.2 |
@@ -179,7 +179,7 @@ python -m eval.fpfn --suites all        # GPT-4.1 forced-injection sweep
 するため、結合した結果は3タスク低下する。前者の動きだけを「可用性の改善」と
 呼ぶことは、後者の動きを覆い隠し、システムの目的を誤って伝えることになる。
 
-`REF_NO_EXCESS_CALLS_PERMITTED` は欠損planや無効なplanも含めて数える。空の
+`REF_NO_EXCESS_CALLS` は欠損planや無効なplanも含めて数える。空の
 traceには過剰がないからであり、これは意図した設計である。したがって空の
 traceは過剰callなしの半分では良い成績を取り、必要call充足と過不足なしでは
 不合格になる。逆に、必要callをすべて含みつつ対応しないcallも含むtraceは、
@@ -229,7 +229,7 @@ Enforcer が拒否せざるを得ない場合(値が信頼できないデータ�
 
 | 指標 | headless(Enforcer のみ) | + 人間認可 |
 |--------|-------------------------:|----------------------:|
-| REF_REQUIRED_CALLS_PERMITTED | 47 | **49 (+2)** |
+| REF_NO_MISSING_CALLS | 47 | **49 (+2)** |
 | OUTCOME (utility検証済み) | 22 | **29 (+7)** |
 | 自動化費用 | — | gate対象16タスクで27回の確認 |
 
@@ -242,7 +242,7 @@ callによってタスクが機能的には完了しうる一方で、厳密な�
 を持つ(完全な抽出を仮定した上限)。実際の抽出器と実際の人間はこれより悪い。
 
 本実験では、human grantを追加した後の過剰callなしの半分を再計算していない。
-したがって人間経路については `REF_NO_EXCESS_CALLS_PERMITTED` も
+したがって人間経路については `REF_NO_EXCESS_CALLS` も
 `REF_EXACT_AUTHORIZATION` も報告しない。+2 という結果を過不足なし認可の改善
 として提示してはならない。
 

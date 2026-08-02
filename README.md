@@ -228,19 +228,22 @@ cp .env.example .env   # write OPENAI_API_KEY, then:
 
 ```
 pauth/              PAuth core (framework-independent, mostly deterministic)
-  grammar.py          restricted-grammar parser / validator (paper Appendix A)
-  codegen.py          Planner: restricted-grammar code generation (OpenAI)
-  slicing.py          Slicer: natural-language slice derivation
-  rules.py            Rule compiler: Algorithm 1
-  evaluator.py        deterministic evaluator for slice expressions
-  enforcer.py         Enforcer: runtime authorization + sandboxed executor
-  envelope.py         signed-envelope structure, HMAC signing, store
-  pipeline.py         Planner → Slicer → Rule compiler wiring
-  suites/shopping.py  the paper's self-contained Shopping suite
+  grammar_validator.py  restricted-grammar parser / validator (G1 = paper Appendix A, G2 = extended default)
+  normalize.py          Tier-1 semantics-preserving normalization (G2 only)
+  codegen.py            Planner: restricted-grammar code generation (OpenAI)
+  slicer.py             Slicer: per-call slice derivation
+  rule_compiler.py      Rule compiler: Algorithm 1
+  evaluator.py          deterministic evaluator for slice expressions
+  enforcer.py           Enforcer: runtime authorization
+  tool_executor.py      sandboxed plan executor + per-call dispatch
+  envelope.py           signed-envelope structure, HMAC signing, store
+  pipeline.py           GrammarValidator → Slicer → Rule compiler wiring
+  suites/shopping.py    the paper's self-contained Shopping suite
 gateway/
   serving/http_server.py       local HTTP daemon
   hooks/                        Claude Code prompt + tool-call hooks
   deploy/egress_lockdown.sh     per-user egress restriction
+  planning/planner.py           strategy registry + construction (P3-P5 included)
   planning/agentic_planner.py   Planner with grammar + semantic self-repair
   runtime/confirmation.py       confirmation-gate machinery (untrusted-derived operands)
   runtime/confirmer.py          confirmer strategies (informed / cautious / rubber-stamp)
@@ -266,7 +269,7 @@ docs/
 
 - **導入する人**: [README](README.md)（本書）→ [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) → [`gateway/hooks/README.md`](gateway/hooks/README.md)
 - **設計を知りたい人**: [`docs/SYSTEM_MODEL.md`](docs/SYSTEM_MODEL.md) → [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) → [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md)
-- **評価を知りたい人**: [`docs/EVALUATION.md`](docs/EVALUATION.md) → [`docs/SYSTEM_MODEL.md`](docs/SYSTEM_MODEL.md) → [`docs/REF_REQUIRED_IMPROVEMENT_LOG.md`](docs/REF_REQUIRED_IMPROVEMENT_LOG.md)（履歴）
+- **評価を知りたい人**: [`docs/EVALUATION.md`](docs/EVALUATION.md) → [`docs/SYSTEM_MODEL.md`](docs/SYSTEM_MODEL.md) → [`docs/REF_NO_MISSING_IMPROVEMENT_LOG.md`](docs/REF_NO_MISSING_IMPROVEMENT_LOG.md)（履歴）
 - **論文執筆**: [`paper/PAuthGateway/`](paper/PAuthGateway/)
 
 ---

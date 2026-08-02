@@ -73,6 +73,8 @@ JSONL として追記される(運用者向け; 値を含みうるため、エ�
 | `PAUTH_PLANNER_ENABLE_JUDGE` | 真偽値 | `true` | `llm-freeform`、`auto` の LLM フォールバック、`sufficiency-tightness` の意味判定器を有効化する。 |
 | `PAUTH_PLANNER_JUDGE_MODEL` | model id | — | これらの意味判定器に別モデルを使う場合に指定(任意)。 |
 | `PAUTH_PLANNER_CACHE_DIR` | path | — | 生成コードのキャッシュ先。**デーモン側の環境変数としてのみ有効**。wire 経由の値は任意ディレクトリ書き込み防止のため無視される(`agent_channel.py` の `parse_message` 参照)。 |
+| `PAUTH_CONFIRMATION_UX` | `c0` / `c1` / `c2` | `c1` | 確認 UX の版(保留をいつ・どう人間に見せるか)。`c0` は確認面なし(`human` 方針とは組めない)。`c2` の human は試作のみ。 |
+| `PAUTH_CONFIRMATION_POLICY` | `reject` / `approve` / `human` | `human` | 保留の判断方針。`reject` = 全拒否(安全側のヘッドレス)、`approve` = 全実行(比較条件 — 本番の既定にしない)、`human` = 確認面で人間が判断。自動方針では UX の版は結果に影響しない。 |
 
 これらは shell の rc、hook のコマンド自体、または Claude Code の `env`
 ブロックで設定する。Planner 系の変数は、`PAUTH_PLANNER_CACHE_DIR` を除いて

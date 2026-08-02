@@ -77,6 +77,12 @@ from gateway.runtime.confirmation import (
     reduction_breakdown,
     taint_map,
 )
+from gateway.runtime.confirmer import (
+    CONFIRMATION_POLICIES,
+    POLICY_APPROVE,
+    POLICY_HUMAN,
+    POLICY_REJECT,
+)
 from gateway.runtime.feedback import (
     ReasonCode,
     assert_safe_suite,
@@ -91,6 +97,56 @@ from gateway.runtime.protection import (
 )
 
 _MAX_PENDING_REAUTHORIZATIONS = 32
+
+# Confirmation-UX versions (the C axis): when/how a human would be shown a held
+# call. Orthogonal to the confirmation POLICY (who answers). Invariant: under
+# the automatic policies (reject/approve) all UX versions produce identical
+# execution results -- deferral exists only to batch HUMAN attention, so with no
+# human in the loop every version collapses to an immediate decision.
+CONFIRMATION_UX_NONE = "c0"      # no confirmation surface at all
+CONFIRMATION_UX_PER_CALL = "c1"  # hold each call individually (confirmation API)
+CONFIRMATION_UX_BATCH = "c2"     # batched barrier (prototype: gateway/runtime/batched_confirmation.py)
+_CONFIRMATION_UX_VERSIONS = (
+    CONFIRMATION_UX_NONE, CONFIRMATION_UX_PER_CALL, CONFIRMATION_UX_BATCH,
+)
+
+
+def _resolve_confirmation_config(
+    ux: str | None, policy: str | None
+) -> tuple[str, str]:
+    """Resolve and validate the (confirmation UX, confirmation policy) pair.
+
+    Explicit arguments win; otherwise ``PAUTH_CONFIRMATION_UX`` /
+    ``PAUTH_CONFIRMATION_POLICY``; defaults keep the historical behavior
+    (per-call holds awaiting a human: c1 + human).
+    """
+    import os
+
+    ux = (ux or os.environ.get("PAUTH_CONFIRMATION_UX", CONFIRMATION_UX_PER_CALL)).lower()
+    policy = (
+        policy or os.environ.get("PAUTH_CONFIRMATION_POLICY", POLICY_HUMAN)
+    ).lower()
+    if ux not in _CONFIRMATION_UX_VERSIONS:
+        raise ValueError(
+            f"unknown confirmation UX {ux!r}; known: {list(_CONFIRMATION_UX_VERSIONS)}"
+        )
+    if policy not in CONFIRMATION_POLICIES:
+        raise ValueError(
+            f"unknown confirmation policy {policy!r}; known: {sorted(CONFIRMATION_POLICIES)}"
+        )
+    if ux == CONFIRMATION_UX_NONE and policy == POLICY_HUMAN:
+        raise ValueError(
+            "confirmation UX 'c0' has no surface to show a human; "
+            "pick policy 'reject'/'approve' or UX 'c1'"
+        )
+    if ux == CONFIRMATION_UX_BATCH and policy == POLICY_HUMAN:
+        raise ValueError(
+            "confirmation UX 'c2' with a human is the batched-barrier prototype "
+            "(gateway/runtime/batched_confirmation.py) and is not integrated into "
+            "Gateway yet; pick UX 'c1' for a human, or an automatic policy "
+            "(under which c2 collapses to an immediate decision)"
+        )
+    return ux, policy
 
 
 def _ordered_tools(rules) -> set[str] | None:
@@ -311,6 +367,8 @@ class Gateway:
         audit_log: AuditLog | None = None,
         restored_execution_state: dict[str, Any] | None = None,
         execution_state_sink: Callable[[dict[str, Any]], None] | None = None,
+        confirmation_ux: str | None = None,
+        confirmation_policy: str | None = None,
     ) -> None:
         """``suite_loader(name)`` returns the real-tool ``SuiteSpec`` for ``name``.
 
@@ -334,6 +392,9 @@ class Gateway:
         self._audit = audit_log if audit_log is not None else AuditLog()
         self._restored_execution_state = restored_execution_state
         self._execution_state_sink = execution_state_sink
+        self._confirmation_ux, self._confirmation_policy = _resolve_confirmation_config(
+            confirmation_ux, confirmation_policy
+        )
         self._session: _Session | None = None
         self._composite: _CompositeState | None = None
         # Per-Gateway, not process-global: calls in one task are serialized
@@ -603,11 +664,45 @@ class Gateway:
         tool: str,
         args: list[Any],
     ) -> CallResult | None:
-        """Apply every human gate shared by session and composite plans."""
-        confirmation = self._confirmation_gate(state, tool, args)
-        if confirmation is not None:
-            return confirmation
-        return self._bulk_gate(state, rule, tool)
+        """Apply every human gate shared by session and composite plans, then
+        the deployment's confirmation policy.
+
+        Policy 'human' (default): return the hold unchanged -- the call waits
+        for the confirmation surface. Automatic policies resolve every hold on
+        the spot: 'reject' denies the call outright; 'approve' whitelists and
+        re-checks until the gates pass (bounded: each round shrinks the set of
+        unconfirmed operands). Under automatic policies the UX version has no
+        effect on results (see _resolve_confirmation_config).
+        """
+        while True:
+            held = self._confirmation_gate(state, tool, args)
+            if held is None:
+                held = self._bulk_gate(state, rule, tool)
+            if held is None:
+                return None
+            if self._confirmation_policy == POLICY_HUMAN:
+                return held
+            resolved = self._auto_resolve_pending(state)
+            if self._confirmation_policy == POLICY_REJECT:
+                return CallResult(
+                    permit=False,
+                    reason=(
+                        f"confirmation policy 'reject': {tool} call denied "
+                        "(untrusted-derived control operand; no human "
+                        "confirmation in this deployment)"
+                    ),
+                    return_value=None,
+                )
+            if not resolved:  # approve policy but nothing to approve: bail out
+                return held
+
+    def _auto_resolve_pending(self, state: "_Session | _CompositeState") -> bool:
+        """Resolve every pending confirmation per the automatic policy."""
+        approved = self._confirmation_policy == POLICY_APPROVE
+        resolved = False
+        for cid in list(state.pending):
+            resolved = self._confirm_serialized(cid, approved) or resolved
+        return resolved
 
     @staticmethod
     def _execute_authorized_tool(

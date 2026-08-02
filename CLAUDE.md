@@ -7,9 +7,12 @@
 
 - 構成コンポーネントの名称と責務は、第 1 部(外殻: ingress アダプタ /
   AgentChannel / Gateway)と第 2 部(パイプライン: Planner /
-  GrammarValidator / Slicer / Rule compiler / Enforcer / EnvelopeStore / ToolExecutor /
-  ツールアダプタ)のノード定義に従う。粒度の粗い語(外殻、PAuth パイプライン
-  など)は第 0 部で定義される。
+  GrammarValidator / Slicer / Rule compiler / Enforcer / EnvelopeStore)の
+  ノード定義に従う。ToolExecutor はパイプラインのノードではなく、Gateway が
+  所有する実行部。ツールアダプタ(SuiteSpec)もノードではなく、ToolExecutor
+  が許可済み call を送る先の差し替え可能な結合境界(いずれも定義は第 2 部、
+  運用は第 6 部)。粒度の粗い語(外殻、PAuth パイプラインなど)は第 0 部で
+  定義される。
 - ノード間を流れる情報(prompt、run() コード、slice、rule、envelope、
   PendingConfirmation など)は第 3 部の定義に従い、ノード(部品)と
   情報(成果物)を混同しない。

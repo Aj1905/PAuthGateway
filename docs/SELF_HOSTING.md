@@ -163,8 +163,8 @@ upstream tool/SaaS/MCP server
 正準名と生成処理は `gateway/planning/planner.py` を正とする。本書では一覧を
 複製しない。
 
-各戦略(`P3`–`P5` を含む)の状態と設計契約は `SYSTEM_MODEL.md` 第 2 部
-ノード 1 の登録表に置く。将来の設定ファイルや UI も同じ正準名を使い、
+各戦略(`P3`–`P5` を含む)の状態と契約は `SYSTEM_MODEL.md` 第 2 部
+Planner の節の登録表に置く。将来の設定ファイルや UI も同じ正準名を使い、
 `SYSTEM_MODEL.md` の Planner 境界を変えない。
 
 ## 自己ホストの基盤
