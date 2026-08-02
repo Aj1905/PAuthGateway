@@ -408,7 +408,7 @@ Planner 契約に従って制限付き run コードを返し、ルールを直�
 
 - **policy 生成成功 / SYNTHESIS_POLICY_COMPILED.** 生成されたコードが、検査と
   コンパイル(GrammarValidator〜Rule compiler)を通ってルールになったか。
-  コードの欠落や無効は失敗となる。DSL 棄却はここで Planner 側に計上する。
+  コードの不足や無効は失敗となる。DSL 棄却はここで Planner 側に計上する。
 - **実行時クラッシュなし / RELIABILITY_RUNTIME_CRASH_FREE.** 生成した計画が
   最後まで落ちずに走れるか。執行を切った使い捨ての試走で測るので、早い段階の
   拒否が後のクラッシュを隠すことはない。ツールエラーは `None` を返し、その
@@ -656,7 +656,7 @@ run コードの実行と、許可されたツール呼び出しの実行は、�
 | ツールエラー / tool error | ツールアダプタ |
 | ツール結果不明 / indeterminate tool outcome | Gateway と計画実行の境界(定義は ToolExecutor の節) |
 | 実行状態障害 / execution-state failure | Gateway の永続化境界(定義は ToolExecutor の節) |
-| 過剰・欠落 / Excess, Missing | ノードではなくトレース比較(定義は第 4 部「トレース比較の語」) |
+| 過剰・不足 / Excess, Missing | ノードではなくトレース比較(定義は第 4 部「トレース比較の語」) |
 
 ---
 
@@ -753,7 +753,7 @@ PERMITTED = calls permitted on one concrete generated-plan execution
 ```
 
 `REF` と `PERMITTED` は多重集合として比較する。重複するツール呼び出しは別々に数えるが、相対
-順序は採点しない。参照トレースのアダプタは、欠落側・過剰側の双方でツール名
+順序は採点しない。参照トレースのアダプタは、不足側・過剰側の双方でツール名
 +制御オペランド(第 3 部)を用いる。ベンチマークが utility 検査を提供する
 場合、制御以外の内容は `OUTCOME_TASK_COMPLETED` で別に評価する。
 
@@ -768,11 +768,9 @@ POLICY(h, call) = the policy decision for a call under execution history h
 `POLICY_OVER_GRANT`、`POLICY_UNDER_GRANT`、`POLICY_EXACT_GRANT` と呼んでは
 ならない。
 
-## 指標一覧(何の性能をどこで測るか)
+## 評価指標一覧
 
-各指標は「どのノードの性能を測るか」が異なる。ノード単位の指標の**定義**は
-第 2 部の当該ノードの節(「…の性能を測る指標」)に置き、パイプライン全体の
-指標の定義は本部に置く。本表はその引き当て一覧である。
+各指標は「どのノードの性能を測るか」が異なる。本表はその引き当て一覧である。
 
 | 指標 | 性能を測る対象(定義の所在) |
 |---|---|
@@ -781,7 +779,7 @@ POLICY(h, call) = the policy decision for a call under execution history h
 | `RELIABILITY_RUNTIME_CRASH_FREE` | Planner — 生成コードの実行健全性(第 2 部) |
 | `CONFORMANCE_PLAN_TRACE_PERMITTED` | Slicer+Rule compiler — 計画を狭め過ぎていないか(第 2 部) |
 | `AUX_INJECTIONS_DENIED` | Enforcer — 固定攻撃の拒否(第 2 部) |
-| `REF_NO_MISSING_CALLS` | パイプライン全体 — 欠落なしの半分(本部) |
+| `REF_NO_MISSING_CALLS` | パイプライン全体 — 不足なしの半分(本部) |
 | `REF_NO_EXCESS_CALLS` | パイプライン全体 — 過剰なしの半分(本部) |
 | `REF_EXACT_AUTHORIZATION` | パイプライン全体 — 過不足なし(本部) |
 | `OUTCOME_TASK_COMPLETED` | 系全体 — 目標状態への到達(本部) |
@@ -821,8 +819,8 @@ POLICY(h, call) = the policy decision for a call under execution history h
 `REF` 対 `PERMITTED` の比較で使う語。どのノードにも属さず、観測トレースの性質である。
 
 - **過剰 / Excess.** 参照トレースと一致しない許可済みツール呼び出し。
-- **欠落 / Missing.** 許可トレースと一致しない参照ツール呼び出し。計画の
-  抜け、拒否、クラッシュのいずれもが、観測上は同じ欠落を生みうる(発生
+- **不足 / Missing.** 許可トレースと一致しない参照ツール呼び出し。計画の
+  抜け、拒否、クラッシュのいずれもが、観測上は同じ不足を生みうる(発生
   ノードの区別は第 2 部「失敗の対照表」)。
 
 ## 診断上の原因であり、最上位の軸ではない
@@ -833,10 +831,10 @@ POLICY(h, call) = the policy decision for a call under execution history h
   呼び出しに到達する前に失敗した。
 - **ツールエラー / tool error.** 許可されたツールが、認可の後に失敗した。
 - **ツール結果不明 / indeterminate tool outcome ※.** 許可されたツール
-  呼び出しの送出後に、副作用の成否を証明できなくなった。欠落にも既実行にも
+  呼び出しの送出後に、副作用の成否を証明できなくなった。不足にも既実行にも
   なりうるため、ツールエラーとして推測しない。
 
-いずれも参照ツール呼び出しの欠落につながりうるが、原因を区別せずにそれらを Enforcer
+いずれも参照ツール呼び出しの不足につながりうるが、原因を区別せずにそれらを Enforcer
 に帰属させるのは誤りである。執行ありの実行は最初の拒否で停止するため、現在
 の集計は `NOT_ATTEMPTED` を独立した指標としては報告しない。正確な原因帰属
 には、別個の試行トレースが必要になる。

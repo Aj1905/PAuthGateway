@@ -1,4 +1,4 @@
-# REF_NO_MISSING_CALLS(欠落callなし)改善記録 — 目標: agentdojo → 100%
+# REF_NO_MISSING_CALLS(ツール呼び出しの不足なし)改善記録 — 目標: agentdojo → 100%
 
 > **歴史的記録。** 本ファイルは各実験を実施当時の分母のまま保存する。名称は
 > 旧分類法(`AVAIL_*` / `SEC_*`)から現在の `SYSTEM_MODEL.md` 第 4 部の指標名へ
@@ -12,7 +12,7 @@
 
 **指標。** REF_NO_MISSING_CALLS = 不足なし: クラッシュなしで完走した
 planのうち、実行traceが**必要なground-truth callをすべて**含む(引数も一致)。
-不足 = ground-truth callがtraceから欠落している(または誤った引数で呼ばれた)
+不足 = ground-truth callがtraceから抜けている(または誤った引数で呼ばれた)
 こと。
 
 **基準値(キャッシュ済み one-shot plan)。** agentdojo REF_NO_MISSING_CALLS = クラッシュなし完走中
@@ -31,10 +31,10 @@ planのうち、実行traceが**必要なground-truth callをすべて**含む(�
 - **16件は引数誤り** — toolは正しいが引数が誤り。多くは文字列抽出の壁
   (例: banking_0 `send_money(iban, None, <whole file blob>, None)` — amount
   が抽出されない)。直すのに必要なのはcallの追加ではなく正しい値である。
-- **13件は書き込み(WRITE)の欠落** — 必要な副作用をplanが放棄した(例:
+- **13件は書き込み(WRITE)の不足** — 必要な副作用をplanが放棄した(例:
   banking_11 に `send_money` なし、banking_14 に `update_password` なし)。
   Planner の不完全さ、壁への衝突。
-- **6件は読み取り(READ)の欠落** — 必要な取得callが出力されなかった。
+- **6件は読み取り(READ)の不足** — 必要な取得callが出力されなかった。
 したがって上限の根は二つある。(a) 引数の忠実度(抽出)、(b) Planner の完全性
 (必要callをすべて出力すること)。
 
@@ -47,7 +47,7 @@ planのうち、実行traceが**必要なground-truth callをすべて**含む(�
 - **結果:** REF_NO_MISSING_CALLS 16/51 (31%) -> 18/60 (30%)。RELIABILITY_RUNTIME_CRASH_FREE 51->60、OUTCOME 14->18。
   FN=0 は維持(64/64)。不足なしの比率は改善しなかった。
 - **判定:** 失敗(比率は横ばい)。cleanに走るplanは増えたが、不足の割合は変
-  わらない — 再生成は引数の忠実度も欠落callも直さない。
+  わらない — 再生成は引数の忠実度も不足callも直さない。
 - **差し戻し:** 不要(agentic planは gitignore された作業領域にあり、既定は
   キャッシュ)。agentic を REF_NO_MISSING_CALLS の基準としては採用しない。
 
@@ -85,11 +85,11 @@ planのうち、実行traceが**必要なground-truth callをすべて**含む(�
   のであり、数字いじりではない。透明性のための注記: これは測定の変更であっ
   て能力の向上ではない — 数値が上がったのは指標が責務に一致するようになった
   からで、planが改善したからではない。残る不足25件 = 真の制御不一致8件(抽
-  出)+ 欠落call約17件(Planner が必要callを出力しなかった)。
+  出)+ 不足call約17件(Planner が必要callを出力しなかった)。
 - **差し戻し:** 該当なし(採用)。
 
 ### 診断3 — 残る不足25件(制御照合の下で)
-- **19件 = toolが丸ごと欠落**(Planner が必要callを一度も出力しなかった —
+- **19件 = toolが丸ごと不足**(Planner が必要callを一度も出力しなかった —
   放棄、中身のない `pass`。例: banking_11 に send_money なし、banking_14 に
   update_password なし)。
 - **4件 = 制御オペランドの不一致**(抽出: banking_0 の amount+iban = 塊)。
@@ -98,12 +98,12 @@ planのうち、実行traceが**必要なground-truth callをすべて**含む(�
 
 ### T4 — 制御照合の下で測った agentic 再生成
 - **結果:** REF_NO_MISSING_CALLS 31/60 (52%) 対 キャッシュ+制御照合 26/51 (51%)。FN=0(64/64)。
-- **判定:** 僅差(比率はほぼ横ばい)。再生成は欠落callの問題を直さない —
+- **判定:** 僅差(比率はほぼ横ばい)。再生成は不足callの問題を直さない —
   Planner は同じ行動を相変わらず放棄する。
 - **差し戻し:** なし(作業領域のみ)。
 
 ### T5 — 中身のない候補を避ける best-of-N 選択(GT不使用)
-- **仮説:** tool欠落の不足は Planner の放棄(中身のない `pass`)から来る。
+- **仮説:** toolが丸ごと不足するケースは Planner の放棄(中身のない `pass`)から来る。
   候補をN個生成し、cleanに走り副作用callを最も多く行うものを選ぶ — 実運用で
   も使える経験則(GTを使わない)であり、放棄するplanより行動するplanを選ぶ。
 - **方法:** 候補N=3、文法的に妥当 + clean + 副作用call最大のものを選択。
@@ -143,18 +143,18 @@ planのうち、実行traceが**必要なground-truth callをすべて**含む(�
   structuring = **61%**。
 
 ### T8 — best-of-N + structure_text + 完全性judge(OpenAI利用)
-- **重要な発見:** 意味的な完全性judge(callの欠落/過剰を指摘して修復する)は
+- **重要な発見:** 意味的な完全性judge(callの不足/過剰を指摘して修復する)は
   Anthropic 専用ではない — `_judge_intent` には OpenAI 分岐があり、
   `judge_model="gpt-4.1"` を渡せば手元の OpenAI キーで動く。これまでの試行は
-  judge OFF(既定の judge_model が Anthropic)で走っており、欠落callの不足
+  judge OFF(既定の judge_model が Anthropic)で走っており、callの不足
   が生き残ったのはまさにそのためである。
-- **根拠:** banking_11(以前は send_money が欠落)— judge ありでは Planner が
+- **根拠:** banking_11(以前は send_money が不足)— judge ありでは Planner が
   `send_money(...)` を出力する。judge は困難26件を直接攻める。
 - **方法:** `funnel(agentdojo, planner=bestof, --structuring, --judge)`。
 - **結果:** REF_NO_MISSING_CALLS **23/68 (34%)** — bestof+structuring(61%)より悪化。COST
   2.5->1.3(callが減少)。judge は意図を満たせないときの退避先が reject
   sentinel `def run(): pass` であるため、完遂できないタスクは中身のないplan
-  になる → 欠落callの不足が減るどころか増える。少数(banking_11)は直したが、
+  になる → callの不足が減るどころか増える。少数(banking_11)は直したが、
   それ以上に空洞化させた。
 - **判定:** 失敗/逆効果(-27pt)。差し戻し済み — `--judge` は既定でオフ
   (`_JUDGE=False`)、この仕組みは要求されない限り不活性。
@@ -179,7 +179,7 @@ planのうち、実行traceが**必要なground-truth callをすべて**含む(�
 - **診断(決定的):** gpt-5.1 でも、どの候補も不足なしにならない困難タスク
   が37件残る。二種類ある。(a) 制御オペランドの不一致 — 計算/抽出される値を
   モデルが誤るか、GTが導出不能な値(特定の日付や金額)に固定している。
-  (b) 複数手順/条件付き/動的なcallの欠落 — 例: slack の「このwebページ上の
+  (b) 複数手順/条件付き/動的なcallの不足 — 例: slack の「このwebページ上の
   ことを全部やれ」: 行動が実行時に読む信頼できない内容の中にあり、静的な
   planはそれで分岐できない。どのモデルもこれらは計画できない。
 - **判定:** この上限は gpt-4.1 の弱さではない — 静的計画 + GT固有の値に根差
@@ -211,7 +211,7 @@ gpt-5.1)も、これらについて必要callをすべて含むplanを作れな�
 
 ### T11 — gpt-5.1 + 完全性judge + best-of-N + structure_text
 - **仮説:** (より強い)gpt-5.1 なら、judge が reject sentinel に落ちる代わ
-  りに修復(欠落callの追加)を行い、複数手順の26タスクを完遂させられるかも
+  りに修復(不足callの追加)を行い、複数手順の26タスクを完遂させられるかも
   しれない。
 - **結果:** REF_NO_MISSING_CALLS **23/95 (24%)**、COST **0.9 calls/task** — judge は
   gpt-5.1 でもplanを空洞化させる(0.9 call = ほぼ `pass`)。SYNTHESIS_POLICY_COMPILED 95/97
