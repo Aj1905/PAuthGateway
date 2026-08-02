@@ -413,7 +413,7 @@ Planner 契約に従って制限付き `run()` コードを返し、ルールを
 - **実行時クラッシュなし / RELIABILITY_RUNTIME_CRASH_FREE.** 生成した計画が
   最後まで落ちずに走れるか。執行を切った使い捨ての試走で測るので、早い段階の
   拒否が後のクラッシュを隠すことはない。ツールエラーは `None` を返し、その
-  `None` の誤用はクラッシュしうる(クラッシュの定義は Plan 実行の節)。
+  `None` の誤用はクラッシュしうる(クラッシュの定義は実行部 / ToolExecutor の節)。
 
 ## DSL 検証器 / DSLValidator
 
@@ -504,9 +504,9 @@ Algorithm 1)。決定的。実装は `pauth/rule_compiler.py`。ここまで(Pla
 
 ## 執行器 / Enforcer
 
-実行時の門番。ツール呼び出しを一つずつ横取りし、ルールと突き合わせ
-(ルールがあるか、条件が成立しているか、値が計画どおりか)、通すか止めるか
-を決める。通したツール呼び出しの結果は署名付きの封筒(第 3 部)に包ませる。
+実行時、ツール呼び出しを一つずつルールと突き合わせ、
+ルールがあるか、条件が成立しているか、値が計画どおりか判定して通すか止めるか
+を決定する。通したツール呼び出しの結果は署名付きの封筒(第 3 部)に包ませる。
 実装は `pauth/enforcer.py`。
 
 このノードの機構・挙動:
@@ -515,7 +515,7 @@ Algorithm 1)。決定的。実装は `pauth/rule_compiler.py`。ここまで(Pla
   止めるのが既定(論文 5.2 節)。止めた理由は、監査のため呼び出し元へ
   そのまま返す。
 - **拒否 / denial(`_Denied`).** 一致するルールがなく、止められたこと。
-  `_Denied` として送出して別に捕捉し、クラッシュ(Plan 実行)には数えない。
+  `_Denied` として送出して別に捕捉し、クラッシュ(計画実行)には数えない。
   拒否の正誤は、その呼び出しが許されるべきだったかどうかだけで決まる。
 - 横取りされた呼び出しは、その値(制御オペランド)の出所を機械的に確かめ
   られるかどうかで、次の二つの経路のちょうど一方を取る。
@@ -607,27 +607,27 @@ human 方針のときだけである。
 署名の鍵はゲートウェイだけが持つ(署名の根は一つ)。
 実装は`pauth/envelope.py`。
 
-## 実行部 / ToolExecutor(Plan 実行・ツールアダプタとの区別)
+## 実行部 / ToolExecutor(計画実行・ツールアダプタとの区別)
 
-生成された `run()` の実行と、許可されたツール呼び出しを実際に走らせる側。三つの役割は
-格が異なり、いずれも PAuth パイプラインのノード(Planner〜EnvelopeStore)では
-ない。この節が定義する **ToolExecutor** は、Gateway が所有する実行部である。
-`run()` コードそのものは sandboxed plan executor
-(`pauth/tool_executor.py` の `execute_generated_code`。呼び出しごとに
-Enforcer の検査を通す)が走らせる。個々の許可
-されたツール呼び出しは、Gateway が所有する実行部 **ToolExecutor** が受け取り、
-ツールアダプタへ送って実行する。ツールアダプタは、ツールの schema と実際の
-実行機能を供給する差し替え可能なバックエンドであり、ノードではなく、
-ToolExecutor の先(ツール層)に立つ結合境界である(運用は第 6 部)。
-実装境界は `pauth/suites/base.py`。
+run コードの実行と、許可されたツール呼び出しの実行は、格の異なる三つの役割に
+分かれる。いずれも PAuth パイプラインのノード(Planner〜EnvelopeStore)では
+ない。
+
+- この節が定義する **ToolExecutor** は、Gateway が所有する実行部。個々の許可
+  されたツール呼び出し(ツール名, 引数)を受け取り、ツールアダプタへ送って
+  実行し、結果を返す(型は `pauth/suites/base.py` の `ToolExecutor`、実体は
+  `SuiteSpec.tool_executor_factory` が env から作る)。ここに届くのは
+  Enforcer の認可を経たツール呼び出しだけで、結果は封筒として EnvelopeStore
+  に記録される。run コードを走らせる係ではない。
+- **計画実行**(run コードそのものの実行)は sandboxed plan executor
+  (`pauth/tool_executor.py` の `execute_generated_code`。ツール呼び出し
+  ごとに Enforcer の検査を通す)が担う。
+- **ツールアダプタ**は、ツールの schema と実際の実行機能を供給する差し替え
+  可能なバックエンドであり、ノードではなく ToolExecutor の先(ツール層)に
+  立つ結合境界(運用は第 6 部)。実装境界は `pauth/suites/base.py`。
 
 このノードの機構・挙動:
 
-- **ToolExecutor.** Gateway が所有する実行部。(ツール名, 引数)を受けて実行
-  結果を返す(型は `pauth/suites/base.py` の `ToolExecutor`、実体は
-  `SuiteSpec.tool_executor_factory` が env から作る)。ここに届くのは
-  Enforcer の認可を経たツール呼び出しだけで、結果は封筒として EnvelopeStore に記録
-  される。Planner が生成した `run()` コードを走らせる係ではない。
 - **SuiteSpec.** ツールアダプタの契約(`tools`、`make_env`、
   `tool_executor_factory`)。買い物デモ、AgentDojo、MCP、OpenAPI が実装する。
   PAuth の中核は、背後のツールがどこから来ているかを知らない。
@@ -655,9 +655,9 @@ ToolExecutor の先(ツール層)に立つ結合境界である(運用は第 6 �
 |---|---|
 | DSL 棄却 / DSL rejection | DSLValidator |
 | 拒否 / denial | Enforcer |
-| クラッシュ / crash | Plan 実行 |
+| クラッシュ / crash | 計画実行 |
 | ツールエラー / tool error | ツールアダプタ |
-| ツール結果不明 / indeterminate tool outcome | Gateway と Plan 実行の境界(定義は ToolExecutor の節) |
+| ツール結果不明 / indeterminate tool outcome | Gateway と計画実行の境界(定義は ToolExecutor の節) |
 | 実行状態障害 / execution-state failure | Gateway の永続化境界(定義は ToolExecutor の節) |
 | 過剰・欠落 / Excess, Missing | ノードではなくトレース比較(定義は第 4 部「トレース比較の語」) |
 
