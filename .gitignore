@@ -7,7 +7,14 @@ me.env
 
 # experiment caches (large, regenerable)
 tests/experiment/cache/
-tests/experiment/results/
+tests/experiment/results/*
+!tests/experiment/results/agentdojo_factorial_gpt41_t0_single_20260803.jsonl
+!tests/experiment/results/agentdojo_factorial_gpt41_t0_single_20260803.summary.json
+!tests/experiment/results/agentdojo_factorial_gpt41_t0_single_20260803.analysis.json
+!tests/experiment/results/agentdojo_factorial_gpt41_t0_single_20260803.manifest.json
+!tests/experiment/results/agentdojo_factorial_gpt41_t0_single_20260803_report.md
+!tests/experiment/results/agentdojo_reference_trace_g1_g2_20260803.json
+!tests/experiment/results/pauth_core_fpfn_gpt41_cached_20260803.json
 gateway/cache/
 
 # real-user prompt corpus extracted from local Claude Code transcripts
@@ -34,6 +41,9 @@ graphify-out/
 
 # local scratch — not part of the repo
 tmp/
+
+# thesis manuscript — kept local, not published
+paper/PAuthGateway/
 
 # LaTeX build artifacts
 paper/PAuthGateway/build/
