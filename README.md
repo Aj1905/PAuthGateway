@@ -270,7 +270,7 @@ docs/
 - **導入する人**: [README](README.md)（本書）→ [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) → [`gateway/hooks/README.md`](gateway/hooks/README.md)
 - **設計を知りたい人**: [`docs/SYSTEM_MODEL.md`](docs/SYSTEM_MODEL.md) → [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) → [`docs/DESIGN_STATUS.md`](docs/DESIGN_STATUS.md)
 - **評価を知りたい人**: [`docs/EVALUATION.md`](docs/EVALUATION.md) → [`docs/SYSTEM_MODEL.md`](docs/SYSTEM_MODEL.md) → [`docs/GT_NO_MISSING_IMPROVEMENT_LOG.md`](docs/GT_NO_MISSING_IMPROVEMENT_LOG.md)（履歴）
-- **論文執筆**: [`paper/PAuthGateway/`](paper/PAuthGateway/)
+- **論文執筆**: `paper/PAuthGateway/`(原稿の作業場所。リポジトリには含めず、ローカルで管理)
 
 ---
 
