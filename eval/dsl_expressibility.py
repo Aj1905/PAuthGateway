@@ -6,12 +6,14 @@ regression states.  The states check this implementation; they are not a proof
 over an unbounded input domain.
 
 The fan-out cases have no G1 witness for a structural reason, not because a
-particular generated program was rejected: the schema exposes only one-element
-mutation tools, every G1 program has a fixed finite number of tool-call sites,
-and the task requires one tool call for every element of a runtime collection whose
-valid length has no plan-time fixed bound.  G2 expresses the same requirement
-with a bounded ``for`` over a recorded finite collection.  The script records
-that analytic classification; it does not mechanically prove it.
+particular generated program was rejected: helper lambdas may compute a pure
+selection key or predicate, but tool calls inside them are rejected fail-closed.
+G1 also has no explicit loop or recursion.  Every valid G1 program therefore
+has a fixed finite number of tool-call sites and cannot issue one tool call for
+every element of a runtime collection whose valid length has no plan-time fixed
+bound.  G2 expresses the same requirements with bounded ``for`` statements over
+recorded finite collections.  The script records that analytic classification;
+it does not mechanically prove it.
 
 The sampling frame for the fan-out cases is not an arbitrary list of invented
 field names.  AgentDojo 0.1.35, suite version v1, has 20 tool endpoints whose
@@ -539,9 +541,9 @@ def _build_schema_cases() -> tuple[_Case, ...]:
                 _single_fanout_code(shape),
                 _single_fanout_states(shape),
                 False,
-                "G1 has no loop or recursion, so one program with finitely many "
-                "tool-call sites cannot issue one tool call for every element of an "
-                "arbitrarily long finite runtime collection.",
+                "Helper lambdas cannot contain tool calls, and G1 has no loop or "
+                "recursion. A valid G1 program therefore has only a fixed number "
+                "of tool-call sites and cannot cover every valid runtime length.",
                 "The bounded for visits every element of any finite returned "
                 "collection once.",
                 _schema_provenance(shape, "single_fanout"),
@@ -565,8 +567,9 @@ def _build_schema_cases() -> tuple[_Case, ...]:
                     _nested_fanout_code(shape),
                     _nested_fanout_states(shape),
                     False,
-                    "The required tool-call count follows runtime parent-child "
-                    "collections and has no fixed bound in G1.",
+                    "Helper lambdas cannot contain tool calls, and G1 has no loop "
+                    "or recursion. A valid G1 program therefore cannot make a "
+                    "runtime-dependent number of calls over parent-child pairs.",
                     "The nested bounded for visits every reachable parent-child "
                     "pair in any finite returned hierarchy once.",
                     _schema_provenance(shape, "dependent_nested_fanout"),
@@ -714,6 +717,9 @@ def evaluate() -> dict[str, Any]:
                 "expressible": expressible,
                 "classification_basis": "canonical_witness_and_domain_argument",
                 "argument": case.g1_argument if profile == "g1" else case.g2_argument,
+                "witness_source_sha256": hashlib.sha256(
+                    case.code.encode("utf-8")
+                ).hexdigest(),
                 "representative_states": states,
             }
             if expressible:
@@ -749,13 +755,14 @@ def evaluate() -> dict[str, Any]:
             )
     delta = round(100 * (totals["g2"]["rate"] - totals["g1"]["rate"]), 10)
     return {
-        "schema_version": 3,
+        "schema_version": 5,
         "metric": "FEASIBILITY_EXPRESSIBLE",
         "method": (
             "Cases define semantic input domains. Positive classifications use a "
             "profile-valid canonical run() witness plus an argument that it applies "
-            "to the domain. G1-negative fan-out cases use a finite-tool-call-site proof "
-            "under a one-element mutation-tool schema. Representative states are "
+            "to the domain. G1-negative fan-out cases use the fail-closed ban on "
+            "helper-lambda tool calls plus G1's lack of loops and recursion as "
+            "their language-level argument. Representative states are "
             "implementation regression checks, not proofs over unbounded domains. "
             "The fan-out sampling frame is the seven distinct top-level "
             "list-return schema shapes exposed by 20 AgentDojo 0.1.35/v1 tool "

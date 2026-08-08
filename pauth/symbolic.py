@@ -32,6 +32,17 @@ def canon(node: ast.AST) -> str:
     return ast.unparse(node)
 
 
+def source_site(node: ast.AST) -> tuple[int, int, int, int]:
+    """Return the stable source span used to identify one AST occurrence."""
+
+    return (
+        int(getattr(node, "lineno", 0)),
+        int(getattr(node, "col_offset", 0)),
+        int(getattr(node, "end_lineno", 0)),
+        int(getattr(node, "end_col_offset", 0)),
+    )
+
+
 def call_name(node: ast.AST) -> str | None:
     """Name of the called function for a ``name(...)`` or ``a.b(...)`` call."""
     if not isinstance(node, ast.Call):

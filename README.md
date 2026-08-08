@@ -38,7 +38,7 @@ PAuthGateway は執行点をエージェントの**外側**に移す:
 ## パイプライン
 
 ```
-prompt ─▶ Planner ─▶ Slicer ─▶ Rule compiler ─▶ Enforcer
+prompt ─▶ Planner ─▶ Slicer ─▶ RuleCompiler ─▶ Enforcer
         (LLM: the      (deterministic)          (default-deny; matches each call's
          only non-                               control operands against the rules;
          deterministic                          signs results into tamper-evident
@@ -232,12 +232,12 @@ pauth/              PAuth core (framework-independent, mostly deterministic)
   normalize.py          Tier-1 semantics-preserving normalization (G2 only)
   codegen.py            Planner: DSL code generation (OpenAI)
   slicer.py             Slicer: per-call slice derivation
-  rule_compiler.py      Rule compiler: Algorithm 1
+  rule_compiler.py      RuleCompiler: Algorithm 1
   evaluator.py          deterministic evaluator for slice expressions
   enforcer.py           Enforcer: runtime authorization
   tool_executor.py      sandboxed plan executor + per-call dispatch
   envelope.py           signed-envelope structure, HMAC signing, store
-  pipeline.py           GrammarValidator → Slicer → Rule compiler wiring
+  pipeline.py           GrammarValidator → Slicer → RuleCompiler wiring
   suites/shopping.py    the paper's self-contained Shopping suite
 gateway/
   serving/http_server.py       local HTTP daemon
@@ -280,7 +280,7 @@ docs/
 |-------|---------------------|
 | 命令型コード生成(LLM、4.1.1 節) | Planner — `pauth/codegen.py`(OpenAI、Appendix A のプロンプト) |
 | NL スライス導出(3.3 / 4.1.2 節、決定的) | Slicer — `pauth/slicer.py` |
-| ルールコンパイル(Algorithm 1、決定的) | Rule compiler — `pauth/rule_compiler.py` |
+| ルールコンパイル(Algorithm 1、決定的) | RuleCompiler — `pauth/rule_compiler.py` |
 | 署名付き envelope(3.4 節 / 図 3) | `pauth/envelope.py` |
 | 実行時執行(4.1.3 節、決定的) | Enforcer — `pauth/enforcer.py` |
 | DSL(BNF、Appendix A) | `pauth/grammar_validator.py` |

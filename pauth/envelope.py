@@ -43,6 +43,19 @@ def _to_jsonable(value: Any) -> Any:
     return f"{type(value).__module__}.{type(value).__qualname__}:{value!r}"
 
 
+def occurrence_symbolic(rule_key: str, path: tuple[int, ...]) -> str:
+    """Key one repeated result by source occurrence and traversal path.
+
+    Concrete operands are not a unique identifier: a collection may contain
+    duplicates, a tool may take no operands, and two source sites may call the
+    same tool with the same values.  ``rule_key`` separates source sites and
+    ``path`` separates visits within that site.
+    """
+
+    rendered_path = json.dumps(list(path), separators=(",", ":"))
+    return f"@occ:{rule_key}:{rendered_path}"
+
+
 def _digest(symbolic: str, concrete: Any) -> bytes:
     blob = json.dumps(
         {"symbolic": symbolic, "concrete": _to_jsonable(concrete)},

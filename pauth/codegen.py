@@ -3,7 +3,7 @@
 Given a user task and the schema of the available tools (extended with an
 *output* schema, paper sec. 4.1.1), an LLM generates a ``run`` function in the
 restricted grammar of Appendix A.  This is the only LLM-dependent step of
-PAuth; everything downstream (the Slicer, the Rule compiler, runtime enforcement) is deterministic.
+PAuth; everything downstream (the Slicer, the RuleCompiler, runtime enforcement) is deterministic.
 
 The OpenAI call is made lazily and only when ``OPENAI_API_KEY`` is available.
 Generated code is cached on disk so a benchmark re-run costs nothing.
@@ -82,9 +82,9 @@ literals, dict mutation (`d[k] = v`), tuples, `.append(...)`, `sorted(...)`,
 multiple functions. Do not use them. Nested `if`/`elif`, a single `else`, a
 NESTED `for`, a list comprehension, and a dict literal ARE allowed, in the exact
 shapes described in rules 2a, 2d, 2e and 10 below.
-The first argument of every helper MUST be a bare variable name -- never a
-tool call. A tool call may appear only as a statement or as the right-hand
-side of an assignment, never nested inside another expression.
+The first argument of every helper MUST be a bare variable name. A helper
+lambda is a pure expression and MUST NOT call a tool. A tool call may appear
+only as a statement or as the right-hand side of an assignment.
 
 STRICT RULES for the python function named 'run':
 1. Use only a subset of Python: no imports, no comments, no return statements,
@@ -133,7 +133,8 @@ STRICT RULES for the python function named 'run':
     - last(iterable, predicate=lambda item: condition): last matching element,
       or None. Always use the 'predicate=' keyword.
 2b3. Helper functions MUST receive variables, not function calls: assign tool
-     results to a variable first, then pass the variable to the helper.
+     results to a variable first, then pass the variable to the helper. Helper
+     lambdas are pure expressions and MUST NOT call tools.
 2c. To 'find the item with the most/least X' you MUST use min()/max() with a
     key function. Never unroll comparisons with if-statements.
 3. Only use basic arithmetic operations (+, -, *, /, //, %).
@@ -166,11 +167,12 @@ STRICT RULES for the python function named 'run':
 12. Always use the exact field names from the tool schemas.
 13. Conditions read tool results: if result.field operator value: action.
 14. TOOL CALLING: result = tool_name(parameters); use result.field in
-    conditions and actions; assign tool results to variables before use.
+    conditions and actions; always assign tool results to variables before use.
 15. Follow the user input EXACTLY: do not modify, interpret or add
     assumptions. Use the exact values described in the request.
-16. NEVER write tool_name().field, tool_name().tool_name(), or repeat a tool
-    call inside one expression - always assign to a variable first.
+16. NEVER write tool_name().field, tool_name().tool_name(), or nest one tool
+    directly inside another tool call. Always assign a tool result to a
+    variable first.
 17. Always prefer the shortest, most concise solution.
 
 Output ONLY the code of the `run` function, with no explanation and no

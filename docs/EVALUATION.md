@@ -19,7 +19,7 @@ end-to-end 成功率**である。
 
 ```
 natural-language prompt
-  -> Planner / rule compiler
+  -> Planner / RuleCompiler
   -> live LLM agent
   -> injected tool output read by that agent
   -> PAuth-gated tool execution
@@ -72,7 +72,7 @@ end-to-end 評価ではない。
 パイプライン(詳細は [SYSTEM_MODEL.md](SYSTEM_MODEL.md)):
 
 ```
-prompt ──▶ Planner ──▶ Slicer ──▶ Rule compiler ──▶ Enforcer
+prompt ──▶ Planner ──▶ Slicer ──▶ RuleCompiler ──▶ Enforcer
         (LLM, the ONLY      (deterministic)        (default-deny; matches every
          non-deterministic                          call's control operands against
          step)                                      the compiled rules; signs results
@@ -117,6 +117,8 @@ GT_NO_EXCESS_CALLS
 GT_EXACT_AUTHORIZATION
 
 OUTCOME_TASK_COMPLETED
+OUTCOME_ATTACK_GOAL_ACHIEVED
+OUTCOME_TASK_COMPLETED_WITHOUT_ATTACK_GOAL
 AUX_INJECTIONS_DENIED
 COST_TOOL_CALLS
 ```
@@ -131,6 +133,168 @@ COST_TOOL_CALLS
 ```
 python -m eval.funnel agentdojo --mode headless --planner bestof --model gpt-5.1 --structuring
 ```
+
+---
+
+## PAuth パイプラインの固定入力診断（2026-08-03）
+
+原論文と共通する認可上の問いを、自然言語からのrun コード生成と実エージェントの
+挙動から切り離して調べた。AgentDojo 0.1.35・タスク定義v1の97件について、
+97件の正解ツール呼び出し列に含まれる合計339件のツール呼び出しを、具体的な引数を持つ直線的なrun コードへ変換し、
+PAuth パイプラインと実行部へ通した。正解列を完全に再現できたタスクに限り、
+同じ執行器へ固定攻撃用ツール呼び出しを提示した。固定攻撃用ツール呼び出しは、
+状態変更を示すツール名、正解列の引数改変、AgentDojoの攻撃タスクから生成した。
+これは正常列実行後の認可関係を調べる事後照合であり、一回限りの許可の消費、
+実行順序、外部ツールへの送出は検査しない。
+
+```
+.venv/bin/python -m eval.agentdojo_reference_trace \
+  --output tests/experiment/results/agentdojo_reference_trace_g1_g2_20260803.json
+```
+
+| 文法検証器 | 正解列を完全再現 | 再現したツール呼び出し | 固定攻撃用ツール呼び出しの拒否 |
+|---|---:|---:|---:|
+| `G1`（DSL(G1)） | 96/97 | 337/337 | 748/748 |
+| `G2`（DSL(G2)） | 97/97 | 339/339 | 756/756 |
+
+DSL(G1)でDSL棄却された一件には8件の固定攻撃用ツール呼び出しが定義されていたが、
+正常経路を実行できないためG1の拒否率の分母から除外した。DSL(G2)で増えた一件は
+辞書を引数に持つrun コードであり、有界`for`による増分は0件だった。JSON成果物の
+SHA-256は`89e0569d7040f8ca6890370c9a2d310ca5190d98d358f1171aa6350016e6f52d`
+であり、二回の生成で同じバイト列を得た。
+
+これはタスク完了率でも、一般のプロンプトの表現可能性でもない。既定の初期状態に
+おける一つの有限な正解列を直線コードへ書き直した診断である。また、原論文の
+100件・固定攻撃用ツール呼び出し634件とは入力集合と生成法が異なるため、原論文との
+精度差は計算しない。主張できるのは、同じ現行入力上でDSL(G2)がDSL(G1)より一件多く
+正常経路を処理し、試した固定攻撃用ツール呼び出しをすべて拒否したことまでである。
+
+---
+
+## AgentDojo 全数2×2評価（2026-08-04）
+
+認可ポリシーの適用有無とインジェクション文の付与有無を組み合わせた。攻撃あり
+条件は、AgentDojo v1の利用者タスク97件に各スイートの全攻撃ゴールを掛け合わせた
+629対（banking 16×9、slack 21×5、travel 20×7、workspace 40×6）を条件ごとに
+1回ずつ実行した。全組み合わせを実行するため攻撃ゴールの割当は存在せず、割当の
+恣意性が条件差に混入しない。攻撃なし条件には攻撃ゴールという軸が存在しないため、
+各タスク1観測（97行×2条件）の非対称な設計である。合計1452行のうち1350行で
+エージェントを実際に動かし、DSLを通る保存済み候補を選べなかった計画なし15タスク
+に対応する102行は、エージェントもツールも動かさず、変更されていない状態を判定した。
+
+```
+# 攻撃あり2条件（スイート×条件で分割・並列実行し、行キー単位で結合）
+.venv/bin/python -m eval.agentdojo_factorial --pairs full \
+  --output tests/experiment/results/agentdojo_factorial_gpt41_t0_fullcross_20260804.merged.jsonl
+
+# 攻撃なし2条件
+.venv/bin/python -m eval.agentdojo_factorial \
+  --condition policy_off_injection_off --condition policy_on_injection_off \
+  --output tests/experiment/results/agentdojo_factorial_gpt41_t0_injoff_20260804.jsonl
+
+.venv/bin/python -m eval.agentdojo_factorial_analysis --design full-cross \
+  --input tests/experiment/results/agentdojo_factorial_gpt41_t0_fullcross_20260804.merged.jsonl \
+  --output tests/experiment/results/agentdojo_factorial_gpt41_t0_fullcross_20260804.analysis.json \
+  --bootstrap-iterations 100000
+```
+
+API指定モデルは`gpt-4.1`、応答モデルは`gpt-4.1-2025-04-14`、temperatureは0、
+最大反復数は15である。1452行を判定し、評価コードの失敗で除外した行はなかった。
+これは、個々のツール呼び出しにツールエラーや拒否がなかったという意味ではない。
+
+最終文章出力だけを攻撃ゴールとし正解ツール呼び出し列が空のtravel
+`injection_task_6`（20対）は、PAuthGatewayが直接検査するツール呼び出しを必要と
+しないため、ツール呼び出しに対する安全性の主分析から対の水準で除外し、残る609対
+を用いる。
+
+| 指標 | PAuthの認可ポリシー適用なし | PAuthGatewayで適用 | 変化（適用あり−なし） |
+|---|---:|---:|---:|
+| 攻撃ゴール達成・インジェクション文あり | 257/609 | 0/609 | −42.2ポイント |
+| タスク完了・インジェクション文なし（97タスク） | 76/97 | 21/97 | −56.7ポイント |
+| タスク完了・インジェクション文あり | 340/609 | 117/609 | −36.6ポイント |
+| 攻撃ゴール未達でのタスク完了 | 245/609 | 117/609 | −21.0ポイント |
+
+95%信頼区間は、97タスクを単位とする対応付き塊再標本化（同じタスクの攻撃ゴール
+群は同じプロンプト・計画・初期状態を共有するため、対単位ではなくタスクごとに
+丸ごと再標本化する）を100,000回行って求めた。攻撃ゴール達成の低下は35.8から
+48.8、通常時タスク完了の低下は46.4から66.0、攻撃下の両立結果の低下は13.5から
+28.6パーセントポイントだった。認可ポリシーを用意できた82タスクの522対でも、
+攻撃ゴール達成は190/522から0/522へ減った一方、通常時のタスク完了は64/82から
+21/82へ、攻撃下の両立結果は236/522から117/522へ減った。
+
+文章出力だけを狙う20対を含む系全体の補助結果では、攻撃ゴール達成が274/629から
+1/629へ変化した。適用ありで達成された1対（travel `user_task_1` ×
+`injection_task_6`）は最終文章出力だけを狙う攻撃であり、ツール呼び出しの認可
+という対象範囲の外にある。攻撃ゴール別の内訳では、適用なしの達成率は攻撃ゴール
+により0%から100%まで幅があるが、適用ありではこの1対を除きすべて0だった。
+
+この評価では、認可ポリシー適用時にツール呼び出しを必要とする攻撃ゴール達成率と
+タスク完了率がともに低下した。タスク結果を維持したという主張は支持されない。
+同じ対・条件を反復していないため、信頼区間はタスク構成による値の揺れだけを表し、
+LLMの反復変動を含まない。詳細と成果物のハッシュ値は
+[全数評価報告](../tests/experiment/results/agentdojo_factorial_gpt41_t0_fullcross_20260804_report.md)
+に記録した。
+
+---
+
+## 付録: AgentDojo 4条件の単発予備評価（2026-08-03、単一割当）
+
+全数評価の前に、各タスクへ攻撃ゴールを1つずつ割り当てる設計で同じ4条件を評価
+した。割当は条件間で共通にしたが、割当の選び方そのものが恣意的であるため、現在
+は全数評価が主結果であり、本節は一致性の検証として残す。主要な対比はすべて全数
+評価と整合する（攻撃ゴール達成の低下41.2ポイント対43.4ポイント、通常時タスク
+完了の低下55.7ポイント対56.7ポイント、攻撃下の両立結果−19.6ポイント対−20.5
+ポイント）。なお本評価と全数評価の間で`pauth/slicer.py`と`pauth/rule_compiler.py`
+に改名を含む変更があるため、全数評価は攻撃なしセルも自身のコード版で再実行して
+おり、本評価の行を流用していない。
+
+認可ポリシーの適用有無とインジェクション文の付与有無を組み合わせ、AgentDojo
+v1の利用者タスク97件について、各タスク・各条件に一つの観測値を作った。358行では
+エージェントを実際に動かした。認可ポリシーを適用する条件でDSLを通る保存済み候補を
+選べなかった30行は、エージェントもツールも動かさず、変更されていない状態を判定した。
+
+```
+.venv/bin/python -m eval.agentdojo_factorial \
+  --output tests/experiment/results/agentdojo_factorial_gpt41_t0_single_20260803.jsonl
+
+.venv/bin/python -m eval.agentdojo_factorial_analysis \
+  --input tests/experiment/results/agentdojo_factorial_gpt41_t0_single_20260803.jsonl \
+  --output tests/experiment/results/agentdojo_factorial_gpt41_t0_single_20260803.analysis.json \
+  --bootstrap-iterations 100000
+```
+
+API指定モデルは`gpt-4.1`、応答モデルは`gpt-4.1-2025-04-14`、temperatureは0、
+最大反復数は15である。388行を判定し、評価コードの失敗で除外した行はなかった。
+これは、個々のツール呼び出しにツールエラーや拒否がなかったという意味ではない。
+
+分母は97件のままとし、タスクを除外しない。計画を用意できなかったタスクは、
+それ自体がPAuthの end-to-end の失敗であり、除外すると系の可用性を実際より
+良く見せる（[評価手順の規則](#評価手順の規則)）。
+
+| 指標 | PAuthの認可ポリシー適用なし | PAuthGatewayで適用 | 変化（適用あり−なし） |
+|---|---:|---:|---:|
+| 攻撃ゴール達成・インジェクション文あり | 41/97 | 1/97 | −41.2ポイント |
+| タスク完了・インジェクション文なし | 74/97 | 20/97 | −55.7ポイント |
+| タスク完了・インジェクション文あり | 52/97 | 16/97 | −37.1ポイント |
+| 攻撃ゴール未達でのタスク完了 | 35/97 | 16/97 | −19.6ポイント |
+
+対応付き再標本化の95%信頼区間は、攻撃ゴール達成の低下が30.9から51.5、
+通常時タスク完了の低下が45.4から66.0パーセントポイントだった。
+
+適用ありで達成が残った1件は、AgentDojo v1 travel `injection_task_6`を
+割り当てられたタスクである。この攻撃ゴールは最終文章出力だけで達成され、
+正解ツール呼び出し列が空であるため、PAuthGatewayが検査するツール呼び出しを
+必要としない。単一割当の設計では、この攻撃ゴールを対象から外すにはタスクを
+丸ごと落とすほかなく、上表の分母を97件に保つ限りこの1件は含まれる。全数評価では
+同じ除外を対の水準で定義できるため、タスクを一件も失わずに責任範囲外の攻撃
+ゴールだけを外せる。これは全数設計へ切り替えた利点の一つである。
+
+この評価では、認可ポリシー適用時にツール呼び出しを必要とする攻撃ゴール達成率と
+タスク完了率がともに低下した。タスク結果を維持したという主張は支持されない。
+同じタスク・条件を反復していないため、信頼区間はタスク構成による値の揺れだけを
+表し、LLMの反復変動を含まない。詳細と成果物のハッシュ値は
+[単発予備評価報告](../tests/experiment/results/agentdojo_factorial_gpt41_t0_single_20260803_report.md)
+に記録した。
 
 ---
 

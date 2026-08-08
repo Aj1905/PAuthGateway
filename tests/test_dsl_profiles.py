@@ -1,4 +1,4 @@
-"""G1 (operational Appendix A baseline) vs G2 (extended, default) profiles."""
+"""G1 (Appendix A reconstruction) vs G2 (extended, default) profiles."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import pytest
 
 from pauth import prepare
 from pauth.grammar_validator import (
+    DSL_PROFILE_EXTENDED,
     DSL_PROFILE_PAPER,
     DSLRejectionError,
     parse_and_validate,
@@ -28,6 +29,14 @@ _PAPER_HELPER_OK = (
     '    selected = first(messages, predicate=lambda message: message.kind == "invoice")\n'
     "    notify(selected.id)\n"
 )
+
+
+def test_g2_is_the_registered_default_profile():
+    assert DSL_PROFILE_PAPER == "g1"
+    assert DSL_PROFILE_EXTENDED == "g2"
+    # A G2-only form passes without an explicit profile, proving that the
+    # public validator default still resolves to the latest profile.
+    parse_and_validate('def run():\n    notify({"key": 1})\n')
 
 
 def test_g1_accepts_flat_paper_program_end_to_end():

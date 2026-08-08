@@ -3,7 +3,7 @@
 Given the imperative ``run`` function produced by the Planner, we derive -- for *every*
 tool invocation -- a slice: the tool name, a symbolic expression for each
 operand, and the path conditions required to reach the call.  Slicing is the
-deterministic core of PAuth: "The derivation of slices/rules (the Slicer and Rule compiler steps)
+deterministic core of PAuth: "The derivation of slices/rules (the Slicer and RuleCompiler steps)
 is deterministic without LLM" (paper sec. 5.2).
 
 A slice keeps only the dependency closure of its target call: the ``let``
@@ -16,6 +16,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 
+from .helper_frames import HelperFrame, helper_tool_occurrences
 from .symbolic import call_name, canon, names_in
 
 
@@ -36,6 +37,10 @@ class Slice:
     # with the outer vars bound), so the authorized set is exactly the tuples the
     # loops can produce -- a value from no reachable tuple is off-slice (FN=0).
     loops: list = dataclasses.field(default_factory=list)
+    # A helper-lambda tool call is not an explicit ``for``.  Its frame records
+    # the helper's ordered traversal so the enforcer can reproduce when that
+    # exact source occurrence is reached.
+    helper_frames: list[HelperFrame] = dataclasses.field(default_factory=list)
 
     @property
     def key(self) -> str:
@@ -111,6 +116,29 @@ def derive_slices(func: ast.FunctionDef, tool_names: set[str]) -> list[Slice]:
     counts: dict[str, int] = {}
     seq = 0
     for stmt, guard, loops in stmts:
+        # Appendix A has two concrete helper-lambda forms whose ordered
+        # traversal can be reproduced.  Keep their metadata separate from G2's
+        # explicit bounded ``for`` quantifiers.
+        for occurrence in helper_tool_occurrences(stmt, tool_names):
+            nested_call = occurrence.call
+            tool = call_name(nested_call)
+            assert tool is not None
+            idx = counts.get(tool, 0)
+            counts[tool] = idx + 1
+            slices.extend(
+                _build_slices(
+                    nested_call,
+                    tool,
+                    idx,
+                    guard,
+                    assigns,
+                    list(loops),
+                    seq,
+                    [occurrence.frame],
+                )
+            )
+            seq += 1
+
         call = _tool_call_of(stmt, tool_names)
         if call is None:
             continue
@@ -142,6 +170,7 @@ def _build_slices(
     assigns: dict[str, list[tuple[ast.expr, list[ast.expr], int]]],
     loops: list | None = None,
     seq: int = 0,
+    helper_frames: list[HelperFrame] | None = None,
 ) -> list[Slice]:
     """Dependency-closure the call, forking on any disjunctive variable.
 
@@ -151,7 +180,9 @@ def _build_slices(
     """
     arg_exprs = list(call.args)
     loops = loops or []
-    loop_vars = {v for v, _ in loops if v}  # bound per-element at enforcement time
+    helper_frames = helper_frames or []
+    bound_vars = {v for v, _ in loops if v}
+    bound_vars.update(frame.variable for frame in helper_frames)
 
     def _init():
         gnodes: dict[str, tuple[ast.expr, int]] = {}
@@ -165,8 +196,11 @@ def _build_slices(
             frontier.extend(names_in(expr))
         for _v, it in loops:  # resolve each collection var into the closure
             frontier.extend(names_in(it))
-        # loop vars are bound per-element at enforcement time, not resolved here.
-        return ({}, gnodes, [n for n in frontier if n not in loop_vars])
+        for frame in helper_frames:
+            frontier.extend(names_in(frame.iterable))
+            frontier.extend(names_in(frame.body))
+        # Loop/helper variables are bound per element at enforcement time.
+        return ({}, gnodes, [n for n in frontier if n not in bound_vars])
 
     # Worklist of partial resolutions; forks on disjunctive names.
     partials: list[tuple[dict, dict, list[str]]] = [_init()]
@@ -205,6 +239,6 @@ def _build_slices(
         out.append(Slice(
             tool=tool, call_index=idx, call_node=call,
             arg_exprs=arg_exprs, guards=ordered_guards, lets=ordered_lets,
-            loops=list(loops), seq=seq,
+            loops=list(loops), helper_frames=list(helper_frames), seq=seq,
         ))
     return out

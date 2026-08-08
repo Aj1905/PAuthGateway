@@ -1,0 +1,4 @@
+interface:
+  display_name: "PAuth 論文執筆"
+  short_description: "PAuthの用語正本と評価証拠に基づいて論文を執筆・改稿"
+  default_prompt: "$write-pauth-paper を使い、リポジトリの用語正本と評価証拠に基づいて論文を執筆・改稿してください。"

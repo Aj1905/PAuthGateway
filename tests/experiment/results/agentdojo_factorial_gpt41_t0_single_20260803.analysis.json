@@ -1,0 +1,536 @@
+{
+  "analysis_schema": "agentdojo_factorial_analysis_v2",
+  "design": {
+    "factors": [
+      "policy_enabled",
+      "injection_enabled"
+    ],
+    "observations_per_task_condition": 1,
+    "live_execution_rows": 358,
+    "unchanged_state_assessment_rows": 30,
+    "status_counts": {
+      "live": 358,
+      "plan_unavailable": 30
+    },
+    "matching_unit": [
+      "suite",
+      "user_task_id"
+    ],
+    "output_only_attack_goals_excluded_from_tool_call_scope": [
+      {
+        "suite": "travel",
+        "injection_task_id": "injection_task_6"
+      }
+    ]
+  },
+  "uncertainty": {
+    "method": "task-level paired bootstrap percentile interval",
+    "confidence_level": 0.95,
+    "bootstrap_iterations": 100000,
+    "seed": 20260803,
+    "scope": "task_sampling_uncertainty_only",
+    "limitation": "One observation was recorded per task-condition. Some observations may be unchanged-state assessments rather than live LLM executions; the intervals do not quantify LLM or run-to-run stochasticity."
+  },
+  "populations": {
+    "all_tasks": {
+      "task_count": 97,
+      "conditions": {
+        "policy_off__injection_off": {
+          "n": 97,
+          "task_completed": {
+            "count": 74,
+            "rate": 0.7628865979381443
+          },
+          "attack_goal_achieved": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "task_completed_without_attack_goal": {
+            "count": 74,
+            "rate": 0.7628865979381443
+          },
+          "status_counts": {
+            "live": 97
+          }
+        },
+        "policy_off__injection_on": {
+          "n": 97,
+          "task_completed": {
+            "count": 52,
+            "rate": 0.5360824742268041
+          },
+          "attack_goal_achieved": {
+            "count": 41,
+            "rate": 0.422680412371134
+          },
+          "task_completed_without_attack_goal": {
+            "count": 35,
+            "rate": 0.36082474226804123
+          },
+          "status_counts": {
+            "live": 97
+          }
+        },
+        "policy_on__injection_off": {
+          "n": 97,
+          "task_completed": {
+            "count": 20,
+            "rate": 0.20618556701030927
+          },
+          "attack_goal_achieved": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "task_completed_without_attack_goal": {
+            "count": 20,
+            "rate": 0.20618556701030927
+          },
+          "status_counts": {
+            "live": 82,
+            "plan_unavailable": 15
+          }
+        },
+        "policy_on__injection_on": {
+          "n": 97,
+          "task_completed": {
+            "count": 16,
+            "rate": 0.16494845360824742
+          },
+          "attack_goal_achieved": {
+            "count": 1,
+            "rate": 0.010309278350515464
+          },
+          "task_completed_without_attack_goal": {
+            "count": 16,
+            "rate": 0.16494845360824742
+          },
+          "status_counts": {
+            "live": 82,
+            "plan_unavailable": 15
+          }
+        }
+      },
+      "paired_contrasts": {
+        "attack_goal_achievement_reduction": {
+          "formula": "policy_off_injection_on - policy_on_injection_on",
+          "metric": "attack_goal_achieved",
+          "positive_direction": "improvement",
+          "estimate": 0.41237113402061853,
+          "estimate_percentage_points": 41.23711340206185,
+          "ci95_percentile": [
+            0.30927835051546393,
+            0.5154639175257731
+          ],
+          "ci95_percentage_points": [
+            30.927835051546392,
+            51.546391752577314
+          ]
+        },
+        "clean_task_completion_decline": {
+          "formula": "policy_off_injection_off - policy_on_injection_off",
+          "metric": "task_completed",
+          "positive_direction": "degradation",
+          "estimate": 0.5567010309278351,
+          "estimate_percentage_points": 55.670103092783506,
+          "ci95_percentile": [
+            0.4536082474226804,
+            0.6597938144329897
+          ],
+          "ci95_percentage_points": [
+            45.36082474226804,
+            65.97938144329896
+          ]
+        },
+        "joint_success_improvement": {
+          "formula": "policy_on_injection_on - policy_off_injection_on",
+          "metric": "task_completed_without_attack_goal",
+          "positive_direction": "improvement",
+          "estimate": -0.1958762886597938,
+          "estimate_percentage_points": -19.587628865979383,
+          "ci95_percentile": [
+            -0.27835051546391754,
+            -0.1134020618556701
+          ],
+          "ci95_percentage_points": [
+            -27.835051546391753,
+            -11.34020618556701
+          ]
+        }
+      }
+    },
+    "common_plan_tasks": {
+      "task_count": 82,
+      "conditions": {
+        "policy_off__injection_off": {
+          "n": 82,
+          "task_completed": {
+            "count": 61,
+            "rate": 0.7439024390243902
+          },
+          "attack_goal_achieved": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "task_completed_without_attack_goal": {
+            "count": 61,
+            "rate": 0.7439024390243902
+          },
+          "status_counts": {
+            "live": 82
+          }
+        },
+        "policy_off__injection_on": {
+          "n": 82,
+          "task_completed": {
+            "count": 46,
+            "rate": 0.5609756097560976
+          },
+          "attack_goal_achieved": {
+            "count": 29,
+            "rate": 0.35365853658536583
+          },
+          "task_completed_without_attack_goal": {
+            "count": 35,
+            "rate": 0.4268292682926829
+          },
+          "status_counts": {
+            "live": 82
+          }
+        },
+        "policy_on__injection_off": {
+          "n": 82,
+          "task_completed": {
+            "count": 20,
+            "rate": 0.24390243902439024
+          },
+          "attack_goal_achieved": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "task_completed_without_attack_goal": {
+            "count": 20,
+            "rate": 0.24390243902439024
+          },
+          "status_counts": {
+            "live": 82
+          }
+        },
+        "policy_on__injection_on": {
+          "n": 82,
+          "task_completed": {
+            "count": 16,
+            "rate": 0.1951219512195122
+          },
+          "attack_goal_achieved": {
+            "count": 1,
+            "rate": 0.012195121951219513
+          },
+          "task_completed_without_attack_goal": {
+            "count": 16,
+            "rate": 0.1951219512195122
+          },
+          "status_counts": {
+            "live": 82
+          }
+        }
+      },
+      "paired_contrasts": {
+        "attack_goal_achievement_reduction": {
+          "formula": "policy_off_injection_on - policy_on_injection_on",
+          "metric": "attack_goal_achieved",
+          "positive_direction": "improvement",
+          "estimate": 0.34146341463414637,
+          "estimate_percentage_points": 34.146341463414636,
+          "ci95_percentile": [
+            0.23170731707317074,
+            0.45121951219512196
+          ],
+          "ci95_percentage_points": [
+            23.170731707317074,
+            45.1219512195122
+          ]
+        },
+        "clean_task_completion_decline": {
+          "formula": "policy_off_injection_off - policy_on_injection_off",
+          "metric": "task_completed",
+          "positive_direction": "degradation",
+          "estimate": 0.5,
+          "estimate_percentage_points": 50.0,
+          "ci95_percentile": [
+            0.3902439024390244,
+            0.6097560975609756
+          ],
+          "ci95_percentage_points": [
+            39.02439024390244,
+            60.97560975609756
+          ]
+        },
+        "joint_success_improvement": {
+          "formula": "policy_on_injection_on - policy_off_injection_on",
+          "metric": "task_completed_without_attack_goal",
+          "positive_direction": "improvement",
+          "estimate": -0.23170731707317074,
+          "estimate_percentage_points": -23.170731707317074,
+          "ci95_percentile": [
+            -0.32926829268292684,
+            -0.13414634146341464
+          ],
+          "ci95_percentage_points": [
+            -32.926829268292686,
+            -13.414634146341465
+          ]
+        }
+      }
+    },
+    "tool_call_attack_tasks": {
+      "task_count": 94,
+      "conditions": {
+        "policy_off__injection_off": {
+          "n": 94,
+          "task_completed": {
+            "count": 71,
+            "rate": 0.7553191489361702
+          },
+          "attack_goal_achieved": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "task_completed_without_attack_goal": {
+            "count": 71,
+            "rate": 0.7553191489361702
+          },
+          "status_counts": {
+            "live": 94
+          }
+        },
+        "policy_off__injection_on": {
+          "n": 94,
+          "task_completed": {
+            "count": 49,
+            "rate": 0.5212765957446809
+          },
+          "attack_goal_achieved": {
+            "count": 39,
+            "rate": 0.4148936170212766
+          },
+          "task_completed_without_attack_goal": {
+            "count": 34,
+            "rate": 0.3617021276595745
+          },
+          "status_counts": {
+            "live": 94
+          }
+        },
+        "policy_on__injection_off": {
+          "n": 94,
+          "task_completed": {
+            "count": 20,
+            "rate": 0.2127659574468085
+          },
+          "attack_goal_achieved": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "task_completed_without_attack_goal": {
+            "count": 20,
+            "rate": 0.2127659574468085
+          },
+          "status_counts": {
+            "live": 79,
+            "plan_unavailable": 15
+          }
+        },
+        "policy_on__injection_on": {
+          "n": 94,
+          "task_completed": {
+            "count": 16,
+            "rate": 0.1702127659574468
+          },
+          "attack_goal_achieved": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "task_completed_without_attack_goal": {
+            "count": 16,
+            "rate": 0.1702127659574468
+          },
+          "status_counts": {
+            "live": 79,
+            "plan_unavailable": 15
+          }
+        }
+      },
+      "paired_contrasts": {
+        "attack_goal_achievement_reduction": {
+          "formula": "policy_off_injection_on - policy_on_injection_on",
+          "metric": "attack_goal_achieved",
+          "positive_direction": "improvement",
+          "estimate": 0.4148936170212766,
+          "estimate_percentage_points": 41.48936170212766,
+          "ci95_percentile": [
+            0.3191489361702128,
+            0.5106382978723404
+          ],
+          "ci95_percentage_points": [
+            31.914893617021278,
+            51.06382978723404
+          ]
+        },
+        "clean_task_completion_decline": {
+          "formula": "policy_off_injection_off - policy_on_injection_off",
+          "metric": "task_completed",
+          "positive_direction": "degradation",
+          "estimate": 0.5425531914893617,
+          "estimate_percentage_points": 54.25531914893617,
+          "ci95_percentile": [
+            0.43617021276595747,
+            0.6382978723404256
+          ],
+          "ci95_percentage_points": [
+            43.61702127659575,
+            63.829787234042556
+          ]
+        },
+        "joint_success_improvement": {
+          "formula": "policy_on_injection_on - policy_off_injection_on",
+          "metric": "task_completed_without_attack_goal",
+          "positive_direction": "improvement",
+          "estimate": -0.19148936170212766,
+          "estimate_percentage_points": -19.148936170212767,
+          "ci95_percentile": [
+            -0.2765957446808511,
+            -0.10638297872340426
+          ],
+          "ci95_percentage_points": [
+            -27.659574468085108,
+            -10.638297872340425
+          ]
+        }
+      }
+    },
+    "tool_call_attack_common_plan_tasks": {
+      "task_count": 79,
+      "conditions": {
+        "policy_off__injection_off": {
+          "n": 79,
+          "task_completed": {
+            "count": 58,
+            "rate": 0.7341772151898734
+          },
+          "attack_goal_achieved": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "task_completed_without_attack_goal": {
+            "count": 58,
+            "rate": 0.7341772151898734
+          },
+          "status_counts": {
+            "live": 79
+          }
+        },
+        "policy_off__injection_on": {
+          "n": 79,
+          "task_completed": {
+            "count": 43,
+            "rate": 0.5443037974683544
+          },
+          "attack_goal_achieved": {
+            "count": 27,
+            "rate": 0.34177215189873417
+          },
+          "task_completed_without_attack_goal": {
+            "count": 34,
+            "rate": 0.43037974683544306
+          },
+          "status_counts": {
+            "live": 79
+          }
+        },
+        "policy_on__injection_off": {
+          "n": 79,
+          "task_completed": {
+            "count": 20,
+            "rate": 0.25316455696202533
+          },
+          "attack_goal_achieved": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "task_completed_without_attack_goal": {
+            "count": 20,
+            "rate": 0.25316455696202533
+          },
+          "status_counts": {
+            "live": 79
+          }
+        },
+        "policy_on__injection_on": {
+          "n": 79,
+          "task_completed": {
+            "count": 16,
+            "rate": 0.20253164556962025
+          },
+          "attack_goal_achieved": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "task_completed_without_attack_goal": {
+            "count": 16,
+            "rate": 0.20253164556962025
+          },
+          "status_counts": {
+            "live": 79
+          }
+        }
+      },
+      "paired_contrasts": {
+        "attack_goal_achievement_reduction": {
+          "formula": "policy_off_injection_on - policy_on_injection_on",
+          "metric": "attack_goal_achieved",
+          "positive_direction": "improvement",
+          "estimate": 0.34177215189873417,
+          "estimate_percentage_points": 34.177215189873415,
+          "ci95_percentile": [
+            0.24050632911392406,
+            0.4430379746835443
+          ],
+          "ci95_percentage_points": [
+            24.050632911392405,
+            44.303797468354425
+          ]
+        },
+        "clean_task_completion_decline": {
+          "formula": "policy_off_injection_off - policy_on_injection_off",
+          "metric": "task_completed",
+          "positive_direction": "degradation",
+          "estimate": 0.4810126582278481,
+          "estimate_percentage_points": 48.10126582278481,
+          "ci95_percentile": [
+            0.3670886075949367,
+            0.5949367088607594
+          ],
+          "ci95_percentage_points": [
+            36.708860759493675,
+            59.49367088607595
+          ]
+        },
+        "joint_success_improvement": {
+          "formula": "policy_on_injection_on - policy_off_injection_on",
+          "metric": "task_completed_without_attack_goal",
+          "positive_direction": "improvement",
+          "estimate": -0.22784810126582278,
+          "estimate_percentage_points": -22.78481012658228,
+          "ci95_percentile": [
+            -0.3291139240506329,
+            -0.12658227848101267
+          ],
+          "ci95_percentage_points": [
+            -32.91139240506329,
+            -12.658227848101266
+          ]
+        }
+      }
+    }
+  }
+}

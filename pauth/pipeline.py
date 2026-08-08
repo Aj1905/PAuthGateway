@@ -1,4 +1,4 @@
-"""The PAuth task-submission pipeline: the Planner -> the Slicer -> the Rule compiler.
+"""The PAuth task-submission pipeline: the Planner -> the Slicer -> the RuleCompiler.
 
 Ties together imperative-code validation, slice derivation and rule
 compilation.  the Planner (LLM code generation) lives in :mod:`pauth.codegen`; this
@@ -86,6 +86,8 @@ def _slice_dependencies(
         + list(slice_.guards)
         + list(slice_.lets.values())
         + [iter_expr for _var, iter_expr in slice_.loops]
+        + [frame.iterable for frame in slice_.helper_frames]
+        + [frame.body for frame in slice_.helper_frames]
     )
     for root in roots:
         for node in ast.walk(root):
@@ -147,14 +149,14 @@ def prepare(
     *,
     dsl_profile: str = DSL_PROFILE_EXTENDED,
 ) -> PreparedTask:
-    """Run the Planner's output through validation (grammar), the Slicer (slices) and the Rule compiler (rules).
+    """Run the Planner's output through validation (grammar), the Slicer (slices) and the RuleCompiler (rules).
 
     Raises :class:`pauth.grammar_validator.DSLRejectionError` if the code violates
     the DSL.
 
     ``dsl_profile`` selects the DSL version (experiment axis G):
-    ``"g2"`` (default, this repo's extended DSL) or ``"g1"`` (the operational
-    Appendix A baseline defined in ``docs/SYSTEM_MODEL.md``). Under ``"g1"``
+    ``"g2"`` (default, this repo's extended DSL) or ``"g1"`` (the Appendix A
+    reconstruction defined in ``docs/SYSTEM_MODEL.md``). Under ``"g1"``
     the Tier-1 normalization is also skipped because it widens the acceptance
     surface beyond that baseline.
     """

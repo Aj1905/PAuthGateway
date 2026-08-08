@@ -1,4 +1,4 @@
-"""GrammarValidator -- parser for the operational Appendix A reconstruction and G2.
+"""GrammarValidator -- parser for the Appendix A profile and extended G2.
 
 The Planner step asks an LLM to generate a ``run`` function in a restrictive subset
 of Python.  Before any slice is derived we
@@ -106,12 +106,13 @@ _FORBIDDEN = {
 
 
 # DSL profiles (the experiment axis G in docs/SYSTEM_MODEL.md):
-#   G1 = the operational Appendix A baseline defined in docs/SYSTEM_MODEL.md:
-#        flat if only, the five paper helpers with pure one-argument lambdas,
-#        no for-loops, comprehensions, dict literals, or sum, and strict single
-#        assignment per name. Appendix A's internally inconsistent examples do
-#        not widen the profile. (The underscore/dunder-attribute ban is kept in
-#        both profiles as a shared sandbox-security fix.)
+#   G1 = the Appendix A reconstruction defined in docs/SYSTEM_MODEL.md: flat
+#        if only, the five paper helpers with tool-free lambdas, no for-loops,
+#        comprehensions, dict literals, or sum, and strict single assignment
+#        per name. Appendix A's contradictory helper-tool examples and
+#        manual-unrolling appendix do not widen the executable profile. (The
+#        underscore/dunder-attribute ban is kept in both profiles as a shared
+#        sandbox-security fix.)
 #   G2 = this repo's extended grammar (default): everything G1 accepts, plus
 #        else/elif, nested if up to depth 3, bounded (nested) for, dict
 #        literals, single-generator comprehensions, and the two blessed
@@ -131,7 +132,7 @@ def parse_and_validate(
 
     ``profile`` selects the DSL version: :data:`DSL_PROFILE_EXTENDED`
     (default, this repo's grammar) or :data:`DSL_PROFILE_PAPER` (the
-    operational Appendix A baseline defined in ``docs/SYSTEM_MODEL.md``).
+    Appendix A profile defined in ``docs/SYSTEM_MODEL.md``).
     """
     if profile not in (DSL_PROFILE_PAPER, DSL_PROFILE_EXTENDED):
         raise ValueError(f"unknown DSL profile {profile!r}")
@@ -178,7 +179,7 @@ def parse_and_validate(
 
 
 def _check_paper_profile(func: ast.FunctionDef) -> None:
-    """G1: enforce the operational Appendix A baseline in SYSTEM_MODEL.md."""
+    """G1: enforce the Appendix A profile fixed in SYSTEM_MODEL.md."""
     _PAPER_FORBIDDEN: dict[type, str] = {
         ast.For: "for-loops are forbidden (rule 2a) [G1]",
         ast.ListComp: "comprehensions contain implicit loops (rule 2a1) [G1]",
@@ -419,20 +420,21 @@ def validate_semantics(
 ) -> None:
     """Check the *semantic* rules of the DSL after dead-code removal.
 
-    Enforces, faithfully to Appendix A's BNF and rules:
+    Enforces the Appendix A reconstruction fixed in ``SYSTEM_MODEL.md``:
 
     * every call target is a bare identifier -- no method calls like
       ``s.lower()`` (there is no method-call production);
     * every called name is a provided tool or one of the five helpers
       (rule 2: "Only call the provided tools");
-    * a helper's first argument is a bare identifier (``<HelperCall>`` takes
-      ``<Identifier>``), and tool results are never passed to a helper
-      (rule 2b3);
+    * a helper's first argument is normally a bare identifier
+      (``<HelperCall>`` takes ``<Identifier>``);
     * a tool call appears only as a statement or as the right-hand side of an
       assignment -- never nested inside another expression (rules 2b3, 16).
+      Appendix A's contradictory helper-lambda examples are currently rejected
+      because their ordered occurrence provenance is not yet executable.
     """
-    # Tool calls that the slicer can see: statement-level (incl. if / else / for
-    # bodies) and let-RHS.
+    # Tool calls that the slicer can see directly: statement-level (incl.
+    # if / else / for bodies) and let-RHS.
     sliceable: set[int] = set()
     bodies: list[list[ast.stmt]] = []
 
@@ -455,6 +457,12 @@ def validate_semantics(
                 call = stmt.value
             if isinstance(call, ast.Call) and call_name(call) in tool_names:
                 sliceable.add(id(call))
+
+    # Appendix A's examples contain tool calls inside helper lambdas, but the
+    # current runtime cannot yet bind those repeated occurrences to an exact,
+    # ordered execution history.  Keep the executable profile fail-closed:
+    # every nested tool call is rejected until that provenance model is complete.
+    helper_tool_ids: set[int] = set()
 
     # Each variable has a single definition, with TWO merge exceptions the slicer
     # models soundly by forking into mutually-exclusive branch-slices (the
@@ -536,10 +544,21 @@ def validate_semantics(
         raise ValueError(f"unknown DSL profile {profile!r}")
 
     def _check_helper_shape(node: ast.Call, name: str) -> None:
-        if len(node.args) != 1 or not isinstance(node.args[0], ast.Name):
+        paper_lambda_tool_input = (
+            len(node.args) == 1
+            and isinstance(node.args[0], ast.Call)
+            and id(node.args[0]) in helper_tool_ids
+        )
+        if (
+            len(node.args) != 1
+            or not (
+                isinstance(node.args[0], ast.Name)
+                or paper_lambda_tool_input
+            )
+        ):
             raise DSLRejectionError(
                 f"helper '{name}' must take exactly one bare variable as its "
-                "positional argument (rule 2b3 / <HelperCall>)"
+                "positional argument; nested tool results are not executable"
             )
         keywords = {kw.arg: kw.value for kw in node.keywords if kw.arg is not None}
         if len(keywords) != len(node.keywords):
@@ -596,8 +615,9 @@ def validate_semantics(
                 f"tool call '{name}(...)' uses keyword arguments; tools must be "
                 "called with positional arguments only (rule 6)"
             )
-        elif id(node) not in sliceable:
+        elif id(node) not in sliceable and id(node) not in helper_tool_ids:
             raise DSLRejectionError(
                 f"tool call '{name}(...)' is nested inside an expression; tool "
-                "results must be assigned to a variable first (rules 2b3, 16)"
+                "results must be assigned first. Helper-lambda tool calls are "
+                "rejected until their ordered occurrence provenance is implemented"
             )

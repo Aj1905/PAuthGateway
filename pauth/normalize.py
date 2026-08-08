@@ -4,7 +4,7 @@ The DSL rejects several constructs that are not *unsafe*, merely
 outside the slicer's canonical form. Rejecting them lowers the Planner's acceptance rate
 without buying any security. This module rewrites such code into the canonical
 form the slicer already understands, **without changing what the code does** --
-so the deterministic core (the Slicer slices / the Rule compiler rules / runtime enforcement enforcement) is untouched
+so the deterministic core (the Slicer slices / the RuleCompiler rules / runtime enforcement enforcement) is untouched
 and the FP/FN guarantee is unaffected. Two transforms, both run after
 :func:`strip_dead_code` and before :func:`validate_semantics`:
 

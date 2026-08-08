@@ -10,7 +10,7 @@
   引用と図中の表記に限る。
 - 構成コンポーネントの名称と責務は、第 1 部(外殻: ingress アダプタ /
   AgentChannel / Gateway)と第 2 部(パイプライン: Planner /
-  GrammarValidator / Slicer / Rule compiler / Enforcer / EnvelopeStore)の
+  GrammarValidator / Slicer / RuleCompiler / Enforcer / EnvelopeStore)の
   ノード定義に従う。ToolExecutor はパイプラインのノードではなく、Gateway が
   所有する実行部。ツールアダプタもノードではなく、ToolExecutor
   が許可済みツール呼び出しを送る先の差し替え可能な結合境界(いずれも定義は

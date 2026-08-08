@@ -16,8 +16,8 @@ import ast
 import math
 from typing import Any
 
-from .envelope import EnvelopeStore, _to_jsonable
-from .symbolic import HELPERS, canon
+from .envelope import EnvelopeStore, _to_jsonable, occurrence_symbolic
+from .symbolic import HELPERS, canon, source_site
 
 
 class NotConcretizable(Exception):
@@ -150,10 +150,14 @@ class Evaluator:
         store: EnvelopeStore,
         lets: dict[str, ast.expr],
         names: dict[str, Any] | None = None,
+        occurrence_sites: dict[tuple[int, int, int, int], str] | None = None,
+        occurrence_path: tuple[int, ...] = (),
     ) -> None:
         self.store = store
         self.lets = lets
         self.names = names or {}
+        self.occurrence_sites = occurrence_sites or {}
+        self.occurrence_path = occurrence_path
         self._let_cache: dict[str, Any] = {}
 
     # -- public ----------------------------------------------------------
@@ -192,7 +196,13 @@ class Evaluator:
             raise NotConcretizable("comprehension iterable is not a collection")
         out = []
         for element in collection:
-            child = Evaluator(self.store, self.lets, {**self.names, var: element})
+            child = Evaluator(
+                self.store,
+                self.lets,
+                {**self.names, var: element},
+                self.occurrence_sites,
+                self.occurrence_path + (len(out),),
+            )
             child._let_cache = self._let_cache
             if all(bool(child.eval(cond)) for cond in gen.ifs):
                 out.append(child.eval(node.elt))
@@ -276,6 +286,16 @@ class Evaluator:
         if name in HELPERS:
             return self._eval_helper(name, node)
         # A tool call: resolve from a signed envelope -- never re-run the tool.
+        # A supported helper-lambda occurrence has no source-level fallback.
+        # The exact rule and traversal path are part of its provenance; using
+        # concrete operands would collide for duplicates, zero-operand tools,
+        # and separate source sites.
+        rule_key = self.occurrence_sites.get(source_site(node))
+        if rule_key is not None:
+            key = occurrence_symbolic(rule_key, self.occurrence_path)
+            if not self.store.has(key):
+                raise NotConcretizable(f"no envelope for occurrence '{key}'")
+            return wrap(self.store.get(key))
         key = canon(node)
         if not self.store.has(key):
             raise NotConcretizable(f"no envelope for '{key}'")
@@ -294,31 +314,69 @@ class Evaluator:
                 lam = kw.get("key")
                 if not isinstance(lam, ast.Lambda):
                     raise NotConcretizable(f"{name}() requires a key= lambda")
-                keyfn = self._make_lambda(lam)
-                return (helper_min if name == "min" else helper_max)(iterable, keyfn)
+                items = list(iterable)
+                if not items:
+                    raise NotConcretizable(f"{name}() of empty sequence")
+                keyed = [
+                    (self._eval_lambda(lam, item, index), item)
+                    for index, item in enumerate(items)
+                ]
+                chooser = min if name == "min" else max
+                return chooser(keyed, key=lambda pair: pair[0])[1]
             if name == "sum":
                 lam = kw.get("key")  # optional projection
-                keyfn = self._make_lambda(lam) if isinstance(lam, ast.Lambda) else None
-                return helper_sum(iterable, keyfn)
+                if not isinstance(lam, ast.Lambda):
+                    return helper_sum(iterable)
+                total: Any = 0
+                for index, item in enumerate(iterable):
+                    total += self._eval_lambda(lam, item, index)
+                return total
             # first / last
             lam = kw.get("predicate")
             if not isinstance(lam, ast.Lambda):
                 raise NotConcretizable(f"{name}() requires a predicate= lambda")
-            pred = self._make_lambda(lam)
-            return (helper_first if name == "first" else helper_last)(iterable, pred)
+            match = None
+            for index, item in enumerate(iterable):
+                if self._eval_lambda(lam, item, index):
+                    if name == "first":
+                        return item
+                    match = item
+            return match
         except TypeError as exc:  # incomparable keys, non-iterable argument, ...
             raise NotConcretizable(f"type error in {name}(): {exc}") from exc
 
-    def _make_lambda(self, lam: ast.Lambda):
+    def _eval_lambda(self, lam: ast.Lambda, item: Any, index: int) -> Any:
         params = [a.arg for a in lam.args.args]
+        child_names = dict(self.names)
+        if params:
+            child_names[params[0]] = item
+        child = Evaluator(
+            self.store,
+            self.lets,
+            child_names,
+            self.occurrence_sites,
+            self.occurrence_path + (index,),
+        )
+        child._let_cache = self._let_cache
+        return child.eval(lam.body)
+
+    def _make_lambda(self, lam: ast.Lambda):
+        """Return the legacy callable used by confirmation-breakdown views.
+
+        Executable DSL code cannot place tool calls inside helper lambdas, so
+        callers of this compatibility helper only need pure expression
+        evaluation.  Keep a traversal index nevertheless so occurrence-aware
+        evaluation remains deterministic if the executable profile is widened
+        later.
+        """
+
+        index = 0
 
         def _fn(item: Any) -> Any:
-            child_names = dict(self.names)
-            if params:
-                child_names[params[0]] = item
-            child = Evaluator(self.store, self.lets, child_names)
-            child._let_cache = self._let_cache  # share resolved lets
-            return child.eval(lam.body)
+            nonlocal index
+            value = self._eval_lambda(lam, item, index)
+            index += 1
+            return value
 
         return _fn
 

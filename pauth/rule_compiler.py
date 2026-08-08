@@ -1,8 +1,8 @@
-"""Rule compiler -- compile a slice into enforcer rules (paper sec. 4.1.2, Algorithm 1).
+"""RuleCompiler -- compile a slice into enforcer rules (paper sec. 4.1.2, Algorithm 1).
 
 Parsing and analysing a slice on every call would be inefficient, so PAuth
 compiles each slice once, at slice-generation time, into reusable rules that
-the enforcer consumes directly at runtime (paper sec. 4.1, the Rule compiler step).
+the enforcer consumes directly at runtime (paper sec. 4.1, the RuleCompiler step).
 
 A rule records (paper "In general, a rule records five pieces of
 information"): the expected tool, a per-operand symbolic expression, a guard
@@ -15,6 +15,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 
+from .helper_frames import HelperFrame
 from .slicer import Slice
 from .symbolic import HELPERS, call_name
 
@@ -35,6 +36,10 @@ class Rule:
     # for SOME tuple of the NESTED enumeration (each inner iter evaluated with the
     # outer vars bound). Empty list = a straight-line (non-loop) rule.
     loops: list = dataclasses.field(default_factory=list)
+    # Ordered helper traversals are distinct from explicit bounded-for
+    # quantifiers.  The current validator emits exactly one frame for either
+    # the Appendix-A min/max form or its nested-first form.
+    helper_frames: list[HelperFrame] = dataclasses.field(default_factory=list)
     seq: int = 0                       # program order of the call site in the plan
 
     @property
@@ -59,7 +64,14 @@ def _flatten_and(expr: ast.expr) -> list[ast.expr]:
 def _referenced_tools(slice_: Slice) -> set[str]:
     """Tool names whose envelopes the slice's expressions depend on."""
     tools: set[str] = set()
-    roots = list(slice_.arg_exprs) + list(slice_.guards) + list(slice_.lets.values())
+    roots = (
+        list(slice_.arg_exprs)
+        + list(slice_.guards)
+        + list(slice_.lets.values())
+        + [iter_expr for _var, iter_expr in slice_.loops]
+        + [frame.iterable for frame in slice_.helper_frames]
+        + [frame.body for frame in slice_.helper_frames]
+    )
     for root in roots:
         for node in ast.walk(root):
             if isinstance(node, ast.Call):
@@ -89,6 +101,7 @@ def compile_rule(slice_: Slice, tool_service: dict[str, str] | None = None) -> R
         lets=dict(slice_.lets),
         cross_service_deps=deps,
         loops=list(slice_.loops),
+        helper_frames=list(slice_.helper_frames),
         seq=slice_.seq,
     )
 

@@ -111,6 +111,7 @@ def test_g1_fanout_negatives_are_analytic_not_sampled_failures(result):
 
 def test_representative_states_are_labeled_as_regression_checks(result):
     assert "not proofs over unbounded domains" in result["method"]
+    assert "fail-closed ban on helper-lambda tool calls" in result["method"]
     assert result["representative_state_runs"] == {"g1": 36, "g2": 81}
     assert sum(
         len(case["profiles"]["g2"]["representative_states"])

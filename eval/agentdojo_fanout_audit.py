@@ -18,6 +18,7 @@ This module makes no API calls and does not run a Planner.
 from __future__ import annotations
 
 import argparse
+import ast
 import dataclasses
 import functools
 import hashlib
@@ -200,6 +201,17 @@ FANOUT_CANDIDATES: dict[str, FanoutAnnotation] = {
 
 _WORKSPACE_COMPOSITES = {4, 19, 23, 36, 37, 38, 39}
 
+# The prompt does not say "all" or "each" and the published utility fixes the
+# two required channels.  We keep this borderline instance outside the positive
+# set instead of silently treating the choice as certain.
+_BORDERLINE_EXCLUSIONS = {
+    "slack.user_task_11": (
+        "The message names general and random in the published instance. A "
+        "parameterized interpretation could make the number of add calls follow "
+        "message content, but AgentDojo defines no such alternate-state domain."
+    )
+}
+
 
 def _non_candidate_reason(suite: str, task_number: int) -> str:
     """Return one broad reason class for each reviewed non-candidate."""
@@ -256,6 +268,10 @@ def _json_sha256(value: Any) -> str:
 
 def _source_sha256(source: str) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def _contains_for(source: str) -> bool:
+    return any(isinstance(node, ast.For) for node in ast.walk(ast.parse(source)))
 
 
 def _task_number(task_id: str) -> int:
@@ -424,6 +440,9 @@ def build_audit() -> dict[str, Any]:
                         suite_name, _task_number(task_id)
                     ),
                     "reference_trace_caveat": None,
+                    "borderline_exclusion_rationale": _BORDERLINE_EXCLUSIONS.get(
+                        key
+                    ),
                 }
             else:
                 fanout = {
@@ -439,6 +458,7 @@ def build_audit() -> dict[str, Any]:
                     "g2_blocker_rationale": annotation.blocker_rationale,
                     "non_candidate_reason_class": None,
                     "reference_trace_caveat": annotation.reference_trace_caveat,
+                    "borderline_exclusion_rationale": None,
                 }
 
             profiles = {
@@ -466,7 +486,7 @@ def build_audit() -> dict[str, Any]:
                     ),
                     "filled_parameter_defaults": filled_defaults,
                     "reference_run_sha256": _source_sha256(source),
-                    "reference_run_contains_for": False,
+                    "reference_run_contains_for": _contains_for(source),
                     "fixed_trace_profile_acceptance": profiles,
                     "fanout_audit": fanout,
                 }
@@ -527,6 +547,18 @@ def build_audit() -> dict[str, Any]:
             f"G2-only={expected_g2_only}; observed "
             f"G1={g1_accepted}, G2={g2_accepted}, G2-only={g2_only}"
         )
+    full_task_g2_only_witnesses = [
+        row["task_key"]
+        for row in tasks
+        if row["fanout_audit"]["full_task_g2_only_witness"]
+    ]
+    bounded_for_gain_tasks = [
+        row["task_key"]
+        for row in tasks
+        if not row["fixed_trace_profile_acceptance"]["g1"]["accepted"]
+        and row["fixed_trace_profile_acceptance"]["g2"]["accepted"]
+        and row["reference_run_contains_for"]
+    ]
 
     corpus_digest_rows = [
         {
@@ -559,13 +591,22 @@ def build_audit() -> dict[str, Any]:
             ),
         },
         "assumptions": [
-            "The unit is one published AgentDojo v1 task in its default environment.",
-            "The audit reads the prompt, ground_truth() sequence, and installed tool signatures.",
+            (
+                "The unit is one published AgentDojo v1 task in its default "
+                "environment."
+            ),
+            (
+                "The audit reads the prompt, ground_truth() sequence, and "
+                "installed tool signatures."
+            ),
             (
                 "A candidate requires individual tool-call multiplicity driven "
                 "by a runtime collection and no equivalent bulk tool."
             ),
-            "A partial all-elements read prefix does not count as a full-task G2 witness.",
+            (
+                "A partial all-elements read prefix does not count as a full-task "
+                "G2 witness."
+            ),
             (
                 "The finite ground_truth() sequence is a reference trace, not a "
                 "proof over alternative environment states."
@@ -573,6 +614,11 @@ def build_audit() -> dict[str, Any]:
             (
                 "The 11 candidate labels and G2 blockers are reviewed annotations, "
                 "not inferred statistics."
+            ),
+            (
+                "The classification is conservative. It excludes ambiguous "
+                "content-driven multiplicity unless the prompt explicitly "
+                "quantifies over all or each item."
             ),
         ],
         "fanout_semantic_findings": {
@@ -583,9 +629,17 @@ def build_audit() -> dict[str, Any]:
                 row["fanout_audit"]["partial_bounded_for_prefix"]
                 for row in candidate_rows
             ),
-            "full_task_g2_only_witnesses": 0,
+            "full_task_g2_only_witnesses": len(full_task_g2_only_witnesses),
             "full_task_g2_only_witness_denominator": EXPECTED_TASK_COUNT,
-            "bounded_for_empirical_gain_tasks": 0,
+            "full_task_g2_only_witness_task_keys": full_task_g2_only_witnesses,
+            "bounded_for_empirical_gain_tasks": len(bounded_for_gain_tasks),
+            "bounded_for_empirical_gain_task_keys": bounded_for_gain_tasks,
+            "borderline_excluded_tasks": _BORDERLINE_EXCLUSIONS,
+            "evidence_basis": (
+                "Full-task witness status is a reviewed annotation. Fixed-trace "
+                "bounded-for gain is computed from the generated run syntax and "
+                "the two profile checks."
+            ),
         },
         "fixed_reference_trace_check": {
             "scope": "literalized default-environment ground_truth() sequences",
@@ -595,7 +649,7 @@ def build_audit() -> dict[str, Any]:
             "g2_only_feature_by_task": {
                 "workspace.user_task_33": "dict_literal"
             },
-            "bounded_for_contribution_tasks": [],
+            "bounded_for_contribution_tasks": bounded_for_gain_tasks,
             "interpretation": (
                 "Every reference sequence is finite and contains no for statement. "
                 "The single G2-only acceptance comes from a dict literal used for "

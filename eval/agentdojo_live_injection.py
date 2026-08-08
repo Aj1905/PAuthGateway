@@ -46,6 +46,7 @@ from typing import Any
 
 import openai
 from dotenv import load_dotenv
+from tenacity import retry, retry_if_not_exception_type, stop_after_attempt, wait_random_exponential
 
 from agentdojo.agent_pipeline.agent_pipeline import AgentPipeline, load_system_message
 from agentdojo.agent_pipeline.base_pipeline_element import BasePipelineElement
@@ -55,7 +56,6 @@ from agentdojo.agent_pipeline.llms.openai_llm import (
     _function_to_openai,
     _message_to_openai,
     _openai_to_assistant_message,
-    chat_completion_request,
 )
 from agentdojo.agent_pipeline.tool_execution import (
     ToolsExecutionLoop,
@@ -90,6 +90,10 @@ from pauth.grammar_validator import DSLRejectionError
 SUITES = ("banking", "slack", "travel", "workspace")
 DEFAULT_PLAN_ROOT = Path("tests/experiment/funnel_scratch")
 DEFAULT_RESULT_ROOT = Path("tests/experiment/results")
+# Planner model whose frozen best-of candidates the evaluation reads. The funnel
+# writes one scratch directory per planner model, so switching Planners is a
+# directory switch here -- the executor-side model is a separate axis.
+DEFAULT_PLAN_MODEL = "claude-fable-5"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -126,6 +130,46 @@ class InstrumentedOpenAILLM(OpenAILLM):
         self.requests = 0
         self.input_tokens = 0
         self.output_tokens = 0
+        self.resolved_models: set[str] = set()
+        self.system_fingerprints: set[str] = set()
+
+    @staticmethod
+    @retry(
+        wait=wait_random_exponential(multiplier=1, max=40),
+        stop=stop_after_attempt(3),
+        reraise=True,
+        retry=retry_if_not_exception_type(
+            (openai.BadRequestError, openai.UnprocessableEntityError)
+        ),
+    )
+    def _request(
+        client: openai.OpenAI,
+        model: str,
+        messages: Sequence[dict[str, Any]],
+        tools: Sequence[dict[str, Any]],
+        reasoning_effort: str | None,
+        temperature: float | None,
+    ) -> Any:
+        """Send the exact recorded sampling settings.
+
+        AgentDojo 0.1.35 uses ``temperature or NOT_GIVEN`` and therefore drops
+        an explicitly requested temperature of zero.  The factorial evaluation
+        needs the same request contract in all four cells, so zero must be sent
+        rather than silently replaced by the provider default.
+        """
+
+        request: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+        }
+        if tools:
+            request["tools"] = tools
+            request["tool_choice"] = "auto"
+        if reasoning_effort is not None:
+            request["reasoning_effort"] = reasoning_effort
+        if temperature is not None:
+            request["temperature"] = temperature
+        return client.chat.completions.create(**request)
 
     def query(
         self,
@@ -137,7 +181,7 @@ class InstrumentedOpenAILLM(OpenAILLM):
     ) -> tuple[str, FunctionsRuntime, Env, Sequence[ChatMessage], dict]:
         openai_messages = [_message_to_openai(message, self.model) for message in messages]
         openai_tools = [_function_to_openai(tool) for tool in runtime.functions.values()]
-        completion = chat_completion_request(
+        completion = self._request(
             self.client,
             self.model,
             openai_messages,
@@ -146,6 +190,9 @@ class InstrumentedOpenAILLM(OpenAILLM):
             self.temperature,
         )
         self.requests += 1
+        self.resolved_models.add(completion.model)
+        if completion.system_fingerprint is not None:
+            self.system_fingerprints.add(completion.system_fingerprint)
         if completion.usage is not None:
             self.input_tokens += completion.usage.prompt_tokens
             self.output_tokens += completion.usage.completion_tokens
@@ -319,13 +366,24 @@ def injection_text_present(
     return False
 
 
-def _plan_dir(plan_root: Path, suite_name: str) -> Path:
-    return plan_root / f"struct_exec_claude-fable-5_bestof_agentdojo_{suite_name}"
+def _plan_dir(
+    plan_root: Path, suite_name: str, plan_model: str = DEFAULT_PLAN_MODEL
+) -> Path:
+    """Scratch directory the funnel wrote for ``plan_model`` on ``suite_name``.
+
+    Mirrors the tag that ``eval/funnel.py`` builds for
+    ``--planner bestof --structuring --executor``: the model name has its dots
+    replaced by underscores, and ``gpt-4.1`` (the funnel default) carries no
+    model segment at all.
+    """
+    tag = "" if plan_model == "gpt-4.1" else f"{plan_model.replace('.', '_')}_"
+    return plan_root / f"struct_exec_{tag}bestof_agentdojo_{suite_name}"
 
 
 def select_valid_plans(
     plan_root: Path = DEFAULT_PLAN_ROOT,
     suites: Sequence[str] = SUITES,
+    plan_model: str = DEFAULT_PLAN_MODEL,
 ) -> list[SelectedPlan]:
     """Select plans exactly as the reported best-of executor funnel does."""
     selected: list[SelectedPlan] = []
@@ -334,7 +392,8 @@ def select_valid_plans(
         spec = augment_with_structuring(load_suite(suite_name))
         for task_id in sorted(agentdojo_suite.user_tasks):
             candidates: list[tuple[tuple[int, int], Path, str, Any | None]] = []
-            for path in sorted((_plan_dir(plan_root, suite_name) / task_id).glob("cand*.py")):
+            plan_dir = _plan_dir(plan_root, suite_name, plan_model)
+            for path in sorted((plan_dir / task_id).glob("cand*.py")):
                 code = path.read_text()
                 try:
                     prepared = prepare(code, spec.tool_names(), spec.tool_signer())

@@ -17,7 +17,12 @@ import dataclasses
 import threading
 from typing import Any, Callable
 
-from .envelope import EnvelopeStore, TamperedEnvelopeError, make_envelope
+from .envelope import (
+    EnvelopeStore,
+    TamperedEnvelopeError,
+    make_envelope,
+    occurrence_symbolic,
+)
 from .evaluator import Evaluator, NotConcretizable, values_match
 from .rule_compiler import Rule
 from .symbolic import canon
@@ -161,7 +166,7 @@ class Enforcer:
                 ):
                     raise ExecutionStateError("execution state has an invalid loop path")
                 if not any(
-                    len(rule.loops) == len(loop_path)
+                    len(rule.loops) + len(rule.helper_frames) == len(loop_path)
                     for rule in self._site_rules[site_key]
                 ):
                     raise ExecutionStateError("execution state loop path has the wrong depth")
@@ -315,6 +320,16 @@ class Enforcer:
                     reasons.append(f"{rule.key}: {order_reason}")
                     continue
 
+            # GrammarValidator currently rejects every helper-lambda tool
+            # occurrence.  Keep this guard so a caller that bypasses validation
+            # still fails closed instead of treating helper traversal as an
+            # unordered explicit loop.
+            if rule.helper_frames:
+                reasons.append(
+                    f"{rule.key}: helper-lambda tool traversal is not executable"
+                )
+                continue
+
             # Bounded for(s): quantified rule. The operand is authorized iff it
             # matches arg_exprs for SOME tuple of the NESTED enumeration over the
             # signed collections (each inner iter evaluated with the outer vars
@@ -398,6 +413,17 @@ class Enforcer:
         """
         signer = self.tool_signer.get(rule.tool, rule.tool)
         symbolic = canon(rule.call_node)
+        if (rule.loops or rule.helper_frames) and token is not None:
+            try:
+                path = token[1]
+                expected_depth = len(rule.loops) + len(rule.helper_frames)
+                if len(path) != expected_depth:
+                    raise NotConcretizable("loop token depth mismatch")
+                symbolic = occurrence_symbolic(rule.key, path)
+            except (KeyError, NotConcretizable, TamperedEnvelopeError) as exc:
+                raise NotConcretizable(
+                    f"cannot bind quantified envelope key for {rule.key}: {exc}"
+                ) from exc
         env = make_envelope(result, symbolic, signer, self._keyring())
         self.store.put(env)
         with self._attempt_lock:
