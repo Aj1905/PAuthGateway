@@ -1,6 +1,6 @@
 """Tier-2 disjunction: the "default then conditionally set" merge
-(``x = <const>``; ``if C: x = <expr>``) is accepted and sliced soundly -- both
-branches authorized, an off-branch (injected) value denied (FN=0 preserved)."""
+(``x = <const>``; ``if C: x = <expr>``) is accepted and sliced soundly -- only
+the active branch is authorized and off-branch values are denied."""
 
 from __future__ import annotations
 
@@ -39,11 +39,11 @@ def test_conditional_default_merge_is_accepted():
     assert sum(1 for r in prepared.rules if r.tool == "send_money") == 2
 
 
-def test_both_branches_authorized_offbranch_denied():
+def test_only_active_conditional_branch_is_authorized():
     enf = _armed()
     ok = lambda v: check_injection(enf, "send_money", [v, 10.0, "x", "2024-01-01"]).permit
-    assert ok("GB33BUKB20201555555555")   # the constant default branch
-    assert ok(ATTACKER_IBAN)              # the conditional branch value (m.iban)
+    assert not ok("GB33BUKB20201555555555")  # default branch is off-path
+    assert ok(ATTACKER_IBAN)                  # conditional branch value (m.iban)
     assert not ok("GB99WATTACKER99999999")  # off-branch injected value -> FN=0
 
 

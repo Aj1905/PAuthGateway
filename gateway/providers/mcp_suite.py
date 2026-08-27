@@ -47,6 +47,23 @@ class MCPError(RuntimeError):
     """Raised when the MCP server returns an error or a malformed payload."""
 
 
+def _rpc_result(payload: Any, request_id: int, method: str) -> Any:
+    """Validate the JSON-RPC response envelope before trusting its result."""
+    if not isinstance(payload, dict):
+        raise MCPError(f"{method} returned a non-object JSON-RPC response")
+    if payload.get("jsonrpc") != "2.0" or payload.get("id") != request_id:
+        raise MCPError(f"{method} returned a mismatched JSON-RPC version/id")
+    has_result = "result" in payload
+    has_error = "error" in payload
+    if has_result == has_error:
+        raise MCPError(
+            f"{method} response must contain exactly one of result or error"
+        )
+    if has_error:
+        raise MCPError(f"{method} error: {payload['error']}")
+    return payload["result"]
+
+
 # --------------------------------------------------------------------------
 # Transport protocol
 # --------------------------------------------------------------------------
@@ -73,7 +90,8 @@ class HTTPTransport:
         self._ids = itertools.count(1)
 
     def rpc(self, method: str, params: dict[str, Any] | None = None) -> Any:
-        body = {"jsonrpc": "2.0", "id": next(self._ids), "method": method}
+        request_id = next(self._ids)
+        body = {"jsonrpc": "2.0", "id": request_id, "method": method}
         if params is not None:
             body["params"] = params
         data = json.dumps(body).encode("utf-8")
@@ -91,9 +109,7 @@ class HTTPTransport:
             payload = json.loads(raw)
         except json.JSONDecodeError as exc:
             raise MCPError(f"non-JSON response from {self._url}: {exc}: {raw[:200]!r}") from exc
-        if "error" in payload:
-            raise MCPError(f"{method} error: {payload['error']}")
-        return payload.get("result")
+        return _rpc_result(payload, request_id, method)
 
     def close(self) -> None:
         return None
@@ -132,6 +148,8 @@ class StdioTransport:
         self._restarts = 0
         self._ids = itertools.count(1)
         self._lock = threading.RLock()
+        self._stderr_lock = threading.Lock()
+        self._stderr_tail = bytearray()
         self._proc: subprocess.Popen | None = None
         self._spawn()
 
@@ -144,6 +162,26 @@ class StdioTransport:
             bufsize=0,
             text=False,
         )
+        if self._proc.stderr is not None:
+            threading.Thread(
+                target=self._drain_stderr,
+                args=(self._proc.stderr,),
+                daemon=True,
+            ).start()
+
+    def _drain_stderr(self, stream) -> None:
+        """Continuously drain stderr so a noisy MCP cannot block on its pipe."""
+        try:
+            while True:
+                chunk = stream.read(2048)
+                if not chunk:
+                    break
+                with self._stderr_lock:
+                    self._stderr_tail.extend(chunk)
+                    if len(self._stderr_tail) > 8192:
+                        del self._stderr_tail[:-8192]
+        except (OSError, ValueError):
+            return
 
     def is_alive(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
@@ -171,7 +209,8 @@ class StdioTransport:
                 raise MCPError(f"stdio MCP reinit after restart failed: {exc}") from exc
 
     def rpc(self, method: str, params: dict[str, Any] | None = None) -> Any:
-        body = {"jsonrpc": "2.0", "id": next(self._ids), "method": method}
+        request_id = next(self._ids)
+        body = {"jsonrpc": "2.0", "id": request_id, "method": method}
         if params is not None:
             body["params"] = params
         line = (json.dumps(body) + "\n").encode("utf-8")
@@ -188,12 +227,34 @@ class StdioTransport:
                     self._proc.stdin.write(line)
                     self._proc.stdin.flush()
                     response_line = self._proc.stdout.readline()
-                except (BrokenPipeError, OSError):
+                except (BrokenPipeError, OSError) as exc:
+                    if method == "tools/call":
+                        # A partial write may already have dispatched the
+                        # external effect. Retrying would duplicate it.
+                        try:
+                            self._restart()
+                        except Exception:  # noqa: BLE001 -- preserve uncertainty
+                            pass
+                        raise MCPError(
+                            "indeterminate tools/call outcome: stdio transport "
+                            "failed after dispatch may have begun; not retried"
+                        ) from exc
                     self._restart()
                     continue
                 if response_line:
                     break
-                # empty read -> subprocess closed mid-request; respawn and retry.
+                # An empty read means the server closed after receiving the
+                # request. Read-only discovery may be retried; an effecting
+                # tool call must surface an indeterminate outcome.
+                if method == "tools/call":
+                    try:
+                        self._restart()
+                    except Exception:  # noqa: BLE001 -- preserve uncertainty
+                        pass
+                    raise MCPError(
+                        "indeterminate tools/call outcome: subprocess closed "
+                        "before responding; not retried"
+                    )
                 self._restart()
             else:
                 stderr = self._read_stderr()
@@ -205,17 +266,11 @@ class StdioTransport:
             payload = json.loads(response_line.decode("utf-8"))
         except json.JSONDecodeError as exc:
             raise MCPError(f"non-JSON line from stdio MCP: {exc}: {response_line!r}") from exc
-        if "error" in payload:
-            raise MCPError(f"{method} error: {payload['error']}")
-        return payload.get("result")
+        return _rpc_result(payload, request_id, method)
 
     def _read_stderr(self) -> str:
-        if self._proc is not None and self._proc.stderr is not None:
-            try:
-                return (self._proc.stderr.read(2048) or b"").decode("utf-8", "replace")
-            except Exception:  # noqa: BLE001
-                pass
-        return ""
+        with self._stderr_lock:
+            return bytes(self._stderr_tail).decode("utf-8", "replace")
 
     def _close_proc(self) -> None:
         proc = self._proc
@@ -276,25 +331,59 @@ def _type_from_schema(schema: dict[str, Any]) -> str:
     return "any"
 
 
-def _tool_doc_from_mcp(tool: dict[str, Any]) -> tuple[ToolDoc, list[str]]:
-    input_schema = tool.get("inputSchema") or {}
-    properties = input_schema.get("properties") or {}
+def _description(value: Any) -> str:
+    """Return schema prose only when the remote value is actually text."""
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _tool_doc_from_mcp(
+    tool: dict[str, Any]
+) -> tuple[ToolDoc, list[str], frozenset[str]]:
+    if (
+        not isinstance(tool, dict)
+        or not isinstance(tool.get("name"), str)
+        or not tool["name"].strip()
+    ):
+        raise MCPError(f"tools/list contains an invalid tool entry: {tool!r}")
+    input_schema = tool.get("inputSchema", {})
+    if not isinstance(input_schema, dict):
+        raise MCPError(f"MCP tool {tool['name']!r} has a non-object inputSchema")
+    properties = input_schema.get("properties", {})
+    if not isinstance(properties, dict):
+        raise MCPError(f"MCP tool {tool['name']!r} has non-object properties")
+    if any(
+        not isinstance(property_name, str)
+        or not isinstance(property_schema, dict)
+        for property_name, property_schema in properties.items()
+    ):
+        raise MCPError(f"MCP tool {tool['name']!r} has invalid property schemas")
     declared_order = list(properties.keys())
+    required_raw = input_schema.get("required", [])
+    if (
+        not isinstance(required_raw, list)
+        or any(not isinstance(item, str) for item in required_raw)
+        or not set(required_raw).issubset(properties)
+    ):
+        raise MCPError(f"MCP tool {tool['name']!r} has an invalid required list")
+    required = frozenset(required_raw)
     parameters = [
         {
             "name": name,
             "type": _type_from_schema(properties.get(name, {})),
-            "desc": (properties.get(name, {}).get("description") or "").strip(),
+            "desc": (
+                _description(properties.get(name, {}).get("description"))
+                + ("" if name in required else " (optional; pass None to omit)")
+            ).strip(),
         }
         for name in declared_order
     ]
     doc = ToolDoc(
         name=tool["name"],
-        description=(tool.get("description") or "").strip(),
+        description=_description(tool.get("description")),
         parameters=parameters,
         returns="object",
     )
-    return doc, declared_order
+    return doc, declared_order, required
 
 
 # --------------------------------------------------------------------------
@@ -314,13 +403,20 @@ def build_mcp_suite_from_transport(
     signer = signer or name
 
     result = transport.rpc("tools/list")
-    if not result or "tools" not in result:
+    if (
+        not isinstance(result, dict)
+        or not isinstance(result.get("tools"), list)
+        or not result["tools"]
+    ):
         raise MCPError(f"tools/list returned no tools: {result!r}")
 
     tool_specs: dict[str, ToolSpec] = {}
     param_order: dict[str, list[str]] = {}
+    required_params: dict[str, frozenset[str]] = {}
     for tool_entry in result["tools"]:
-        doc, order = _tool_doc_from_mcp(tool_entry)
+        doc, order, required = _tool_doc_from_mcp(tool_entry)
+        if doc.name in tool_specs:
+            raise MCPError(f"tools/list returned duplicate tool name {doc.name!r}")
         tool_specs[tool_entry["name"]] = ToolSpec(
             name=tool_entry["name"],
             params=order,
@@ -328,6 +424,7 @@ def build_mcp_suite_from_transport(
             signer=signer,
         )
         param_order[tool_entry["name"]] = order
+        required_params[tool_entry["name"]] = required
 
     # The env carries the transport so the tool_executor can issue calls.
     def make_env() -> _Transport:
@@ -337,7 +434,18 @@ def build_mcp_suite_from_transport(
         def run(tool: str, kwargs: dict[str, Any]) -> Any:
             if tool not in param_order:
                 raise ValueError(f"unknown MCP tool {tool!r} on suite {name!r}")
-            result = env.rpc("tools/call", {"name": tool, "arguments": dict(kwargs)})
+            arguments = {
+                key: value
+                for key, value in kwargs.items()
+                if value is not None or key in required_params[tool]
+            }
+            result = env.rpc(
+                "tools/call", {"name": tool, "arguments": arguments}
+            )
+            if isinstance(result, dict) and result.get("isError") is True:
+                raise MCPError(
+                    f"MCP tool {tool!r} reported an application error"
+                )
             if isinstance(result, dict) and "content" in result and isinstance(result["content"], list):
                 texts = [
                     c.get("text") for c in result["content"]

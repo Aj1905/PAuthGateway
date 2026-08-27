@@ -73,8 +73,19 @@ class TokenAuth:
     """
 
     def __init__(self, principal_tokens: dict[str, str]) -> None:
-        # principal -> token. Reject empty tokens so a blank never authenticates.
-        self._tokens = {str(p): str(t) for p, t in principal_tokens.items() if t}
+        # principal -> token. Configuration is an authentication boundary;
+        # coercing null/objects to strings creates predictable credentials.
+        if any(
+            not isinstance(principal, str)
+            or not principal
+            or not isinstance(token, str)
+            or not token
+            for principal, token in principal_tokens.items()
+        ):
+            raise ValueError("auth principals and tokens must be non-empty strings")
+        if len(set(principal_tokens.values())) != len(principal_tokens):
+            raise ValueError("auth tokens must be unique across principals")
+        self._tokens = dict(principal_tokens)
 
     def principal_for(self, auth_header: str | None) -> str | None:
         prefix = "Bearer "
@@ -94,7 +105,7 @@ class TokenAuth:
             data = json.loads(Path(tokens_file).read_text())
             if not isinstance(data, dict):
                 raise ValueError("auth-tokens file must be a JSON object {principal: token}")
-            principal_tokens.update({str(p): str(t) for p, t in data.items()})
+            principal_tokens.update(data)
         if single_token:
             principal_tokens.setdefault("operator", single_token)
         return cls(principal_tokens) if principal_tokens else None
@@ -109,7 +120,11 @@ from pauth.suites.shopping import build_suite as build_shopping_suite
 from gateway.ingress.agent_channel import AgentChannel
 from gateway.runtime.audit import AuditLog
 from gateway.serving.session_store import SessionStore
-from gateway.serving.config import load_config, suite_loader_for
+from gateway.serving.config import (
+    load_config,
+    prompt_suite_loader_for,
+    suite_loader_for,
+)
 
 
 def default_suite_loader(name: str) -> SuiteSpec:
@@ -134,6 +149,8 @@ def restore_channel(
     store: "SessionStore",
     session_id: str,
     audit_log: "AuditLog | None" = None,
+    operand_policy: "PolicySpec | None" = None,
+    prompt_suite_loader: "Callable[[str, str], SuiteSpec] | None" = None,
 ) -> AgentChannel | None:
     """Rebuild a persisted session without resetting its execution ledger.
 
@@ -157,6 +174,8 @@ def restore_channel(
         execution_state_sink=lambda state: store.update_execution_state(
             session_id, state
         ),
+        operand_policy=operand_policy,
+        prompt_suite_loader=prompt_suite_loader,
     )
     message = dict(entry.get("config", {}) or {})
     message.update({"kind": "prompt", "prompt": entry.get("prompt", "")})
@@ -182,6 +201,8 @@ class _Handler(BaseHTTPRequestHandler):
     suite_loader: Callable[[str], SuiteSpec] = staticmethod(default_suite_loader)
     session_store: "SessionStore | None" = None  # call interception: opt-in persistence (None = off)
     audit_log: "AuditLog | None" = None  # opt-in shared persistent audit trail
+    operand_policy: "PolicySpec | None" = None
+    prompt_suite_loader: "Callable[[str, str], SuiteSpec] | None" = None
     auth: "TokenAuth | None" = None  # None = open mode (loopback only; warned)
     # Optional LLM proxy: when set, /v1/* is forwarded to this upstream so the
     # agent's LLM traffic and its tool calls share the gateway as their ONLY
@@ -239,6 +260,8 @@ class _Handler(BaseHTTPRequestHandler):
             self.suite_loader,
             audit_log=self.audit_log,
             execution_state_sink=sink,
+            operand_policy=self.operand_policy,
+            prompt_suite_loader=self.prompt_suite_loader,
         )
 
     @classmethod
@@ -302,6 +325,9 @@ class _Handler(BaseHTTPRequestHandler):
         except ValueError:
             self._send_json(400, {"error": "invalid Content-Length"})
             return
+        if length < 0:
+            self._send_json(400, {"error": "invalid Content-Length"})
+            return
         if length > self.max_body_bytes:
             self._send_json(413, {"error": "request body too large"})
             return
@@ -362,6 +388,8 @@ class _Handler(BaseHTTPRequestHandler):
                         self.session_store,
                         session_id,
                         audit_log=self.audit_log,
+                        operand_policy=self.operand_policy,
+                        prompt_suite_loader=self.prompt_suite_loader,
                     )
                 except SessionRestoreError as exc:
                     return 409, {
@@ -457,6 +485,9 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "0") or "0")
         except ValueError:
+            self._send_json(400, {"error": "invalid Content-Length"})
+            return
+        if length < 0:
             self._send_json(400, {"error": "invalid Content-Length"})
             return
         if length > self.max_proxy_bytes:
@@ -564,10 +595,16 @@ def main() -> int:
         _Handler.audit_log = AuditLog(args.audit_log)
         print(f"audit log: {args.audit_log} (JSONL, operator-facing)", file=sys.stderr)
 
+    _Handler.operand_policy = None
+    _Handler.prompt_suite_loader = None
     if args.config:
         loaded = load_config(args.config)
         # staticmethod so instance access does not bind the loader (see class def).
         _Handler.suite_loader = staticmethod(suite_loader_for(loaded))
+        _Handler.operand_policy = loaded.policy
+        _Handler.prompt_suite_loader = staticmethod(
+            prompt_suite_loader_for(loaded)
+        )
         print(
             f"loaded config :: merged={loaded.merged_name} "
             f"sources={sorted(loaded.sources)}",

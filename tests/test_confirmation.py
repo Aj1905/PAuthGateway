@@ -159,6 +159,27 @@ def test_static_taint_empty_without_labels():
     assert static_taint(DERIVED_CODE, _DOCS, SourceTrust()) == set()
 
 
+def test_static_taint_covers_else_branch_and_bounded_loop_provenance():
+    branch = (
+        "def run():\n"
+        "    msg = read_message()\n"
+        "    if msg.amount > 0:\n"
+        '        recipient = "GB33BUKB20201555555555"\n'
+        "    else:\n"
+        "        recipient = msg.iban\n"
+        '    send_money(recipient, 10.0, "x", "2024-01-01")\n'
+    )
+    assert ("send_money", 0) in static_taint(branch, _DOCS, _TRUST)
+
+    loop = (
+        "def run():\n"
+        "    messages = read_message()\n"
+        "    for msg in messages:\n"
+        '        send_money(msg.iban, 10.0, "x", "2024-01-01")\n'
+    )
+    assert ("send_money", 0) in static_taint(loop, _DOCS, _TRUST)
+
+
 # ---------------------------------------------------------------------------
 # The gate
 # ---------------------------------------------------------------------------
@@ -172,6 +193,65 @@ def test_untrusted_derived_recipient_is_held_for_confirmation():
     # The human side channel sees the ACTUAL (poisoned) value.
     assert pend[0].value == ATTACKER_IBAN
     assert pend[0].tool == "send_money"
+
+
+def test_confirmation_is_scoped_to_parameter_position():
+    trust = SourceTrust(
+        untrusted_tools=frozenset({"read_message"}),
+        confirm_untrusted_decisions=True,
+    )
+    gw = Gateway(_loader, source_trust=trust)
+    prompt = "Read my message and send its text as both destination and body."
+    code = (
+        "def run():\n"
+        "    msg = read_message()\n"
+        "    send_note(msg.text, msg.text)\n"
+    )
+    plan = CompositePlan(suite_name="msg", stages=(StageTemplate(code=code),))
+    assert gw.submit_user_prompt_composite(prompt, plan).accepted
+    assert gw.handle_tool_call("read_message", []).permit
+    held = gw.handle_tool_call("send_note", ["please pay me", "please pay me"])
+    assert not held.permit
+    first = gw.pending_confirmations()[0]
+    assert first.param_index == 0
+    assert gw.confirm(first.confirmation_id, approved=True)
+    held_again = gw.handle_tool_call(
+        "send_note", ["please pay me", "please pay me"]
+    )
+    assert not held_again.permit
+    assert gw.pending_confirmations()[0].param_index == 1
+
+
+def test_untrusted_composite_guard_cannot_launder_a_broad_decision():
+    trust = SourceTrust(
+        untrusted_tools=frozenset({"read_message"}),
+        confirm_untrusted_decisions=True,
+    )
+    plan = CompositePlan(
+        suite_name="msg",
+        stages=(
+            StageTemplate(code="def run():\n    msg = read_message()\n"),
+            StageTemplate(
+                code=(
+                    "def run():\n"
+                    '    send_note("GB33BUKB20201555555555", "approved text")\n'
+                ),
+                guard="msg.amount > 0",
+            ),
+        ),
+    )
+    gw = Gateway(_loader, source_trust=trust)
+    prompt = (
+        "Read my message. If its amount is positive, send approved text to "
+        "GB33BUKB20201555555555."
+    )
+    assert gw.submit_user_prompt_composite(prompt, plan).accepted
+    assert gw.handle_tool_call("read_message", []).permit
+    held = gw.handle_tool_call(
+        "send_note", ["GB33BUKB20201555555555", "approved text"]
+    )
+    assert not held.permit
+    assert gw.pending_confirmations()
 
 
 def test_agent_reason_on_pending_is_value_free():

@@ -267,14 +267,21 @@ def _operation_name(method: str, path: str, operation: dict[str, Any]) -> str:
     return _safe_tool_name(f"{method}_{path_part}")
 
 
+def _description(value: Any) -> str:
+    """Return specification prose only when the remote value is text."""
+    return value.strip() if isinstance(value, str) else ""
+
+
 def _parameter_entries(
     doc: dict[str, Any],
     path_item: dict[str, Any],
     operation: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    # OpenAPI defines operation-level parameters as overrides of path-level
+    # parameters with the same (name, in) identity.
     raw = list(path_item.get("parameters") or []) + list(operation.get("parameters") or [])
     out: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
+    positions: dict[tuple[str, str], int] = {}
     for entry in raw:
         param = _resolve_ref(doc, entry)
         if not isinstance(param, dict):
@@ -284,10 +291,11 @@ def _parameter_entries(
         if not isinstance(name, str) or location not in {"path", "query", "header"}:
             continue
         key = (location, name)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(param)
+        if key in positions:
+            out[positions[key]] = param
+        else:
+            positions[key] = len(out)
+            out.append(param)
     return out
 
 
@@ -330,7 +338,14 @@ def _tool_from_operation(
             {
                 "name": name,
                 "type": _schema_type(doc, schema),
-                "desc": (param.get("description") or "").strip(),
+                "desc": (
+                    _description(param.get("description"))
+                    + (
+                        ""
+                        if bool(param.get("required") or param["in"] == "path")
+                        else " (optional; pass None to omit)"
+                    )
+                ).strip(),
             }
         )
         bindings.append(
@@ -358,13 +373,23 @@ def _tool_from_operation(
                 name = _safe_tool_name(f"body_{prop_name}")
             used_names.add(name)
             prop_schema = _resolve_ref(doc, prop_schema)
+            property_required = prop_name in required
             params.append(
                 {
                     "name": name,
                     "type": _schema_type(doc, prop_schema),
-                    "desc": (prop_schema.get("description") or "").strip()
-                    if isinstance(prop_schema, dict)
-                    else "",
+                    "desc": (
+                        (
+                            _description(prop_schema.get("description"))
+                            if isinstance(prop_schema, dict)
+                            else ""
+                        )
+                        + (
+                            ""
+                            if property_required
+                            else " (optional; pass None to omit)"
+                        )
+                    ).strip(),
                 }
             )
             bindings.append(
@@ -372,7 +397,10 @@ def _tool_from_operation(
                     name=name,
                     location="body",
                     wire_name=prop_name,
-                    required=body_required or prop_name in required,
+                    # requestBody.required requires the body container, not
+                    # every property inside it. Property requiredness comes
+                    # only from schema.required.
+                    required=property_required,
                 )
             )
     elif body_schema:
@@ -390,9 +418,9 @@ def _tool_from_operation(
             _ParamBinding(name=name, location="raw_body", wire_name=name, required=body_required)
         )
 
-    summary = operation.get("summary") or ""
-    description = operation.get("description") or ""
-    doc_string = " ".join(str(v).strip() for v in (summary, description) if str(v).strip())
+    summary = _description(operation.get("summary"))
+    description = _description(operation.get("description"))
+    doc_string = " ".join(v for v in (summary, description) if v)
     if not doc_string:
         doc_string = f"{method.upper()} {path}"
     tool_doc = ToolDoc(

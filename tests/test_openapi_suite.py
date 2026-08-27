@@ -15,6 +15,8 @@ import pytest
 from gateway.providers.api_spec_monitor import check_config
 from gateway.providers.openapi_suite import (
     OpenAPIError,
+    _parameter_entries,
+    _tool_from_operation,
     build_openapi_suite,
     load_openapi_document,
 )
@@ -98,6 +100,61 @@ def test_openapi_suite_reflects_tools() -> None:
         ]
         doc = suite.tools["createcharge"].doc
         assert doc.returns == "object {status: string, amount: number}"
+
+
+def test_operation_parameter_overrides_path_parameter() -> None:
+    path_item = {
+        "parameters": [
+            {"name": "limit", "in": "query", "description": "path default"}
+        ]
+    }
+    operation = {
+        "parameters": [
+            {"name": "limit", "in": "query", "description": "operation override"}
+        ]
+    }
+    entries = _parameter_entries({}, path_item, operation)
+    assert len(entries) == 1
+    assert entries[0]["description"] == "operation override"
+
+
+def test_required_request_body_does_not_make_every_property_required() -> None:
+    path = "/charges"
+    operation = OPENAPI_DOC["paths"]["/customers/{customer_id}/charges"]["post"]
+    _spec, reflected = _tool_from_operation(
+        OPENAPI_DOC,
+        "post",
+        path,
+        {},
+        operation,
+        "billing",
+    )
+    required_by_name = {
+        binding.name: binding.required for binding in reflected.bindings
+    }
+    assert required_by_name["amount"] is True
+    assert required_by_name["memo"] is False
+
+
+def test_non_string_openapi_descriptions_are_ignored() -> None:
+    operation = {
+        "summary": {"not": "text"},
+        "description": ["not", "text"],
+        "parameters": [
+            {
+                "name": "limit",
+                "in": "query",
+                "description": {"not": "text"},
+                "schema": {"type": "integer"},
+            }
+        ],
+        "responses": {},
+    }
+    spec, _reflected = _tool_from_operation(
+        {"paths": {}}, "get", "/records", {}, operation, "api"
+    )
+    assert spec.doc.description == "GET /records"
+    assert spec.doc.parameters[0]["desc"] == "(optional; pass None to omit)"
 
 
 def test_openapi_spec_url_rejects_non_http_scheme() -> None:

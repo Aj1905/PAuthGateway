@@ -10,8 +10,10 @@ these events back into the agent's model context.
 from __future__ import annotations
 
 import dataclasses
+import copy
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +44,7 @@ class AuditLog:
 
     def __init__(self, path: str | Path | None = None) -> None:
         self._events: list[AuditEvent] = []
+        self._lock = threading.RLock()
         self._path = Path(path) if path else None
         if self._path is not None:
             self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -54,13 +57,18 @@ class AuditLog:
         self, kind: str, decision: str, *, tool: str | None = None,
         reason_code: str = "", reason: str = "", args: list[Any] | None = None,
     ) -> AuditEvent:
-        event = AuditEvent(
-            seq=len(self._events), kind=kind, decision=decision,
-            tool=tool, reason_code=reason_code, reason=reason,
-            args=list(args) if args is not None else None,
-        )
-        self._events.append(event)
-        self._persist(event)
+        try:
+            args_snapshot = copy.deepcopy(args) if args is not None else None
+        except Exception:  # noqa: BLE001 -- retain a stable shallow snapshot
+            args_snapshot = list(args) if args is not None else None
+        with self._lock:
+            event = AuditEvent(
+                seq=len(self._events), kind=kind, decision=decision,
+                tool=tool, reason_code=reason_code, reason=reason,
+                args=args_snapshot,
+            )
+            self._events.append(event)
+            self._persist(event)
         return event
 
     def _persist(self, event: AuditEvent) -> None:
@@ -77,7 +85,9 @@ class AuditLog:
             os.fsync(f.fileno())
 
     def events(self) -> list[AuditEvent]:
-        return list(self._events)
+        with self._lock:
+            return copy.deepcopy(self._events)
 
     def __len__(self) -> int:
-        return len(self._events)
+        with self._lock:
+            return len(self._events)

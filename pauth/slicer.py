@@ -215,12 +215,35 @@ def _build_slices(
         if name in lets or name not in assigns:
             partials.append((lets, gnodes, frontier))
             continue
-        for value, value_guard, order in assigns[name]:
+        definitions = assigns[name]
+        for value, value_guard, order in definitions:
             nl = dict(lets)
             nl[name] = (value, order)
             ng = dict(gnodes)
             nf = list(frontier) + list(names_in(value))
-            for cond in value_guard:
+            effective_guard = list(value_guard)
+            # ``x = <constant>; if C: x = value`` means the constant is used
+            # only on ``not C``.  Treating the default as unguarded authorizes
+            # both values when C is true.  The validator admits exactly this
+            # two-definition shape, so synthesize the missing else guard here.
+            if (
+                len(definitions) == 2
+                and not value_guard
+                and isinstance(value, ast.Constant)
+            ):
+                conditional = next(
+                    (guards for _v, guards, _o in definitions if guards),
+                    None,
+                )
+                if conditional:
+                    condition = conditional[0]
+                    effective_guard.append(
+                        ast.copy_location(
+                            ast.UnaryOp(op=ast.Not(), operand=condition),
+                            condition,
+                        )
+                    )
+            for cond in effective_guard:
                 k = canon(cond)
                 if k not in ng:
                     ng[k] = (cond, getattr(cond, "lineno", 0))

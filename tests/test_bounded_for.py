@@ -142,7 +142,7 @@ def test_index_and_range_loops_still_rejected():
 def test_loop_collection_must_be_bound_before_the_loop():
     suite = build_suite()
     code = (
-        "def run(products):\n"
+        "def run():\n"
         "    for product in products:\n"
         "        add_to_cart(product.name, 1)\n"
     )

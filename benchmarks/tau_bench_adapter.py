@@ -57,8 +57,21 @@ _INJECT_WRITES = ("cancel_pending_order", "modify_user_address", "return_deliver
 
 def _env():
     from tau_bench.envs import get_env
-    return get_env("retail", user_strategy="llm", user_model="gpt-4o",
-                   user_provider="openai", task_split="test")
+    # Suite construction only needs schemas, tasks and data.  The LLM user
+    # strategy performs an API call in its constructor, making the supposedly
+    # offline reference adapter network-dependent before any evaluation starts.
+    # The human strategy has no constructor side effect; this adapter never
+    # invokes its interactive reset/step methods.
+    return get_env(
+        "retail",
+        user_strategy="human",
+        user_model="",
+        user_provider=None,
+        task_split="test",
+        # tau-bench uses randint(0, len(tasks)) when omitted, whose inclusive
+        # upper bound intermittently selects one past the final task.
+        task_index=0,
+    )
 
 
 def _wrap(v: Any) -> Any:

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import ast
 
-from .symbolic import HELPERS, call_name
+from .symbolic import HELPERS, call_name, names_in
 
 
 class DSLRejectionError(Exception):
@@ -122,7 +122,10 @@ DSL_PROFILE_EXTENDED = "g2"
 
 
 def parse_and_validate(
-    code: str, *, profile: str = DSL_PROFILE_EXTENDED
+    code: str,
+    *,
+    profile: str = DSL_PROFILE_EXTENDED,
+    allow_run_parameters: bool = False,
 ) -> ast.FunctionDef:
     """Parse ``code`` and check its *syntax* against the DSL.
 
@@ -149,6 +152,7 @@ def parse_and_validate(
     func = body[0]
     if func.name != "run":
         raise DSLRejectionError(f"function must be named 'run', got '{func.name}'")
+    _check_run_signature(func, allow_run_parameters=allow_run_parameters)
 
     for node in ast.walk(func):
         for forbidden, reason in _FORBIDDEN.items():
@@ -176,6 +180,38 @@ def parse_and_validate(
     if profile == DSL_PROFILE_PAPER:
         _check_paper_profile(func)
     return func
+
+
+def _check_run_signature(
+    func: ast.FunctionDef, *, allow_run_parameters: bool
+) -> None:
+    """Keep implicit function-definition behavior outside the DSL.
+
+    Decorators and defaults execute while the function is defined, before the
+    plan's explicit statements.  The production run code takes no parameters;
+    the sole exception is a composite fan-out template, which is validated with
+    ``allow_run_parameters=True`` before it is mechanically instantiated into a
+    zero-argument function.
+    """
+    args = func.args
+    if func.decorator_list:
+        raise DSLRejectionError("run decorators are forbidden")
+    if func.returns is not None:
+        raise DSLRejectionError("run return annotations are forbidden")
+    if (
+        args.posonlyargs
+        or args.vararg is not None
+        or args.kwonlyargs
+        or args.kwarg is not None
+        or args.defaults
+        or args.kw_defaults
+        or any(arg.annotation is not None for arg in args.args)
+    ):
+        raise DSLRejectionError(
+            "run must use a plain positional signature without annotations/defaults"
+        )
+    if args.args and not allow_run_parameters:
+        raise DSLRejectionError("run must not declare parameters")
 
 
 def _check_paper_profile(func: ast.FunctionDef) -> None:
@@ -275,6 +311,14 @@ def _check_bounded_for(func: ast.FunctionDef) -> None:
             raise DSLRejectionError("for-loop target must be a single variable (rule 2a)")
         if stmt.target.id in assigned:
             raise DSLRejectionError(f"for-loop variable '{stmt.target.id}' shadows an assignment")
+        if stmt.target.id in HELPERS:
+            raise DSLRejectionError(
+                f"for-loop variable '{stmt.target.id}' shadows a helper"
+            )
+        if stmt.target.id in outer_loop_vars:
+            raise DSLRejectionError(
+                f"nested for-loop variable '{stmt.target.id}' shadows an outer loop variable"
+            )
         root = _iter_root(stmt.iter)
         if root is None:
             raise DSLRejectionError(
@@ -540,6 +584,8 @@ def validate_semantics(
             "cannot be reassigned"
         )
 
+    _check_def_before_use(func, tool_names)
+
     if profile not in (DSL_PROFILE_PAPER, DSL_PROFILE_EXTENDED):
         raise ValueError(f"unknown DSL profile {profile!r}")
 
@@ -621,3 +667,54 @@ def validate_semantics(
                 "results must be assigned first. Helper-lambda tool calls are "
                 "rejected until their ordered occurrence provenance is implemented"
             )
+
+
+def _check_def_before_use(func: ast.FunctionDef, tool_names: set[str]) -> None:
+    """Reject plans whose Python execution can read an unbound/future name.
+
+    The slicer is a dependency analysis, not a license to reorder the program.
+    Without this check, a call could depend on an assignment that appears later
+    in the source and become authorizable after an agent executes that later
+    tool first, even though the actual run code would have crashed.
+    """
+    globals_ = tool_names | HELPERS
+
+    def check_expr(node: ast.AST, defined: set[str]) -> None:
+        missing = sorted(names_in(node) - defined - globals_)
+        if missing:
+            raise DSLRejectionError(
+                f"name(s) {missing} used before a guaranteed definition"
+            )
+
+    def walk(stmts: list[ast.stmt], incoming: set[str]) -> set[str]:
+        defined = set(incoming)
+        for stmt in stmts:
+            if isinstance(stmt, ast.Assign):
+                check_expr(stmt.value, defined)
+                if not stmt.targets or any(not isinstance(t, ast.Name) for t in stmt.targets):
+                    raise DSLRejectionError("assignment targets must be bare variable names")
+                defined.update(t.id for t in stmt.targets if isinstance(t, ast.Name))
+            elif isinstance(stmt, ast.Expr):
+                check_expr(stmt.value, defined)
+            elif isinstance(stmt, ast.If):
+                check_expr(stmt.test, defined)
+                body_defs = walk(stmt.body, defined)
+                else_defs = walk(stmt.orelse, defined) if stmt.orelse else set(defined)
+                # Only names defined on every branch are guaranteed after the if.
+                defined = body_defs & else_defs
+            elif isinstance(stmt, ast.For):
+                check_expr(stmt.iter, defined)
+                if not isinstance(stmt.target, ast.Name):
+                    raise DSLRejectionError("for-loop target must be a bare variable name")
+                if stmt.target.id in globals_:
+                    raise DSLRejectionError(
+                        f"for-loop variable '{stmt.target.id}' shadows a tool/helper"
+                    )
+                walk(stmt.body, defined | {stmt.target.id})
+                # A loop can be empty; its target is not guaranteed afterwards.
+            elif isinstance(stmt, ast.Pass):
+                continue
+        return defined
+
+    initial = {arg.arg for arg in func.args.args}
+    walk(func.body, initial)

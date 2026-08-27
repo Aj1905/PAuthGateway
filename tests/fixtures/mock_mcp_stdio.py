@@ -32,6 +32,10 @@ def _handle(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         if method == "tools/list":
             result = _tools_list()
+        elif method == "noisy":
+            sys.stderr.write("x" * 200_000)
+            sys.stderr.flush()
+            result = {"ok": True}
         elif method == "tools/call":
             name = params.get("name")
             arguments = params.get("arguments") or {}

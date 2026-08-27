@@ -128,8 +128,12 @@ def load_config(path: str | Path) -> LoadedConfig:
     if not path.exists():
         raise FileNotFoundError(f"gateway config not found: {path}")
     raw = json.loads(path.read_text())
+    if not isinstance(raw, dict):
+        raise ValueError("gateway config must be a JSON object")
 
     merged_name = raw.get("merged_suite_name", "default")
+    if not isinstance(merged_name, str) or not merged_name:
+        raise ValueError("merged_suite_name must be a non-empty string")
     suite_entries = raw.get("suites", [])
     if not isinstance(suite_entries, list) or not suite_entries:
         raise ValueError("config must contain a non-empty 'suites' list")
@@ -141,7 +145,7 @@ def load_config(path: str | Path) -> LoadedConfig:
             raise ValueError(f"each suite entry must be an object, got {entry!r}")
         name = entry.get("name")
         kind = entry.get("kind")
-        if not name or not kind:
+        if not isinstance(name, str) or not name or not isinstance(kind, str) or not kind:
             raise ValueError(f"suite entry missing 'name' or 'kind': {entry!r}")
         builder = _BUILDERS.get(kind)
         if builder is None:
@@ -153,8 +157,15 @@ def load_config(path: str | Path) -> LoadedConfig:
         sources[name] = builder(entry)
 
         # Collect operand-policy declarations: per-suite ``{tool: [param,...]}``
-        for tool_name, free_params in (entry.get("operand_policy") or {}).items():
-            if not isinstance(free_params, list):
+        operand_policy = entry.get("operand_policy") or {}
+        if not isinstance(operand_policy, dict):
+            raise ValueError(f"operand_policy for {name!r} must be an object")
+        for tool_name, free_params in operand_policy.items():
+            if (
+                not isinstance(tool_name, str)
+                or not isinstance(free_params, list)
+                or any(not isinstance(param, str) for param in free_params)
+            ):
                 raise ValueError(
                     f"operand_policy for {name!r}/{tool_name!r} must be a list of param names"
                 )
@@ -170,9 +181,23 @@ def load_config(path: str | Path) -> LoadedConfig:
 
     # Suite filter knobs are top-level (not per source).
     filter_cfg = raw.get("suite_filter") or {}
+    if not isinstance(filter_cfg, dict):
+        raise ValueError("suite_filter must be an object")
+    top_k = filter_cfg.get("top_k")
+    min_score = filter_cfg.get("min_score", 1)
+    if top_k is not None and (
+        isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1
+    ):
+        raise ValueError("suite_filter.top_k must be a positive integer or null")
+    if (
+        isinstance(min_score, bool)
+        or not isinstance(min_score, int)
+        or min_score < 0
+    ):
+        raise ValueError("suite_filter.min_score must be a non-negative integer")
     suite_filter = SuiteFilter(
-        top_k=filter_cfg.get("top_k"),
-        min_score=int(filter_cfg.get("min_score", 1)),
+        top_k=top_k,
+        min_score=min_score,
     )
 
     return LoadedConfig(
@@ -206,4 +231,33 @@ def suite_loader_for(loaded: LoadedConfig) -> Callable[[str], SuiteSpec]:
                 f"(known: {sorted([loaded.merged_name, *loaded.sources])})"
             )
         return source
+    return loader
+
+
+def prompt_suite_loader_for(
+    loaded: LoadedConfig,
+) -> Callable[[str, str], SuiteSpec]:
+    """Return a prompt-scoped loader that actually applies ``suite_filter``.
+
+    Directly named source suites remain explicit operator choices.  Only the
+    merged universe is narrowed, which is the surface whose tool-schema growth
+    the filter is designed to control.
+    """
+    cache: dict[tuple[str, tuple[str, ...]], SuiteSpec] = {}
+
+    def loader(prompt: str, name: str) -> SuiteSpec:
+        if name != loaded.merged_name:
+            return suite_loader_for(loaded)(name)
+        selection = loaded.suite_filter.filter(prompt, loaded.sources)
+        selected_names = tuple(selection.selected)
+        if set(selected_names) == set(loaded.sources):
+            return loaded.merged
+        key = (loaded.merged_name, selected_names)
+        if key not in cache:
+            cache[key] = merge_suites(
+                loaded.merged_name,
+                {source: loaded.sources[source] for source in selected_names},
+            )
+        return cache[key]
+
     return loader

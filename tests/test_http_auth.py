@@ -8,6 +8,8 @@ import urllib.error
 import urllib.request
 from http.server import HTTPServer
 
+import pytest
+
 from pauth.suites.shopping import build_suite as build_shopping_suite
 
 from gateway.serving import http_server
@@ -57,8 +59,15 @@ def test_token_auth_maps_token_to_principal():
 
 
 def test_token_auth_rejects_empty_tokens():
-    auth = TokenAuth({"x": ""})
-    assert auth.principal_for("Bearer ") is None
+    with pytest.raises(ValueError, match="non-empty strings"):
+        TokenAuth({"x": ""})
+
+
+def test_token_auth_rejects_nonstring_and_duplicate_tokens():
+    with pytest.raises(ValueError, match="non-empty strings"):
+        TokenAuth({"x": None})  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="unique"):
+        TokenAuth({"alice": "same", "bob": "same"})
 
 
 # --- open mode (backward compatible) --------------------------------------

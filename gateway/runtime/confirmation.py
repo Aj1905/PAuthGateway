@@ -12,9 +12,9 @@ content/control rule (S15): poisoned content reaches an already-approved
 destination, which is bounded. Only untrusted data reaching a CONTROL operand is
 gated.
 
-Taint is STATIC and provenance-based (S20). Because the DSL has
-single assignment, no loops, and explicit tool-result-to-variable dataflow, we
-can compute -- from the code plus per-tool trust labels -- which control
+Taint is static and provenance-based. Because the DSL has single assignment,
+explicit bounded loops, and explicit tool-result-to-variable dataflow, we can
+compute -- from the code plus per-tool trust labels -- which control
 operands derive from an untrusted source, regardless of any transformation on
 the way (``amount = msg.amount * 2`` is still tainted). This closes the
 laundering hole of value-matching taint: we track the operand's dependency, not
@@ -468,15 +468,6 @@ def _run_function(code: str) -> ast.FunctionDef | None:
     return funcs[0] if funcs else None
 
 
-def _ordered_statements(func: ast.FunctionDef) -> Iterator[ast.stmt]:
-    """Statements in def-before-use order, descending into the single if-body."""
-    for stmt in func.body:
-        yield stmt
-        if isinstance(stmt, ast.If):
-            for inner in stmt.body:
-                yield inner
-
-
 def _expr_sources(node: ast.expr, var_sources: dict[str, set], tool_names: set[str]) -> set:
     """Set of source tool names a value expression depends on (over-approximate)."""
     if isinstance(node, ast.Constant):
@@ -509,6 +500,89 @@ def _tool_calls(node: ast.AST, tool_names: set[str]) -> Iterator[ast.Call]:
             yield n
 
 
+def _provenance_taint_map(
+    code: str,
+    docs_by_name: dict[str, ToolDoc],
+    source_trust: SourceTrust,
+    policy: PrecheckPolicy | None,
+    *,
+    broad: bool,
+) -> dict[tuple[str, int], tuple[str, ...]]:
+    """Branch/loop-aware conservative provenance analysis.
+
+    Environments are copied into both branches and joined by source union.
+    A loop variable inherits the provenance of the observed iterable.  This
+    prevents an untrusted value in an ``else`` arm, nested branch, or bounded
+    loop from disappearing merely because the source traversal was flat.
+    """
+    func = _run_function(code)
+    if func is None:
+        return {}
+    tool_names = set(docs_by_name)
+    gated_sets: dict[tuple[str, int], set[str]] = {}
+
+    def gate_calls(node: ast.AST, env: dict[str, set[str]]) -> None:
+        for call in _tool_calls(node, tool_names):
+            tool = call.func.id  # type: ignore[union-attr]
+            if broad:
+                positions = range(len(call.args)) if is_side_effecting(tool) else ()
+            else:
+                positions = (
+                    index
+                    for index, _name in control_operands(
+                        tool, docs_by_name, policy
+                    )
+                )
+            for index in positions:
+                if index >= len(call.args):
+                    continue
+                sources = _expr_sources(call.args[index], env, tool_names)
+                untrusted = {
+                    source
+                    for source in sources
+                    if source_trust.is_untrusted(source)
+                }
+                if untrusted:
+                    gated_sets.setdefault((tool, index), set()).update(untrusted)
+
+    def analyze(
+        statements: list[ast.stmt], incoming: dict[str, set[str]]
+    ) -> dict[str, set[str]]:
+        env = {name: set(sources) for name, sources in incoming.items()}
+        for statement in statements:
+            if isinstance(statement, ast.Assign):
+                gate_calls(statement.value, env)
+                sources = _expr_sources(statement.value, env, tool_names)
+                for target in statement.targets:
+                    if isinstance(target, ast.Name):
+                        env[target.id] = set(sources)
+            elif isinstance(statement, ast.Expr):
+                gate_calls(statement.value, env)
+            elif isinstance(statement, ast.If):
+                body = analyze(statement.body, env)
+                other = analyze(statement.orelse, env) if statement.orelse else env
+                joined: dict[str, set[str]] = {}
+                for name in set(body) | set(other):
+                    joined[name] = set(body.get(name, set())) | set(
+                        other.get(name, set())
+                    )
+                env = joined
+            elif isinstance(statement, ast.For):
+                gate_calls(statement.iter, env)
+                loop_env = {name: set(value) for name, value in env.items()}
+                if isinstance(statement.target, ast.Name):
+                    loop_env[statement.target.id] = _expr_sources(
+                        statement.iter, env, tool_names
+                    )
+                analyze(statement.body, loop_env)
+        return env
+
+    analyze(func.body, {})
+    return {
+        key: tuple(sorted(sources)) for key, sources in gated_sets.items()
+    }
+
+
 def static_taint_map(
     code: str,
     docs_by_name: dict[str, ToolDoc],
@@ -521,34 +595,9 @@ def static_taint_map(
     transformation cannot launder taint. The source list is the provenance a
     human confirmation dialog can display.
     """
-    func = _run_function(code)
-    if func is None:
-        return {}
-    tool_names = set(docs_by_name)
-    var_sources: dict[str, set] = {}
-    gated: dict[tuple[str, int], tuple[str, ...]] = {}
-
-    for stmt in _ordered_statements(func):
-        # Record variable provenance (single-assignment => defined before use).
-        if (
-            isinstance(stmt, ast.Assign)
-            and len(stmt.targets) == 1
-            and isinstance(stmt.targets[0], ast.Name)
-        ):
-            var_sources[stmt.targets[0].id] = _expr_sources(
-                stmt.value, var_sources, tool_names
-            )
-        # Check every tool call's control operands against current provenance.
-        for call in _tool_calls(stmt, tool_names):
-            tool = call.func.id  # type: ignore[union-attr]
-            for i, _name in control_operands(tool, docs_by_name, policy):
-                if i >= len(call.args):
-                    continue
-                src = _expr_sources(call.args[i], var_sources, tool_names)
-                untrusted = tuple(sorted(t for t in src if source_trust.is_untrusted(t)))
-                if untrusted:
-                    gated[(tool, i)] = untrusted
-    return gated
+    return _provenance_taint_map(
+        code, docs_by_name, source_trust, policy, broad=False
+    )
 
 
 def static_taint(
@@ -591,32 +640,9 @@ def broad_taint_map(
     """Like :func:`static_taint_map`, but gate ANY untrusted-derived operand of a
     side-effecting call (decision operands included), reusing the same provenance
     tracking so a transformation cannot launder taint."""
-    func = _run_function(code)
-    if func is None:
-        return {}
-    tool_names = set(docs_by_name)
-    var_sources: dict[str, set] = {}
-    gated: dict[tuple[str, int], tuple[str, ...]] = {}
-
-    for stmt in _ordered_statements(func):
-        if (
-            isinstance(stmt, ast.Assign)
-            and len(stmt.targets) == 1
-            and isinstance(stmt.targets[0], ast.Name)
-        ):
-            var_sources[stmt.targets[0].id] = _expr_sources(
-                stmt.value, var_sources, tool_names
-            )
-        for call in _tool_calls(stmt, tool_names):
-            tool = call.func.id  # type: ignore[union-attr]
-            if not is_side_effecting(tool):
-                continue
-            for i, arg in enumerate(call.args):
-                src = _expr_sources(arg, var_sources, tool_names)
-                untrusted = tuple(sorted(t for t in src if source_trust.is_untrusted(t)))
-                if untrusted:
-                    gated[(tool, i)] = untrusted
-    return gated
+    return _provenance_taint_map(
+        code, docs_by_name, source_trust, policy, broad=True
+    )
 
 
 def taint_map(

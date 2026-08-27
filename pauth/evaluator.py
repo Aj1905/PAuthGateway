@@ -13,6 +13,7 @@ resolved by looking up a *signed* envelope, not by re-running the tool.
 from __future__ import annotations
 
 import ast
+import dataclasses
 import math
 from typing import Any
 
@@ -403,8 +404,16 @@ def _compare(op: ast.cmpop, left: Any, right: Any) -> bool:
             return left is not None
         return not values_match(left, right)
     if isinstance(op, ast.In):
+        if isinstance(right, dict):
+            return any(values_match(left, key) for key in right)
+        if isinstance(right, (list, tuple)):
+            return any(values_match(left, item) for item in right)
         return left in right
     if isinstance(op, ast.NotIn):
+        if isinstance(right, dict):
+            return not any(values_match(left, key) for key in right)
+        if isinstance(right, (list, tuple)):
+            return not any(values_match(left, item) for item in right)
         return left not in right
     raise NotConcretizable(f"unsupported comparison {type(op).__name__}")
 
@@ -412,18 +421,90 @@ def _compare(op: ast.cmpop, left: Any, right: Any) -> bool:
 def values_match(expected: Any, actual: Any) -> bool:
     """Equality used by the enforcer to compare an operand to its rule.
 
-    Numbers are compared with a small RELATIVE tolerance so that floating-point
-    re-computation of, e.g., ``balance / 4`` does not cause a false positive.
-    No absolute tolerance: an ``abs_tol`` would let an expected ``0`` authorize a
-    small non-zero actual (e.g. 9e-7) -- an off-slice operand. rel_tol alone
-    absorbs genuine float noise (~1e-15 relative) while ``0`` matches only ``0``.
+    Numbers compare exactly except for a few adjacent IEEE-754 representation
+    steps between two floats. Booleans and nested containers remain type-exact.
     """
+    # ``bool`` is a subclass of ``int`` in Python.  Authorization must not
+    # inherit Python's ``True == 1`` or truthiness coercion: approving a boolean
+    # operand must authorize that exact boolean, not any non-zero value.
     if isinstance(expected, bool) or isinstance(actual, bool):
-        return bool(expected) == bool(actual)
+        return (
+            isinstance(expected, bool)
+            and isinstance(actual, bool)
+            and expected is actual
+        )
     if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
-        return math.isclose(expected, actual, rel_tol=1e-9)
+        if expected == actual:
+            return True
+        # A relative tolerance of 1e-9 authorizes a whole dollar of drift at
+        # 1e9, which is not an exact operand check.  Permit only a few floating
+        # point representation steps.  Integer/float pairs that are not exactly
+        # equal remain different.
+        if not isinstance(expected, float) or not isinstance(actual, float):
+            return False
+        if not math.isfinite(expected) or not math.isfinite(actual):
+            return False
+        tolerance = 4 * max(math.ulp(expected), math.ulp(actual))
+        return abs(expected - actual) <= tolerance
     if expected is None or actual is None:
         return expected is None and actual is None
     if isinstance(expected, str) and isinstance(actual, str):
         return expected == actual
-    return _to_jsonable(expected) == _to_jsonable(actual)
+
+    # Project model/dataclass values before recursively comparing structured
+    # results.  Recursion is necessary because Python container equality would
+    # otherwise re-introduce ``True == 1`` inside lists and dictionaries.
+    if hasattr(expected, "model_dump"):
+        try:
+            expected = expected.model_dump()
+        except Exception:  # noqa: BLE001 -- fall through to opaque comparison
+            pass
+    if hasattr(actual, "model_dump"):
+        try:
+            actual = actual.model_dump()
+        except Exception:  # noqa: BLE001 -- fall through to opaque comparison
+            pass
+    if dataclasses.is_dataclass(expected) and not isinstance(expected, type):
+        try:
+            expected = dataclasses.asdict(expected)
+        except Exception:  # noqa: BLE001 -- fall through to opaque comparison
+            pass
+    if dataclasses.is_dataclass(actual) and not isinstance(actual, type):
+        try:
+            actual = dataclasses.asdict(actual)
+        except Exception:  # noqa: BLE001 -- fall through to opaque comparison
+            pass
+
+    if isinstance(expected, (list, tuple)) or isinstance(actual, (list, tuple)):
+        if not isinstance(expected, (list, tuple)) or not isinstance(actual, (list, tuple)):
+            return False
+        return len(expected) == len(actual) and all(
+            values_match(e, a) for e, a in zip(expected, actual)
+        )
+    if isinstance(expected, dict) or isinstance(actual, dict):
+        if not isinstance(expected, dict) or not isinstance(actual, dict):
+            return False
+        if len(expected) != len(actual):
+            return False
+        actual_items = list(actual.items())
+        used: set[int] = set()
+        for expected_key, expected_value in expected.items():
+            match = next(
+                (
+                    index
+                    for index, (actual_key, _actual_value) in enumerate(actual_items)
+                    if index not in used
+                    and type(expected_key) is type(actual_key)
+                    and values_match(expected_key, actual_key)
+                ),
+                None,
+            )
+            if match is None or not values_match(expected_value, actual_items[match][1]):
+                return False
+            used.add(match)
+        return True
+
+    # Opaque SDK values are comparable only within the exact same concrete
+    # type.  The JSONable projection retains the existing stable fallback while
+    # the type check prevents equal reprs from unrelated classes from matching.
+    return type(expected) is type(actual) and _to_jsonable(expected) == _to_jsonable(actual)

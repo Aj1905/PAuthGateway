@@ -39,6 +39,7 @@ from pauth.suites.base import SuiteSpec
 
 from gateway.runtime.audit import AuditLog
 from gateway.runtime.gateway import CallResult, Gateway, SubmissionResult
+from gateway.runtime.policy import PolicySpec
 from gateway.planning.planner import (
     STRATEGY_AUTO,
     STRATEGY_DETERMINISTIC,
@@ -141,28 +142,60 @@ def message_from_dict(payload: dict[str, Any]) -> AgentMessage | None:
     Returns ``None`` when the payload does not match either message kind;
     callers should reply with :class:`ErrorResponse`.
     """
+    if not isinstance(payload, dict):
+        return None
     kind = payload.get("kind")
     if kind == "prompt":
+        if not isinstance(payload.get("prompt", ""), str):
+            return None
+        for optional in ("strategy", "suite_name", "judge_model"):
+            if payload.get(optional) is not None and not isinstance(
+                payload[optional], str
+            ):
+                return None
+        if not isinstance(payload.get("model", "gpt-4.1"), str):
+            return None
+        use_freeform = payload.get("use_freeform", False)
+        enable_judge = payload.get("enable_judge", True)
+        max_retries = payload.get("max_retries", 3)
+        if (
+            not isinstance(use_freeform, bool)
+            or not isinstance(enable_judge, bool)
+            or isinstance(max_retries, bool)
+            or not isinstance(max_retries, int)
+        ):
+            return None
         return PromptMessage(
-            prompt=str(payload.get("prompt", "")),
+            prompt=payload.get("prompt", ""),
             strategy=payload.get("strategy"),
-            use_freeform=_payload_bool(payload.get("use_freeform", False)),
+            use_freeform=use_freeform,
             suite_name=payload.get("suite_name"),
-            model=str(payload.get("model", "gpt-4.1")),
-            max_retries=_payload_int(payload.get("max_retries", 3), 3),
+            model=payload.get("model", "gpt-4.1"),
+            max_retries=max_retries,
             # cache_dir is a deployment setting, NOT wire-controllable: it is a
             # filesystem path that generated code is written to (mkdir + write),
             # so accepting it from the request body is an arbitrary-directory
             # write. Take it only from PAUTH_PLANNER_CACHE_DIR (see _handle_prompt).
             cache_dir=None,
-            enable_judge=_payload_bool(payload.get("enable_judge", True)),
+            enable_judge=enable_judge,
             judge_model=payload.get("judge_model"),
         )
     if kind == "tool_call":
+        tool = payload.get("tool", "")
+        args = payload.get("args", [])
+        kwargs = payload.get("kwargs", {})
+        if (
+            not isinstance(tool, str)
+            or not tool
+            or not isinstance(args, list)
+            or not isinstance(kwargs, dict)
+            or any(not isinstance(key, str) for key in kwargs)
+        ):
+            return None
         return ToolCallMessage(
-            tool=str(payload.get("tool", "")),
-            args=list(payload.get("args", [])),
-            kwargs=dict(payload.get("kwargs", {})),
+            tool=tool,
+            args=list(args),
+            kwargs=dict(kwargs),
         )
     return None
 
@@ -198,12 +231,16 @@ class AgentChannel:
         audit_log: "AuditLog | None" = None,
         restored_execution_state: dict[str, Any] | None = None,
         execution_state_sink: Callable[[dict[str, Any]], None] | None = None,
+        operand_policy: PolicySpec | None = None,
+        prompt_suite_loader: Callable[[str, str], SuiteSpec] | None = None,
     ) -> None:
         self._gateway = Gateway(
             suite_loader,
             audit_log=audit_log,
             restored_execution_state=restored_execution_state,
             execution_state_sink=execution_state_sink,
+            operand_policy=operand_policy,
+            prompt_suite_loader=prompt_suite_loader,
         )
         self._prompt_received = False
 
@@ -229,7 +266,10 @@ class AgentChannel:
     def receive_json(self, payload: dict[str, Any]) -> dict[str, Any]:
         msg = message_from_dict(payload)
         if msg is None:
-            return ErrorResponse(error=f"unknown message kind: {payload.get('kind')!r}").to_dict()
+            kind = payload.get("kind") if isinstance(payload, dict) else None
+            return ErrorResponse(
+                error=f"malformed or unknown message kind: {kind!r}"
+            ).to_dict()
         return self.receive(msg).to_dict()
 
     # ------------------------------------------------------------------
@@ -246,6 +286,22 @@ class AgentChannel:
         self._prompt_received = True
 
         try:
+            if (
+                not isinstance(message.prompt, str)
+                or (
+                    message.strategy is not None
+                    and not isinstance(message.strategy, str)
+                )
+                or (
+                    message.suite_name is not None
+                    and not isinstance(message.suite_name, str)
+                )
+                or not isinstance(message.model, str)
+                or isinstance(message.max_retries, bool)
+                or not isinstance(message.max_retries, int)
+                or not isinstance(message.enable_judge, bool)
+            ):
+                raise PlanGenerationError("malformed prompt message")
             strategy = _resolve_strategy(message)
             suite_name = message.suite_name or os.environ.get("PAUTH_PLANNER_SUITE")
             model = _env_or_message("PAUTH_PLANNER_MODEL", message.model)
@@ -264,7 +320,7 @@ class AgentChannel:
                 enable_judge=enable_judge,
                 judge_model=judge_model,
             )
-        except PlanGenerationError as exc:
+        except (PlanGenerationError, TypeError, ValueError) as exc:
             return PromptResponse(accepted=False, reason=str(exc), rule_count=0)
         sub = self._gateway.submit_user_prompt_with_planner(
             message.prompt,
@@ -283,15 +339,34 @@ class AgentChannel:
             return ErrorResponse(
                 error="no prompt has been submitted on this channel; send a PromptMessage first"
             )
+        if (
+            not isinstance(message.tool, str)
+            or not message.tool
+            or not isinstance(message.args, list)
+            or not isinstance(message.kwargs, dict)
+            or any(not isinstance(key, str) for key in message.kwargs)
+        ):
+            return ErrorResponse(error="malformed tool_call message")
         # Resolve kwargs -> positional schema order if needed. The session's
         # tool_params is populated only after a successful prompt; if the
         # tool isn't known we still hand the call to ``handle_tool_call`` so
         # the gateway can produce the canonical "no rule exists" denial.
         args = list(message.args)
+        if message.args and message.kwargs:
+            return ErrorResponse(
+                error="tool_call must supply either args or kwargs, not both"
+            )
         if message.kwargs:
             params = self._gateway._session.tool_params.get(message.tool) if self._gateway._session else None  # noqa: SLF001
             if params:
-                args = [message.kwargs.get(p) for p in params]
+                if set(message.kwargs) != set(params):
+                    return ErrorResponse(
+                        error=(
+                            f"kwargs for {message.tool!r} must exactly match its "
+                            "declared parameters"
+                        )
+                    )
+                args = [message.kwargs[p] for p in params]
             else:
                 # Fall back to ordered values; gateway will reject because
                 # arity/operands won't match any rule.
@@ -332,21 +407,6 @@ def _to_wire(value: Any) -> Any:
     return repr(value)
 
 
-def _payload_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
-
-
-def _payload_int(value: Any, default: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
 def _resolve_strategy(message: PromptMessage) -> str:
     if message.strategy:
         return message.strategy
@@ -376,4 +436,9 @@ def _env_bool(name: str, value: bool) -> bool:
     raw = os.environ.get(name)
     if raw is None:
         return value
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise PlanGenerationError(f"{name} must be a boolean, got {raw!r}")

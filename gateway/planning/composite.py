@@ -44,7 +44,14 @@ import dataclasses
 from typing import Any
 
 from pauth.codegen import ToolDoc
-from pauth.grammar_validator import DSLRejectionError, parse_and_validate
+from pauth import prepare
+from pauth.evaluator import values_match
+from pauth.grammar_validator import (
+    DSLRejectionError,
+    parse_and_validate,
+    strip_dead_code,
+    validate_semantics,
+)
 
 from .prechecks import PrecheckPolicy, precheck_code
 
@@ -162,7 +169,12 @@ def eval_guard(source: str, bindings: dict[str, Any]) -> bool:
     """Deterministically evaluate a guard against gateway-recorded bindings."""
     expr = _guard_expr(source)
     _validate_guard_node(expr)
-    return bool(_eval_node(expr, bindings))
+    try:
+        return bool(_eval_node(expr, bindings))
+    except GuardNotEvaluable:
+        raise
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError) as exc:
+        raise GuardNotEvaluable(str(exc)) from exc
 
 
 def _eval_node(node: ast.expr, bindings: dict[str, Any]) -> Any:
@@ -181,16 +193,23 @@ def _eval_node(node: ast.expr, bindings: dict[str, Any]) -> Any:
     if isinstance(node, ast.Call):  # validated: len(<Name>)
         return len(_eval_node(node.args[0], bindings))
     if isinstance(node, ast.BoolOp):
-        results = [_eval_node(v, bindings) for v in node.values]
-        return all(results) if isinstance(node.op, ast.And) else any(results)
+        if isinstance(node.op, ast.And):
+            for value in node.values:
+                if not _eval_node(value, bindings):
+                    return False
+            return True
+        for value in node.values:
+            if _eval_node(value, bindings):
+                return True
+        return False
     if isinstance(node, ast.Compare):
         left = _eval_node(node.left, bindings)
         right = _eval_node(node.comparators[0], bindings)
         op = node.ops[0]
         if isinstance(op, ast.Eq):
-            return left == right
+            return values_match(left, right)
         if isinstance(op, ast.NotEq):
-            return left != right
+            return not values_match(left, right)
         if isinstance(op, ast.Lt):
             return left < right
         if isinstance(op, ast.LtE):
@@ -442,8 +461,16 @@ def validate_plan(
                 violations.append(
                     f"{label}: fan-out list {stage.fanout.list_var!r} is not bound by an earlier stage"
                 )
-            if stage.fanout.max_instances < 1:
+            if (
+                isinstance(stage.fanout.max_instances, bool)
+                or not isinstance(stage.fanout.max_instances, int)
+                or stage.fanout.max_instances < 1
+            ):
                 violations.append(f"{label}: fan-out max_instances must be >= 1")
+            if not stage.fanout.list_var.isidentifier():
+                violations.append(f"{label}: fan-out list_var must be an identifier")
+            if not stage.fanout.index_var.isidentifier():
+                violations.append(f"{label}: fan-out index_var must be an identifier")
             try:
                 probe = ast.unparse(
                     _IndexSubstituter(stage.fanout.index_var, 0).visit(
@@ -466,9 +493,37 @@ def validate_plan(
                 continue
 
         try:
-            parse_and_validate(template_code)
+            # A fan-out template is the only DSL artifact whose ``run``
+            # function may temporarily declare positional parameters.  Each
+            # instance is rendered into a zero-argument run function before it
+            # reaches the production pipeline.
+            func = parse_and_validate(
+                template_code,
+                allow_run_parameters=stage.fanout is not None,
+            )
+            if stage.fanout is not None:
+                params = [argument.arg for argument in func.args.args]
+                if params != [stage.fanout.list_var]:
+                    raise DSLRejectionError(
+                        f"fan-out run parameters must be [{stage.fanout.list_var!r}]"
+                    )
+            func = strip_dead_code(func, tool_names)
+            validate_semantics(func, tool_names)
+            # Sequential stages are observation-independent at compilation
+            # time. Compile every one before stage 0 can cause an external
+            # effect; otherwise a malformed later stage fails only mid-run.
+            if stage.fanout is None:
+                prepare(
+                    template_code,
+                    tool_names,
+                    {tool: tool for tool in tool_names},
+                )
         except DSLRejectionError as exc:
             violations.append(f"{label}: DSL: {exc}")
+        except Exception as exc:  # noqa: BLE001 -- reject pre-execution
+            violations.append(
+                f"{label}: compilation: {type(exc).__name__}: {exc}"
+            )
         violations.extend(
             f"{label}: {v}" for v in precheck_code(prompt, template_code, tools, policy)
         )

@@ -197,12 +197,13 @@ def run():
 _CHEAPEST_CODE = '''\
 def run():
     products = list_products(None, 80.0)
-    cheapest = min(products, key=lambda item: item.price)
-    if len(products) > 0 and cheapest.price <= 80.0:
-        success = add_to_cart(cheapest.name, 1)
-    if success:
-        cart = get_cart_summary()
-        send_money("GB33BUKB20201555555555", cart.total, "Order payment", "2026-01-29")
+    if len(products) > 0:
+        cheapest = min(products, key=lambda item: item.price)
+        if cheapest.price <= 80.0:
+            success = add_to_cart(cheapest.name, 1)
+            if success:
+                cart = get_cart_summary()
+                send_money("GB33BUKB20201555555555", cart.total, "Order payment", "2026-01-29")
 '''
 
 _TASKS: list[TaskSpec] = [

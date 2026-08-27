@@ -88,6 +88,16 @@ def test_cheapest_decomposition_happy_path():
     assert status["complete"] is True
 
 
+def test_composite_rejects_unsupported_durable_execution_state():
+    gateway = Gateway(_loader, execution_state_sink=lambda _state: None)
+    submission = gateway.submit_user_prompt_composite(
+        CHEAPEST_PROMPT, CHEAPEST_PLAN
+    )
+    assert not submission.accepted
+    assert "durable execution-state" in submission.reason
+    assert "default-deny" in submission.reason
+
+
 def test_inactivity_stage2_closed_before_guard():
     gw = Gateway(_loader)
     assert gw.submit_user_prompt_composite(CHEAPEST_PROMPT, CHEAPEST_PLAN).accepted
@@ -166,6 +176,61 @@ def test_plan_complete_denies_everything():
     again = gw.handle_tool_call("send_money", [CHECKOUT_IBAN, 9.99, "Order payment", "2026-01-29"])
     assert not again.permit
     assert "complete" in again.reason
+
+
+def test_branch_rules_count_as_one_call_site_for_completion():
+    prompt = (
+        "If the cart is empty, add one USB-C Charging Cable; otherwise add one "
+        "Basic Wired Earbuds."
+    )
+    stage = (
+        "def run():\n"
+        "    cart = get_cart_summary()\n"
+        '    product = "USB-C Charging Cable"\n'
+        "    if cart.total > 0:\n"
+        '        product = "Basic Wired Earbuds"\n'
+        "    add_to_cart(product, 1)\n"
+    )
+    plan = CompositePlan(suite_name="shopping", stages=(StageTemplate(code=stage),))
+    gw = Gateway(_loader)
+    assert gw.submit_user_prompt_composite(prompt, plan).accepted
+    assert gw.handle_tool_call("get_cart_summary", []).permit
+    assert gw.handle_tool_call(
+        "add_to_cart", ["USB-C Charging Cable", 1]
+    ).permit
+    status = gw.composite_status()
+    assert status["stage_rule_total"] > status["stage_site_total"]
+    assert status["complete"] is True
+
+
+def test_bounded_loop_stage_waits_for_every_observed_tuple():
+    prompt = "List products under 30 dollars, add one of every result, then show the cart."
+    loop_stage = (
+        "def run():\n"
+        "    products = list_products(None, 30.0)\n"
+        "    for product in products:\n"
+        "        add_to_cart(product.name, 1)\n"
+    )
+    plan = CompositePlan(
+        suite_name="shopping",
+        stages=(
+            StageTemplate(code=loop_stage),
+            StageTemplate(code="def run():\n    get_cart_summary()\n"),
+        ),
+    )
+    gw = Gateway(_loader)
+    assert gw.submit_user_prompt_composite(prompt, plan).accepted
+    assert gw.handle_tool_call("list_products", [None, 30.0]).permit
+    names = [
+        "Basic Wired Earbuds",
+        "Travel Neck Pillow",
+        "USB-C Charging Cable",
+    ]
+    assert gw.handle_tool_call("add_to_cart", [names[0], 1]).permit
+    assert not gw.handle_tool_call("get_cart_summary", []).permit
+    for name in names[1:]:
+        assert gw.handle_tool_call("add_to_cart", [name, 1]).permit
+    assert gw.handle_tool_call("get_cart_summary", []).permit
 
 
 # ---------------------------------------------------------------------------

@@ -208,16 +208,17 @@ _TOOLS: dict[str, ToolSpec] = {
 _BEST_RATED_CODE = '''\
 def run():
     options = search_restaurants("Paris", 80.0)
-    best = max(options, key=lambda r: r.rating)
-    booking = book_table(best.id, "2026-08-01", 2)
-    pay_deposit("GB33BUKB20201555555555", 20.0, "deposit")
+    if len(options) > 0:
+        best = max(options, key=lambda r: r.rating)
+        booking = book_table(best.id, "2026-08-01", 2)
+        pay_deposit("GB33BUKB20201555555555", 20.0, "deposit")
 '''
 
 _CHEAPEST_CODE = '''\
 def run():
     options = search_restaurants("Lyon", 50.0)
-    cheapest = min(options, key=lambda r: r.price_per_person)
     if len(options) > 0:
+        cheapest = min(options, key=lambda r: r.price_per_person)
         booking = book_table(cheapest.id, "2026-09-10", 3)
         pay_deposit("GB33BUKB20201555555555", 15.0, "deposit")
 '''

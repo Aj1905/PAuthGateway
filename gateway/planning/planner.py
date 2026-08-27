@@ -72,10 +72,37 @@ KNOWN_STRATEGIES = {
     STRATEGY_FORMAL_SEMANTIC,
     STRATEGY_SUFFICIENCY_TIGHTNESS,
 }
+MAX_PLANNER_RETRIES = 20
+
+
+def _validate_planner_inputs(
+    prompt: str,
+    model: str,
+    max_retries: int,
+    suite_name: str | None,
+) -> None:
+    if not isinstance(prompt, str):
+        raise PlanGenerationError("planner prompt must be a string")
+    if not isinstance(model, str) or not model:
+        raise PlanGenerationError("planner model must be a non-empty string")
+    if suite_name is not None and (
+        not isinstance(suite_name, str) or not suite_name
+    ):
+        raise PlanGenerationError("planner suite_name must be a non-empty string")
+    if (
+        isinstance(max_retries, bool)
+        or not isinstance(max_retries, int)
+        or not 0 <= max_retries <= MAX_PLANNER_RETRIES
+    ):
+        raise PlanGenerationError(
+            f"max_retries must be an integer from 0 to {MAX_PLANNER_RETRIES}"
+        )
 
 
 def normalize_strategy_name(name: str | None) -> str:
     """Return the canonical planner strategy name."""
+    if name is not None and not isinstance(name, str):
+        raise PlanGenerationError("planner strategy must be a string")
     raw = (name or STRATEGY_DETERMINISTIC).strip().lower()
     canonical = STRATEGY_ALIASES.get(raw, raw)
     if canonical not in KNOWN_STRATEGIES:
@@ -143,6 +170,9 @@ class LLMFreeformPlanner:
         prompt: str,
         suite_loader: Callable[[str], SuiteSpec],
     ) -> PlanDraft:
+        _validate_planner_inputs(
+            prompt, self.model, self.max_retries, self.suite_name
+        )
         try:
             suite = suite_loader(self.suite_name)
         except Exception as exc:  # noqa: BLE001 -- surfaced as a clean rejection
@@ -309,6 +339,7 @@ def build_planner(
     function as the single switch point so environment/config selection does
     not leak across the gateway.
     """
+    _validate_planner_inputs(prompt, model, max_retries, suite_name)
     canonical = normalize_strategy_name(strategy)
     if canonical == STRATEGY_DETERMINISTIC:
         return DeterministicRecognizerPlanner()

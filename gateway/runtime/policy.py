@@ -24,9 +24,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Any
 
-from pauth.enforcer import Decision, Enforcer
-from pauth.envelope import TamperedEnvelopeError
-from pauth.evaluator import Evaluator, NotConcretizable, values_match
+from pauth.enforcer import Enforcer
 from pauth.rule_compiler import Rule
 
 
@@ -95,69 +93,10 @@ class PolicyAwareEnforcer(Enforcer):
         super().__init__(rules, store, tool_signer, ordered_tools=ordered_tools)
         self._policy = policy
 
-    def check(self, tool: str, args: list[Any], *, live: bool = False) -> Decision:
-        rules = self.rules_by_tool.get(tool, [])
-        if not rules:
-            return Decision(False, None, f"no rule exists for tool '{tool}' (default-deny)")
-
-        reasons: list[str] = []
-        for rule in rules:
-            if rule.n_args != len(args):
-                reasons.append(f"{rule.key}: arity {rule.n_args} != {len(args)}")
-                continue
-            ev = Evaluator(self.store, rule.lets)
-            try:
-                guard_ok = all(bool(ev.eval(pred)) for pred in rule.guard)
-            except (NotConcretizable, TamperedEnvelopeError) as exc:
-                reasons.append(f"{rule.key}: guard unresolved ({exc})")
-                continue
-            except Exception as exc:  # noqa: BLE001
-                reasons.append(f"{rule.key}: guard evaluation error ({type(exc).__name__}: {exc})")
-                continue
-            if not guard_ok:
-                reasons.append(f"{rule.key}: guard predicate is false")
-                continue
-            if live:
-                order_ok, order_reason = self._order_ok(rule)
-                if not order_ok:
-                    reasons.append(f"{rule.key}: {order_reason}")
-                    continue
-                token = (rule.key, ())
-                if self._unavailable(token):
-                    reasons.append(f"{rule.key}: {self._unavailable_reason(token)}")
-                    continue
-            try:
-                expected = [ev.eval(expr) for expr in rule.arg_exprs]
-            except (NotConcretizable, TamperedEnvelopeError) as exc:
-                reasons.append(f"{rule.key}: operand unresolved ({exc})")
-                continue
-            except Exception as exc:  # noqa: BLE001
-                reasons.append(f"{rule.key}: operand evaluation error ({type(exc).__name__}: {exc})")
-                continue
-            mismatches = [
-                i for i, (e, a) in enumerate(zip(expected, args))
-                if not values_match(e, a)
-            ]
-            # Drop free-operand positions: the policy declared the gateway
-            # does not constrain them.
-            effective = [i for i in mismatches if not self._policy.is_free(tool, i)]
-            if effective:
-                reasons.append(
-                    f"{rule.key}: operand(s) {effective} off-slice "
-                    f"(free positions ignored: {sorted(self._policy.free_positions.get(tool, set()))})"
-                )
-                continue
-            return Decision(
-                True, rule,
-                f"authorized by rule {rule.key}"
-                + (
-                    f" (free operands: {sorted(set(mismatches) & self._policy.free_positions.get(tool, set()))})"
-                    if mismatches else ""
-                ),
-                token=(rule.key, ()),
-            )
-
-        return Decision(
-            False, None,
-            "no rule authorizes this call (default-deny) :: " + " ; ".join(reasons)
-        )
+    def _argument_mismatches(
+        self, tool: str, expected: list[Any], actual: list[Any]
+    ) -> list[int]:
+        mismatches = super()._argument_mismatches(tool, expected, actual)
+        return [
+            index for index in mismatches if not self._policy.is_free(tool, index)
+        ]

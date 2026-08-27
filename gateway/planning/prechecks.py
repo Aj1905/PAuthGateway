@@ -153,12 +153,32 @@ def _prompt_numbers(prompt: str) -> set[float]:
 
 
 def _string_entailed(value: str, prompt: str) -> bool:
-    if value.casefold() in prompt.casefold():
+    # Substring entailment is unsafe for destinations: ``alice@example.com``
+    # is not entailed by ``malice@example.com``. Require token boundaries.
+    if EMAIL_RE.fullmatch(value):
+        return any(
+            match.rstrip(".,;:!?").casefold() == value.casefold()
+            for match in EMAIL_RE.findall(prompt)
+        )
+    boundary = r"A-Za-z0-9"
+    if re.search(
+        rf"(?<![{boundary}]){re.escape(value)}(?![{boundary}])",
+        prompt,
+        re.IGNORECASE,
+    ):
         return True
     # IBANs are often written with grouping spaces; compare space-insensitively.
     squeezed_value = re.sub(r"\s+", "", value).casefold()
-    squeezed_prompt = re.sub(r"\s+", "", prompt).casefold()
-    return bool(squeezed_value) and squeezed_value in squeezed_prompt
+    if not squeezed_value or not IBAN_RE.fullmatch(squeezed_value.upper()):
+        return False
+    flexible = r"\s*".join(re.escape(char) for char in squeezed_value)
+    return bool(
+        re.search(
+            rf"(?<![a-z0-9]){flexible}(?![a-z0-9])",
+            prompt,
+            re.IGNORECASE,
+        )
+    )
 
 
 def _number_entailed(value: float, prompt_numbers: set[float]) -> bool:

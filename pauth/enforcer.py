@@ -6,8 +6,9 @@ guard predicates hold and that every operand equals the value implied by the
 slice.  PAuth is *default-deny*: "a call is by default denied unless an
 exact-matching rule is found" (paper sec. 5.2).
 
-The sandboxed plan executor that runs the generated ``run`` function lives in
-:mod:`pauth.tool_executor` (the ToolExecutor node).
+The legacy sandboxed executor that runs generated ``run`` code lives in
+:mod:`pauth.tool_executor`.  It is distinct from the Gateway-owned tool-call
+execution component defined in ``docs/SYSTEM_MODEL.md``.
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ class ExecutionStateError(ValueError):
 
 _EXECUTION_STATE_VERSION = 1
 _ATTEMPT_STATES = frozenset({"started", "succeeded", "indeterminate"})
+_EXTERNAL_SITE_PREFIX = "reauthorization:"
 
 
 class Enforcer:
@@ -158,14 +160,29 @@ class Enforcer:
                 site_key = row.get("site_key")
                 loop_path = row.get("loop_path")
                 state = row.get("state")
-                if not isinstance(site_key, str) or site_key not in self._site_rules:
+                external = (
+                    isinstance(site_key, str)
+                    and site_key.startswith(_EXTERNAL_SITE_PREFIX)
+                    and len(site_key) == len(_EXTERNAL_SITE_PREFIX) + 64
+                    and all(
+                        character in "0123456789abcdef"
+                        for character in site_key[len(_EXTERNAL_SITE_PREFIX):]
+                    )
+                )
+                if not isinstance(site_key, str) or (
+                    site_key not in self._site_rules and not external
+                ):
                     raise ExecutionStateError("execution state references an unknown call site")
                 if not isinstance(loop_path, list) or any(
                     isinstance(index, bool) or not isinstance(index, int) or index < 0
                     for index in loop_path
                 ):
                     raise ExecutionStateError("execution state has an invalid loop path")
-                if not any(
+                if external and loop_path:
+                    raise ExecutionStateError(
+                        "external execution state must not have a loop path"
+                    )
+                if not external and not any(
                     len(rule.loops) + len(rule.helper_frames) == len(loop_path)
                     for rule in self._site_rules[site_key]
                 ):
@@ -239,6 +256,22 @@ class Enforcer:
             self._attempts[token] = "indeterminate"
             self._persist_execution_state()
 
+    def complete_external(self, token: tuple | None) -> None:
+        """Persist success for a user-reauthorized call with no compiled rule."""
+        if token is None or not str(token[0]).startswith(_EXTERNAL_SITE_PREFIX):
+            raise ExecutionStateError("invalid external execution token")
+        with self._attempt_lock:
+            if self._attempts.get(token) != "started":
+                raise ExecutionStateError("external execution attempt was not started")
+            self.consume(token)
+            self._attempts[token] = "succeeded"
+            self._persist_execution_state()
+
+    def attempt_state(self, token: tuple) -> str | None:
+        """Return a durable attempt tombstone without exposing mutable state."""
+        with self._attempt_lock:
+            return self._attempts.get(token)
+
     def _site_skippable(self, key: str) -> bool:
         """A site is skippable iff every one of its rules is provably off-path:
         some guard predicate evaluates concretely to False."""
@@ -278,6 +311,83 @@ class Enforcer:
                 f"has not executed and is not provably off-path"
             )
         return True, ""
+
+    def _argument_mismatches(
+        self, tool: str, expected: list[Any], actual: list[Any]
+    ) -> list[int]:
+        """Operand positions that fail this enforcer's configured policy.
+
+        The base relation is exact matching.  Deployment policy subclasses may
+        remove explicitly declared positions without duplicating the loop,
+        replay, ordering, guard, and error-handling logic in :meth:`check`.
+        """
+        return [
+            index
+            for index, (expected_value, actual_value) in enumerate(
+                zip(expected, actual)
+            )
+            if not values_match(expected_value, actual_value)
+        ]
+
+    def site_complete(self, key: str) -> bool:
+        """Whether every active authorization token at one call site is spent.
+
+        This is used by the composite-plan coordinator.  Counting compiled
+        rules is wrong because branch alternatives share one site and a bounded
+        loop rule represents one token per observed tuple.
+        """
+        rules = self._site_rules.get(key, [])
+        if not rules:
+            return False
+
+        def guard_active(rule: Rule) -> bool | None:
+            ev = Evaluator(self.store, rule.lets)
+            try:
+                return all(bool(ev.eval(predicate)) for predicate in rule.guard)
+            except Exception:  # noqa: BLE001 -- unresolved is not complete
+                return None
+
+        def loop_paths(rule: Rule, level: int, binds: dict, path: tuple) -> list[tuple] | None:
+            if level == len(rule.loops):
+                return [path]
+            variable, iterable = rule.loops[level]
+            try:
+                collection = Evaluator(self.store, rule.lets, binds).eval(iterable)
+            except Exception:  # noqa: BLE001 -- unresolved is not complete
+                return None
+            if not isinstance(collection, (list, tuple)):
+                return None
+            paths: list[tuple] = []
+            for index, element in enumerate(collection):
+                nested = loop_paths(
+                    rule,
+                    level + 1,
+                    {**binds, variable: element},
+                    path + (index,),
+                )
+                if nested is None:
+                    return None
+                paths.extend(nested)
+            return paths
+
+        for rule in rules:
+            active = guard_active(rule)
+            if active is None:
+                return False
+            if not active:
+                continue
+            if rule.helper_frames:
+                return False
+            paths = loop_paths(rule, 0, {}, ()) if rule.loops else [()]
+            if paths is None:
+                return False
+            if any(not self._unavailable((key, path)) for path in paths):
+                return False
+        return True
+
+    def completed_site_keys(self) -> set[str]:
+        """Return compiled call-site keys whose active tokens are exhausted."""
+        return {key for key in self._site_rules if self.site_complete(key)}
 
     def check(self, tool: str, args: list[Any], *, live: bool = False) -> Decision:
         """the authorization check: decide whether a concrete call is authorized.
@@ -349,7 +459,7 @@ class Enforcer:
                             expected = [ev_e.eval(expr) for expr in rule.arg_exprs]
                         except Exception:  # noqa: BLE001 -- this tuple just doesn't match
                             return None
-                        if all(values_match(e, a) for e, a in zip(expected, args)):
+                        if not self._argument_mismatches(tool, expected, args):
                             return path
                         return None
                     var, it = rule.loops[level]
@@ -389,9 +499,7 @@ class Enforcer:
             except Exception as exc:  # noqa: BLE001 -- a rule must never crash a run
                 reasons.append(f"{rule.key}: operand evaluation error ({type(exc).__name__}: {exc})")
                 continue
-            mismatches = [
-                i for i, (e, a) in enumerate(zip(expected, args)) if not values_match(e, a)
-            ]
+            mismatches = self._argument_mismatches(tool, expected, args)
             if mismatches:
                 reasons.append(f"{rule.key}: operand(s) {mismatches} off-slice")
                 continue

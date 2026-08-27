@@ -55,7 +55,7 @@ class _StaticPlanner:
         return PlanDraft(suite_name="tiny", code=PLAN, reason="offline fixture")
 
 
-def _armed() -> tuple[Gateway, _Env]:
+def _armed(*, restored=None, sink=None) -> tuple[Gateway, _Env]:
     env = _Env()
 
     def tool_executor(tool: str, kwargs: dict[str, Any]) -> Any:
@@ -76,7 +76,11 @@ def _armed() -> tuple[Gateway, _Env]:
             raise ValueError(name)
         return suite
 
-    gateway = Gateway(loader)
+    gateway = Gateway(
+        loader,
+        restored_execution_state=restored,
+        execution_state_sink=sink,
+    )
     result = gateway.submit_user_prompt_with_planner(
         PROMPT, _StaticPlanner(), generated_code_on_success=True
     )
@@ -123,7 +127,8 @@ def test_approval_is_bound_to_all_typed_args_and_is_single_use(wrong_args):
     replay = gateway.handle_tool_call("erase", ["item-1", True])
     assert exact.permit
     assert not replay.permit
-    assert replay.reauthorization_required is True
+    assert replay.reauthorization_required is False
+    assert "replay blocked" in replay.reason
     assert env.executed == [("erase", ("item-1", True))]
 
 
@@ -156,6 +161,25 @@ def test_float_reauthorization_is_bound_to_exact_ieee_bits():
     assert not positive_zero.permit
     assert negative_zero.permit
     assert env.executed == [("erase", ("item-1", -0.0))]
+
+
+def test_successful_reauthorization_is_replay_blocked_after_restart():
+    gateway, env = _armed()
+    gateway.handle_tool_call("erase", ["item-1", True])
+    request_id = gateway.pending_reauthorizations()[0].reauthorization_id
+    assert gateway.reauthorize(request_id, approved=True)
+    assert gateway.handle_tool_call("erase", ["item-1", True]).permit
+    state = gateway.current_execution_state()
+    assert state is not None
+    assert state["calls"][0]["site_key"].startswith("reauthorization:")
+    assert state["calls"][0]["state"] == "succeeded"
+
+    restored, restored_env = _armed(restored=state)
+    replay = restored.handle_tool_call("erase", ["item-1", True])
+    assert not replay.permit
+    assert replay.reauthorization_required is False
+    assert restored_env.executed == []
+    assert env.executed == [("erase", ("item-1", True))]
 
 
 def test_only_no_rule_denials_are_reauthorizable():

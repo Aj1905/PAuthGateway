@@ -39,6 +39,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import enum
+import hashlib
 import math
 import struct
 import threading
@@ -57,6 +58,7 @@ from gateway.planning.composite import (
     GuardNotEvaluable,
     assignment_map,
     eval_guard,
+    guard_variables,
     instantiate_fanout,
     validate_plan,
 )
@@ -72,6 +74,7 @@ from gateway.runtime.audit import AuditLog
 from gateway.runtime.confirmation import (
     PendingConfirmation,
     SourceTrust,
+    control_operands,
     is_side_effecting,
     provenance_reference,
     reduction_breakdown,
@@ -95,6 +98,7 @@ from gateway.runtime.protection import (
     SideChannelPolicy,
     assess,
 )
+from gateway.runtime.policy import PolicyAwareEnforcer, PolicySpec
 
 _MAX_PENDING_REAUTHORIZATIONS = 32
 
@@ -186,10 +190,14 @@ def _confirm_key(value: Any) -> Any:
     if isinstance(value, bytes):
         return ("bytes", value)
     try:
-        hash(value)
-        return ("obj", type(value).__name__, value)
-    except TypeError:
-        return ("repr", repr(value))
+        return _typed_action_key(value)
+    except (TypeError, ValueError, OverflowError):
+        return (
+            "opaque",
+            type(value).__module__,
+            type(value).__qualname__,
+            repr(value),
+        )
 
 
 def _typed_action_key(value: Any) -> Any:
@@ -331,10 +339,14 @@ class _CompositeState:
     tool_signer: dict[str, str]
     store: EnvelopeStore
     bindings: dict[str, Any]
+    binding_sources: dict[str, tuple[str, ...]] = dataclasses.field(
+        default_factory=dict
+    )
     stage_idx: int = -1
     enforcer: Enforcer | None = None
     stage_code: str | None = None
     stage_rule_total: int = 0
+    stage_site_total: int = 0
     consumed: set[str] = dataclasses.field(default_factory=set)
     stage_assignments: dict[str, str] = dataclasses.field(default_factory=dict)
     complete: bool = False
@@ -369,6 +381,8 @@ class Gateway:
         execution_state_sink: Callable[[dict[str, Any]], None] | None = None,
         confirmation_ux: str | None = None,
         confirmation_policy: str | None = None,
+        operand_policy: PolicySpec | None = None,
+        prompt_suite_loader: Callable[[str, str], SuiteSpec] | None = None,
     ) -> None:
         """``suite_loader(name)`` returns the real-tool ``SuiteSpec`` for ``name``.
 
@@ -381,6 +395,8 @@ class Gateway:
         self._suite_loader = suite_loader
         self._precheck_policy = precheck_policy
         self._source_trust = source_trust or SourceTrust()
+        self._operand_policy = operand_policy or PolicySpec({})
+        self._prompt_suite_loader = prompt_suite_loader
         # Side channels denied by default (the no-raw-side-channels precondition).
         self._side_channel_policy = side_channel_policy or SideChannelPolicy()
         self._isolated_runtime = isolated_runtime
@@ -397,10 +413,48 @@ class Gateway:
         )
         self._session: _Session | None = None
         self._composite: _CompositeState | None = None
+        self._submission_claimed = False
+        self._submission_lock = threading.Lock()
         # Per-Gateway, not process-global: calls in one task are serialized
         # across the complete check -> tool_executor -> record state transition while
         # independent Gateway sessions remain concurrent.
         self._execution_lock = threading.RLock()
+
+    def _claim_submission(self) -> SubmissionResult | None:
+        """Atomically reserve this task's single plan-generation attempt."""
+        with self._submission_lock:
+            if self._submission_claimed:
+                reason = (
+                    "user prompt already submitted; create a new Gateway for a new task "
+                    "(plan-once invariant)"
+                )
+                self._audit.record(
+                    "submit",
+                    "reject",
+                    reason_code="prompt_already_submitted",
+                    reason=reason,
+                )
+                return SubmissionResult(accepted=False, reason=reason)
+            self._submission_claimed = True
+        return None
+
+    def _new_enforcer(
+        self,
+        rules: list[Any],
+        store: EnvelopeStore,
+        tool_signer: dict[str, str],
+    ) -> Enforcer:
+        """Build the configured Enforcer without changing safety machinery."""
+        kwargs = {"ordered_tools": _ordered_tools(rules)}
+        if self._operand_policy.free_positions:
+            return PolicyAwareEnforcer(
+                rules,
+                store,
+                tool_signer,
+                self._operand_policy,
+                **kwargs,
+            )
+        return Enforcer(rules, store, tool_signer, **kwargs)
 
     def audit_log(self) -> list:
         """Structured permit/deny/accept/reject events (operator-facing)."""
@@ -483,12 +537,29 @@ class Gateway:
         fan-out bounds are resolved exclusively from this gateway's own
         signed observations -- never from the agent.
         """
-        self._session = None
-        self._composite = None
+        duplicate = self._claim_submission()
+        if duplicate is not None:
+            return duplicate
+        if (
+            self._restored_execution_state is not None
+            or self._execution_state_sink is not None
+        ):
+            reason = (
+                "composite plan rejected (default-deny): durable execution-state "
+                "restore/persistence is not supported for staged plans"
+            )
+            self._session = self._rejected_session(prompt, reason)
+            return SubmissionResult(accepted=False, reason=reason)
         try:
             suite = self._suite_loader(plan.suite_name)
         except Exception as exc:  # noqa: BLE001
             reason = f"unknown suite {plan.suite_name!r}: {type(exc).__name__}: {exc}"
+            self._session = self._rejected_session(prompt, reason)
+            return SubmissionResult(accepted=False, reason=reason)
+        try:
+            assert_safe_suite(suite)
+        except ValueError as exc:
+            reason = f"suite {plan.suite_name!r} has an unsafe identifier: {exc}"
             self._session = self._rejected_session(prompt, reason)
             return SubmissionResult(accepted=False, reason=reason)
 
@@ -550,23 +621,52 @@ class Gateway:
         state.stage_idx = idx
         state.stage_code = code
         state.stage_rule_total = len(prepared.rules)
+        state.stage_site_total = len({rule.key for rule in prepared.rules})
         state.consumed = set()
         state.stage_assignments = assignment_map(code, state.tool_names)
-        # Static provenance taint for this stage's control operands (S20).
-        # NOTE: for a fan-out stage the body's observed constants are already
-        # folded in, so their provenance is lost here -- fan-out over an
-        # untrusted list can under-gate (documented limitation; fan-out is not
-        # on the live path yet).
+        # Static provenance taint for this stage's control operands. Fan-out
+        # folding removes source expressions from the rendered code, so carry
+        # the earlier observed source (and guard-decision source) explicitly.
         state.gated_sources = taint_map(
             code, state.docs_by_name, state.source_trust, state.precheck_policy
         )
+        inherited_sources: set[str] = set()
+        if stage.fanout is not None:
+            inherited_sources.update(
+                state.binding_sources.get(stage.fanout.list_var, ())
+            )
+        if stage.guard is not None:
+            for variable in guard_variables(stage.guard):
+                inherited_sources.update(state.binding_sources.get(variable, ()))
+        if inherited_sources:
+            for rule in prepared.rules:
+                if state.source_trust.confirm_untrusted_decisions:
+                    positions = (
+                        range(rule.n_args) if is_side_effecting(rule.tool) else ()
+                    )
+                else:
+                    positions = (
+                        index
+                        for index, _name in control_operands(
+                            rule.tool,
+                            state.docs_by_name,
+                            state.precheck_policy,
+                        )
+                    )
+                for position in positions:
+                    key = (rule.tool, position)
+                    state.gated_sources[key] = tuple(
+                        sorted(
+                            set(state.gated_sources.get(key, ()))
+                            | inherited_sources
+                        )
+                    )
         state.gated_operands = set(state.gated_sources)
         # Non-accumulation: the previous stage's enforcer is discarded; its
         # rules can never authorize again. The envelope store is shared so
         # later guards/operands still reference earlier signed observations.
-        state.enforcer = Enforcer(
-            prepared.rules, state.store, state.tool_signer,
-            ordered_tools=_ordered_tools(prepared.rules),
+        state.enforcer = self._new_enforcer(
+            prepared.rules, state.store, state.tool_signer
         )
         state.any_rules = state.any_rules or bool(prepared.rules)
         return None
@@ -576,20 +676,26 @@ class Gateway:
         while not state.complete:
             nxt = state.stage_idx + 1
             if nxt >= len(state.plan.stages):
-                if len(state.consumed) >= state.stage_rule_total:
+                if self._composite_stage_complete(state):
                     state.complete = True
                 break
             stage = state.plan.stages[nxt]
             if state.stage_idx >= 0 or not initial:
+                if not self._composite_stage_complete(state):
+                    break
                 # Entry condition for every stage after the first activation.
                 if stage.guard is not None:
                     try:
                         if not eval_guard(stage.guard, state.bindings):
+                            state.complete = True
+                            state.enforcer = None
                             break
                     except GuardNotEvaluable:
+                        # The current stage is already exhausted, so no later
+                        # event can bind the missing earlier-stage variable.
+                        state.complete = True
+                        state.enforcer = None
                         break
-                elif len(state.consumed) < state.stage_rule_total:
-                    break  # unconditional transition requires full consumption
             if stage.fanout is not None and stage.fanout.list_var not in state.bindings:
                 break
             error = self._composite_activate(state, nxt)
@@ -604,6 +710,12 @@ class Gateway:
             # Zero-rule stage (e.g. fan-out over an empty list): fall through
             # and keep advancing.
         return None
+
+    @staticmethod
+    def _composite_stage_complete(state: _CompositeState) -> bool:
+        if state.enforcer is None:
+            return state.stage_rule_total == 0
+        return len(state.enforcer.completed_site_keys()) >= state.stage_site_total
 
     def _handle_tool_call_composite(self, tool: str, args: list[Any]) -> CallResult:
         state = self._composite
@@ -654,6 +766,9 @@ class Gateway:
         for var, var_tool in state.stage_assignments.items():
             if var_tool == tool and var not in state.bindings:
                 state.bindings[var] = raw
+                state.binding_sources[var] = (
+                    (tool,) if state.source_trust.is_untrusted(tool) else ()
+                )
         self._composite_advance(state)
         return result
 
@@ -830,7 +945,7 @@ class Gateway:
             param = doc.parameters[i] if (doc is not None and i < len(doc.parameters)) else {}
             name = param.get("name", str(i))
             key = _confirm_key(args[i])
-            if (tool, key) in state.confirmed:
+            if (tool, i, key) in state.confirmed:
                 continue
             existing = next(
                 (c for c in state.pending.values()
@@ -913,9 +1028,16 @@ class Gateway:
         *,
         generated_code_on_success: bool = False,
     ) -> SubmissionResult:
-        self._composite = None
+        duplicate = self._claim_submission()
+        if duplicate is not None:
+            return duplicate
+        suite_loader = (
+            (lambda name: self._prompt_suite_loader(prompt, name))
+            if self._prompt_suite_loader is not None
+            else self._suite_loader
+        )
         try:
-            draft = planner.generate(prompt, self._suite_loader)
+            draft = planner.generate(prompt, suite_loader)
         except PlanGenerationError as exc:
             reason = str(exc)
             self._session = self._rejected_session(prompt, reason)
@@ -929,6 +1051,7 @@ class Gateway:
             prompt,
             draft,
             generated_code_on_success=generated_code_on_success,
+            suite_loader=suite_loader,
         )
 
     def _accept_draft(
@@ -937,9 +1060,10 @@ class Gateway:
         draft: PlanDraft,
         *,
         generated_code_on_success: bool,
+        suite_loader: Callable[[str], SuiteSpec] | None = None,
     ) -> SubmissionResult:
         try:
-            suite = self._suite_loader(draft.suite_name)
+            suite = (suite_loader or self._suite_loader)(draft.suite_name)
         except Exception as exc:  # noqa: BLE001 -- surface as a clean rejection
             reason = f"unknown suite {draft.suite_name!r}: {type(exc).__name__}: {exc}"
             self._session = self._rejected_session(
@@ -1016,9 +1140,8 @@ class Gateway:
         env = suite.make_env()
         keyring = KeyRing()
         store = EnvelopeStore(keyring)
-        enforcer = Enforcer(
-            prepared.rules, store, suite.tool_signer(),
-            ordered_tools=_ordered_tools(prepared.rules),
+        enforcer = self._new_enforcer(
+            prepared.rules, store, suite.tool_signer()
         )
         try:
             enforcer.configure_execution_state(
@@ -1243,8 +1366,37 @@ class Gateway:
                 tool,
                 args,
                 "explicit one-shot user reauthorization",
+                enforcer=session.enforcer,
+                token=self._external_execution_token(reauthorization_key),
             )
             result.reauthorized = True
+            if result.permit:
+                try:
+                    session.enforcer.complete_external(
+                        self._external_execution_token(reauthorization_key)
+                    )
+                except Exception as exc:  # noqa: BLE001 -- effect already happened
+                    persistence_detail = ""
+                    try:
+                        session.enforcer.mark_indeterminate(
+                            self._external_execution_token(reauthorization_key)
+                        )
+                    except Exception as state_exc:  # noqa: BLE001
+                        persistence_detail = (
+                            "; indeterminate-state persistence failed: "
+                            f"{type(state_exc).__name__}: {state_exc}"
+                        )
+                    result = CallResult(
+                        permit=False,
+                        reason=(
+                            "indeterminate tool outcome: external result finalization "
+                            f"failed: {type(exc).__name__}: {exc}{persistence_detail}"
+                        ),
+                        return_value=None,
+                        reauthorized=True,
+                        authorization_permit=True,
+                        execution_status=ExecutionStatus.INDETERMINATE,
+                    )
             return result
 
         decision = session.enforcer.check(tool, args, live=True)
@@ -1304,6 +1456,11 @@ class Gateway:
             return None
         return (source_sha256, tool, typed_args)
 
+    @staticmethod
+    def _external_execution_token(action_key: tuple[Any, ...]) -> tuple:
+        digest = hashlib.sha256(repr(action_key).encode("utf-8")).hexdigest()
+        return (f"reauthorization:{digest}", ())
+
     def _hold_plan_external_call(
         self,
         session: _Session,
@@ -1318,6 +1475,18 @@ class Gateway:
             # Unknown tools and malformed calls are ordinary denials, not
             # candidates a user should be prompted to bless.
             return None
+        attempt = session.enforcer.attempt_state(
+            self._external_execution_token(action_key)
+        ) if session.enforcer is not None else None
+        if attempt is not None:
+            return CallResult(
+                permit=False,
+                reason=(
+                    f"external execution attempt is {attempt} "
+                    "(durable replay blocked)"
+                ),
+                return_value=None,
+            )
         if action_key in session.reauthorization_denied:
             return CallResult(
                 permit=False,
@@ -1495,7 +1664,9 @@ class Gateway:
                 # Approving the bulk lets the rest of that loop run uncapped.
                 state.bulk_confirmed.add(pc.bulk_rule)
             else:
-                state.confirmed.add((pc.tool, _confirm_key(pc.value)))
+                state.confirmed.add(
+                    (pc.tool, pc.param_index, _confirm_key(pc.value))
+                )
         return True
 
     def composite_status(self) -> dict[str, Any] | None:
@@ -1508,6 +1679,7 @@ class Gateway:
             "stages": len(state.plan.stages),
             "consumed": len(state.consumed),
             "stage_rule_total": state.stage_rule_total,
+            "stage_site_total": state.stage_site_total,
             "complete": state.complete,
             "failure": state.failure,
             "truncated_total": state.truncated_total,
