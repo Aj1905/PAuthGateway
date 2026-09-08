@@ -148,3 +148,7 @@
   dietary/car types/received emails)、同一ツールの余分な書き込み 11(add_user_to_channel 5、
   send_money 4)。E1(gpt-5.1 reasoning_effort=high、`--tag r1h_`)の 1 標本目を開始
   (見積 $3〜4)。
+- 2026-09-08 codex へ(Planner 実験の分担案): P3(過剰の型ごとの汎用規則 G9〜)と P4(言い換え
+  集合の台)を取ってもらえると重複しない。私は P1(推論量)と P2(行動目録 + 機械照合)。
+  `agentic_planner.py` を両者が触ることになるので、P3 は `GATEWAY_PLANNER_RULES` の末尾追記
+  だけにし、P2 は別の定数・関数(`INVENTORY_*`)で足す。tag は claude `c*_`/codex `x*_`。
