@@ -164,6 +164,7 @@ class LLMFreeformPlanner:
     max_retries: int = 3
     enable_judge: bool = True
     judge_model: str | None = None
+    partial_scope: bool = False
 
     def generate(
         self,
@@ -179,6 +180,15 @@ class LLMFreeformPlanner:
             raise PlanGenerationError(
                 f"unknown suite {self.suite_name!r}: {type(exc).__name__}: {exc}"
             ) from exc
+        cache_path = self.cache_path
+        if cache_path is not None:
+            # A cached plan is only valid for the tool surface it was written
+            # against: a schema change (new tool, different return shape) must
+            # not replay a stale plan.
+            surface = hashlib.sha1(
+                "\n".join(doc.render() for doc in suite.tool_docs()).encode()
+            ).hexdigest()[:8]
+            cache_path = cache_path.with_name(f"{cache_path.stem}-{surface}{cache_path.suffix}")
         # ``pauth.codegen.generate_code`` is OpenAI-only. Claude/Fable must use
         # the provider-aware generator even for a one-shot Direct@1 run.
         # With zero retries we also disable the embedded semantic judge so the
@@ -187,9 +197,11 @@ class LLMFreeformPlanner:
             kwargs = {
                 "model": self.model,
                 "max_retries": self.max_retries,
-                "cache_path": self.cache_path,
+                "cache_path": cache_path,
                 "enable_judge": self.enable_judge if self.max_retries > 0 else False,
             }
+            if self.partial_scope:
+                kwargs["partial_scope"] = True
             if self.judge_model is not None:
                 kwargs["judge_model"] = self.judge_model
             result = generate_code_with_self_repair(prompt, suite.tool_docs(), **kwargs)
@@ -204,7 +216,7 @@ class LLMFreeformPlanner:
                 prompt,
                 suite.tool_docs(),
                 model=self.model,
-                cache_path=self.cache_path,
+                cache_path=cache_path,
             )
             code = result.code
             metadata = {"model": self.model}
@@ -339,6 +351,7 @@ def build_planner(
     enable_judge: bool = True,
     judge_model: str | None = None,
     clarifier: Callable[[list[str]], dict[str, str]] | None = None,
+    partial_scope: bool = False,
 ) -> Planner:
     """Construct a planner strategy by name.
 
@@ -383,7 +396,7 @@ def build_planner(
                 model=model,
                 cache_path=build_cache_path(
                     cache_dir,
-                    strategy=STRATEGY_LLM_FREEFORM,
+                    strategy=STRATEGY_LLM_FREEFORM + ("+partial" if partial_scope else ""),
                     prompt=prompt,
                     model=model,
                     max_retries=max_retries,
@@ -393,6 +406,7 @@ def build_planner(
                 max_retries=max_retries,
                 enable_judge=enable_judge,
                 judge_model=judge_model,
+                partial_scope=partial_scope,
             )
         if canonical == STRATEGY_AUTO:
             return AutoPlanner(freeform=freeform)

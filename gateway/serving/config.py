@@ -44,6 +44,7 @@ from pauth.suites.shopping import build_suite as build_shopping_suite
 
 from gateway.providers.mcp_suite import build_mcp_suite, build_mcp_suite_stdio
 from gateway.providers.openapi_suite import build_openapi_suite
+from gateway.runtime.confirmation import SourceTrust
 from gateway.runtime.policy import PolicySpec
 from gateway.providers.registry import merge_suites
 from gateway.providers.suite_filter import SuiteFilter
@@ -120,6 +121,11 @@ class LoadedConfig:
     policy: PolicySpec
     # Plan-time suite selection.
     suite_filter: SuiteFilter
+    # Provenance labels driving the confirmation gate. Fail-closed unless the
+    # config says otherwise: every tool's output is untrusted except the ones
+    # listed as trusted, so a control operand derived from a read is held for
+    # the human before a side-effecting call.
+    source_trust: SourceTrust = dataclasses.field(default_factory=SourceTrust.fail_closed)
 
 
 def load_config(path: str | Path) -> LoadedConfig:
@@ -218,12 +224,58 @@ def load_config(path: str | Path) -> LoadedConfig:
         min_score=min_score,
     )
 
+    source_trust = _parse_source_trust(raw.get("source_trust"), merged.tool_params())
+
     return LoadedConfig(
         merged_name=merged_name,
         sources=sources,
         merged=merged,
         policy=policy,
         suite_filter=suite_filter,
+        source_trust=source_trust,
+    )
+
+
+def _parse_source_trust(raw: Any, tool_params: dict[str, list[str]]) -> SourceTrust:
+    """Top-level ``source_trust`` block::
+
+        {"mode": "fail_closed" | "open",
+         "trusted_tools": [...], "untrusted_tools": [...],
+         "unverifiable_tools": [...], "confirm_untrusted_decisions": false,
+         "bulk_max_iterations": null}
+
+    Default (block absent) is fail-closed with no trusted tools.
+    """
+    if raw is None:
+        return SourceTrust.fail_closed()
+    if not isinstance(raw, dict):
+        raise ValueError("source_trust must be an object")
+    mode = raw.get("mode", "fail_closed")
+    if mode not in ("fail_closed", "open"):
+        raise ValueError("source_trust.mode must be 'fail_closed' or 'open'")
+
+    def names(key: str) -> frozenset[str]:
+        value = raw.get(key) or []
+        if not isinstance(value, list) or any(not isinstance(v, str) for v in value):
+            raise ValueError(f"source_trust.{key} must be a list of tool names")
+        unknown = sorted(set(value) - set(tool_params))
+        if unknown:
+            raise ValueError(f"source_trust.{key} names unknown tools {unknown}")
+        return frozenset(value)
+
+    decisions = raw.get("confirm_untrusted_decisions", False)
+    if not isinstance(decisions, bool):
+        raise ValueError("source_trust.confirm_untrusted_decisions must be a boolean")
+    bulk = raw.get("bulk_max_iterations")
+    if bulk is not None and (isinstance(bulk, bool) or not isinstance(bulk, int) or bulk < 1):
+        raise ValueError("source_trust.bulk_max_iterations must be a positive integer or null")
+    return SourceTrust(
+        untrusted_tools=names("untrusted_tools"),
+        trusted_tools=names("trusted_tools"),
+        default_untrusted=(mode == "fail_closed"),
+        unverifiable_tools=names("unverifiable_tools"),
+        confirm_untrusted_decisions=decisions,
+        bulk_max_iterations=bulk,
     )
 
 

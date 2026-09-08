@@ -1,5 +1,32 @@
 # PAuth ゲートウェイのための Claude Code hook
 
+> **2026-09-08 実験用リポジトリでの変更点(要約)。** Claude Code 向けの実用経路は
+> 「hook だけ」ではなく「hook + MCP 外装」になった。
+>
+> - **MCP 外装**(`gateway/serving/mcp_facade.py`): Claude Code に登録する MCP
+>   サーバーはこの外装だけ。実 MCP はデーモンの設定(`--config`)に置く。
+>   `PreToolUse` hook で許可した呼び出しを Claude Code が自分で実行する構成は、
+>   実 MCP を繋ぐと**二重実行**になるため使わない。外装は `tools/list` を
+>   `GET /tools` から取り、`tools/call` を `POST /sessions/<id>/messages` に変換する。
+>   ゲートウェイが実行し、結果だけを返す。
+> - **セッションの対応付け**: `submit_prompt.sh` が `binding: pid:$CLAUDE_PID` を
+>   送り、外装は同じ `CLAUDE_PID` で `GET /bindings/pid:<pid>` を引く。
+> - **ローカルツールの方針**(`gateway/hooks/local_policy.py`): `Read`/`Edit` 等の
+>   作業場内ツールは通す。`mcp__pauth__*`(外装)は外装が執行するので通す。
+>   `Bash`・`WebFetch`・外装以外の `mcp__*` は見えない外向き経路なので `strict` では
+>   遮断(`GATEWAY_BASH_POLICY=allow` は外向き遮断を適用した利用者でのみ使う)。
+> - **人間の判断面**: デーモンの `--operator-token`(エージェント用とは別)で
+>   `python -m gateway.operator.cli` から保留(計画外の呼び出し、汚染由来オペランド)
+>   を見て承認・却下する。
+> - **空の計画**: プロンプトがゲートウェイのツールを一つも要しない場合、hook は
+>   遮断せず続行させる(`GATEWAY_EMPTY_PLAN=block` で従来どおり遮断)。その
+>   セッションのゲートウェイツールは全部拒否のまま。
+> - **範囲注記**: serving 経路の Planner と判定器には「エージェントには一覧外の
+>   道具もある。一覧のツールが要る部分だけを計画せよ」と伝える
+>   (`PAUTH_PLANNER_PARTIAL_SCOPE=0` で無効)。評価経路の字面は変えていない。
+>
+> 設定の雛形は `docs/lab/claude_code/`、手順は `docs/lab/E2E_REAL_MCP.md`。
+
 このディレクトリは、無改造の Claude Code セッションの周囲でゲートウェイを
 実際のファイアウォールとして機能させる、二つの Claude Code hook スクリプトを
 提供する。

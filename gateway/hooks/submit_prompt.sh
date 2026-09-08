@@ -76,9 +76,24 @@ response=$(curl --silent --show-error --fail-with-body \
 
 accepted=$(printf '%s' "$response" | /usr/bin/python3 -c 'import sys,json; d=json.load(sys.stdin); print("1" if d.get("accepted") else "0")' 2>/dev/null || echo "0")
 reason=$(printf '%s' "$response" | /usr/bin/python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("reason",""))' 2>/dev/null || echo "?")
+empty_plan=$(printf '%s' "$response" | /usr/bin/python3 -c 'import sys,json; d=json.load(sys.stdin); print("1" if d.get("empty_plan") else "0")' 2>/dev/null || echo "0")
 
 if [[ "$accepted" == "1" ]]; then
   echo "[gateway-hook] prompt accepted :: $reason" >&2
+  exit 0
+fi
+
+# A rejected plan (empty, or one the Planner could not express) leaves every
+# gateway tool default-denied for this session. The agent's own local tools
+# are outside the gateway either way, so letting the conversation continue is
+# safe and is what a Claude Code user expects; blocking it protects nothing.
+# GATEWAY_PLAN_REJECT=block restores the paper-faithful "no plan, no agent".
+if [[ "${GATEWAY_PLAN_REJECT:-continue}" == "continue" ]]; then
+  if [[ "$empty_plan" == "1" ]]; then
+    echo "[gateway-hook] no gateway tool is needed for this prompt (gateway tools stay denied) :: $reason" >&2
+  else
+    echo "[gateway-hook] plan rejected; gateway tools stay denied for this session, continuing :: $reason" >&2
+  fi
   exit 0
 fi
 

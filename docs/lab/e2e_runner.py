@@ -79,18 +79,17 @@ def run_task(base: str, token: str, task: dict, strategy: str, model: str,
         )
         permitted = bool(res.get("permit"))
         approved_here = 0
-        if (
-            not permitted and call["expect"] and operator_token
-            and res.get("reauthorization_required")
-        ):
-            # The human path: approve the exact held call once, then retry.
+        if not permitted and call["expect"] and operator_token:
+            # The human path: approve whatever is held (an off-plan call, or a
+            # tainted operand awaiting confirmation) once, then retry.
             approved_here = _approve_holds(base, operator_token, session)
             out["approvals"] += approved_here
-            status, res = _post(
-                f"{base}/sessions/{session}/messages", token,
-                {"kind": "tool_call", "tool": call["tool"], "kwargs": call.get("kwargs", {})},
-            )
-            permitted = bool(res.get("permit"))
+            if approved_here:
+                status, res = _post(
+                    f"{base}/sessions/{session}/messages", token,
+                    {"kind": "tool_call", "tool": call["tool"], "kwargs": call.get("kwargs", {})},
+                )
+                permitted = bool(res.get("permit"))
         dispatched = res.get("execution_status") not in (None, "not_dispatched")
         matched = permitted == call["expect"] and dispatched == call["expect"]
         ok = ok and matched

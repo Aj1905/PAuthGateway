@@ -38,6 +38,7 @@ from typing import Any, Callable, Literal, Union
 from pauth.suites.base import SuiteSpec
 
 from gateway.runtime.audit import AuditLog
+from gateway.runtime.confirmation import SourceTrust
 from gateway.runtime.gateway import CallResult, Gateway, SubmissionResult
 from gateway.runtime.policy import PolicySpec
 from gateway.planning.planner import (
@@ -97,6 +98,11 @@ class PromptResponse:
     accepted: bool = False
     reason: str = ""
     rule_count: int = 0
+    # True when the Planner produced a plan with no tool calls: the task needs
+    # none of the gateway's tools (or the Planner gave up). The session stays
+    # default-deny either way; an ingress may let the agent continue with its
+    # own tools rather than block the conversation.
+    empty_plan: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -233,6 +239,8 @@ class AgentChannel:
         execution_state_sink: Callable[[dict[str, Any]], None] | None = None,
         operand_policy: PolicySpec | None = None,
         prompt_suite_loader: Callable[[str, str], SuiteSpec] | None = None,
+        source_trust: "SourceTrust | None" = None,
+        partial_scope: bool | None = None,
     ) -> None:
         self._gateway = Gateway(
             suite_loader,
@@ -241,8 +249,16 @@ class AgentChannel:
             execution_state_sink=execution_state_sink,
             operand_policy=operand_policy,
             prompt_suite_loader=prompt_suite_loader,
+            source_trust=source_trust,
         )
         self._prompt_received = False
+        # The agent behind this channel has tools of its own that the gateway
+        # never sees; plan only the listed-tool part of the task. Default ON
+        # for the serving path (PAUTH_PLANNER_PARTIAL_SCOPE=0 turns it off).
+        self._partial_scope = (
+            _env_bool("PAUTH_PLANNER_PARTIAL_SCOPE", True)
+            if partial_scope is None else partial_scope
+        )
 
     def status(self) -> dict[str, Any]:
         """Value-free session status for health checks (no operand values)."""
@@ -380,6 +396,7 @@ class AgentChannel:
                 cache_dir=cache_dir,
                 enable_judge=enable_judge,
                 judge_model=judge_model,
+                partial_scope=self._partial_scope,
             )
         except (PlanGenerationError, TypeError, ValueError) as exc:
             return PromptResponse(accepted=False, reason=str(exc), rule_count=0)
@@ -393,6 +410,7 @@ class AgentChannel:
             accepted=sub.accepted,
             reason=sub.reason,
             rule_count=sub.rule_count,
+            empty_plan=(not sub.accepted and "authorizes no tool calls" in sub.reason),
         )
 
     def _handle_tool_call(self, message: ToolCallMessage) -> ToolCallResponse | ErrorResponse:

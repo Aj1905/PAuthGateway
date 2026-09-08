@@ -72,7 +72,35 @@ class _Transport(Protocol):
     """JSON-RPC transport used by :func:`build_mcp_suite`."""
 
     def rpc(self, method: str, params: dict[str, Any] | None = None) -> Any: ...
+    def notify(self, method: str, params: dict[str, Any] | None = None) -> None: ...
     def close(self) -> None: ...
+
+
+MCP_PROTOCOL_VERSION = "2024-11-05"
+_CLIENT_INFO = {"name": "pauth-gateway", "version": "0.1.0"}
+
+
+def initialize_mcp(transport: "_Transport") -> dict[str, Any]:
+    """Run the MCP ``initialize`` handshake (spec-required before any request).
+
+    The TypeScript reference servers tolerate requests without it; the Python
+    SDK servers (``mcp-server-git`` and friends) answer ``-32602 Invalid
+    request parameters`` to everything until it is done (lab, 2026-09-08).
+    """
+    try:
+        result = transport.rpc("initialize", {
+            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": dict(_CLIENT_INFO),
+        })
+    except MCPError:
+        # A server (or test double) that does not implement ``initialize`` is
+        # tolerated: the following ``tools/list`` fails loudly if it needed it.
+        return {}
+    notify = getattr(transport, "notify", None)
+    if callable(notify):
+        notify("notifications/initialized")
+    return result if isinstance(result, dict) else {}
 
 
 # --------------------------------------------------------------------------
@@ -110,6 +138,21 @@ class HTTPTransport:
         except json.JSONDecodeError as exc:
             raise MCPError(f"non-JSON response from {self._url}: {exc}: {raw[:200]!r}") from exc
         return _rpc_result(payload, request_id, method)
+
+    def notify(self, method: str, params: dict[str, Any] | None = None) -> None:
+        body: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
+        if params is not None:
+            body["params"] = params
+        req = urllib.request.Request(
+            self._url, data=json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            method="POST",
+        )
+        try:
+            with _SAFE_OPENER.open(req, timeout=30) as resp:
+                resp.read(_MAX_RESPONSE_BYTES)
+        except Exception:  # noqa: BLE001 -- a notification has no reply contract
+            return None
 
     def close(self) -> None:
         return None
@@ -268,6 +311,22 @@ class StdioTransport:
             raise MCPError(f"non-JSON line from stdio MCP: {exc}: {response_line!r}") from exc
         return _rpc_result(payload, request_id, method)
 
+    def notify(self, method: str, params: dict[str, Any] | None = None) -> None:
+        """Send a JSON-RPC notification (no id, no reply)."""
+        body: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
+        if params is not None:
+            body["params"] = params
+        line = (json.dumps(body) + "\n").encode("utf-8")
+        with self._lock:
+            if not self.is_alive():
+                self._restart()
+            assert self._proc is not None and self._proc.stdin is not None
+            try:
+                self._proc.stdin.write(line)
+                self._proc.stdin.flush()
+            except (BrokenPipeError, OSError):
+                pass
+
     def _read_stderr(self) -> str:
         with self._stderr_lock:
             return bytes(self._stderr_tail).decode("utf-8", "replace")
@@ -377,11 +436,26 @@ def _tool_doc_from_mcp(
         }
         for name in declared_order
     ]
+    # What the Planner may dereference. Most MCP servers return plain text
+    # (no outputSchema); advertising "object" made the Planner write
+    # ``result.content`` and the enforcer could not resolve it on a str (lab,
+    # 2026-09-08). Describe the real shape.
+    output_schema = tool.get("outputSchema")
+    if isinstance(output_schema, dict) and isinstance(output_schema.get("properties"), dict):
+        fields = ", ".join(
+            f"{k}: {_type_from_schema(v)}" for k, v in output_schema["properties"].items()
+        )
+        returns = f"object {{{fields}}}"
+    else:
+        returns = (
+            "string -- the tool's text output as one value; use the whole value, "
+            "it has no fields"
+        )
     doc = ToolDoc(
         name=tool["name"],
         description=_description(tool.get("description")),
         parameters=parameters,
-        returns="object",
+        returns=returns,
     )
     return doc, declared_order, required
 
@@ -402,6 +476,7 @@ def build_mcp_suite_from_transport(
     """
     signer = signer or name
 
+    initialize_mcp(transport)
     result = transport.rpc("tools/list")
     if (
         not isinstance(result, dict)
@@ -451,6 +526,8 @@ def build_mcp_suite_from_transport(
                 raise MCPError(
                     f"MCP tool {tool!r} reported an application error"
                 )
+            if isinstance(result, dict) and isinstance(result.get("structuredContent"), dict):
+                return result["structuredContent"]
             if isinstance(result, dict) and "content" in result and isinstance(result["content"], list):
                 texts = [
                     c.get("text") for c in result["content"]
@@ -483,5 +560,10 @@ def build_mcp_suite(name: str, url: str, signer: str | None = None) -> SuiteSpec
 def build_mcp_suite_stdio(
     name: str, command: list[str], signer: str | None = None,
 ) -> SuiteSpec:
-    """Convenience: stdio transport + suite construction in one call."""
-    return build_mcp_suite_from_transport(name, StdioTransport(command), signer=signer)
+    """Convenience: stdio transport + suite construction in one call.
+
+    A respawned subprocess is a fresh MCP session, so the handshake is replayed
+    after every restart before the pending request is retried.
+    """
+    transport = StdioTransport(command, on_restart=initialize_mcp)
+    return build_mcp_suite_from_transport(name, transport, signer=signer)

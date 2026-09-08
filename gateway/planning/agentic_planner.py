@@ -386,6 +386,29 @@ G8. Give a lookup tool only the kind of key its schema declares. A by-name /
 # the one-shot paper-reproduction path keeps its prompt.
 PLANNER_SYSTEM_PROMPT = SYSTEM_PROMPT + "\n\n" + GATEWAY_PLANNER_RULES
 
+# Serving-path scope note (NOT part of the P-version prompts above; the
+# evaluation harness never sets it). An agent such as Claude Code has tools
+# of its own (local file reads/edits, shell, answering the user) that the
+# gateway neither sees nor plans. Without this note the Planner and the judge
+# treat those parts of the task as "missing" and collapse to an empty plan
+# (lab, 2026-09-08: a mixed local+MCP prompt was rejected outright).
+PARTIAL_SCOPE_NOTE = """\
+SCOPE OF THIS PLAN: the agent that will execute the task ALSO has capabilities
+outside the tools listed above (reading, searching and editing files in its
+own workspace, running commands, and answering the user in prose). Those parts
+of the task are handled elsewhere and are NOT missing from this plan. Plan
+ONLY the steps that require the listed tools, in order, and ignore everything
+else. Never invent a tool for the other parts (no shell, read, print or
+report helper): a name that is not in the list above does not exist here.
+Only when NONE of the listed tools is needed for any part of the task, output
+`def run():\n    pass` (rule G3 still applies: prefer a real plan)."""
+
+JUDGE_SCOPE_NOTE = """\
+SCOPE: the code only needs to cover the parts of the task that require the
+tools listed in it; the agent has other means (local files, shell, prose) for
+the rest. Do NOT report a step as missing unless it needs one of those listed
+tools. Judge only the covered steps for fidelity."""
+
 
 _RUNTIME_REPAIR_INSTRUCTION = """\
 Your previous attempt was grammar-valid but CRASHED when executed against the
@@ -439,8 +462,10 @@ fences.
 """
 
 
-def _judge_user_prompt(task: str, code: str) -> str:
+def _judge_user_prompt(task: str, code: str, scope_note: str | None = None) -> str:
+    scope = f"{scope_note}\n\n" if scope_note else ""
     return (
+        f"{scope}"
         "USER TASK:\n"
         f"{task}\n\n"
         "GENERATED CODE:\n"
@@ -454,6 +479,7 @@ def _judge_intent(
     code: str,
     judge_model: str,
     judge_client: Any,
+    scope_note: str | None = None,
 ) -> tuple[bool, list[str]]:
     """Call the judge LLM and parse its verdict.
 
@@ -470,7 +496,7 @@ def _judge_intent(
             model=judge_model,
             max_tokens=1024,
             system=_SEMANTIC_JUDGE_SYSTEM,
-            messages=[{"role": "user", "content": _judge_user_prompt(task, code)}],
+            messages=[{"role": "user", "content": _judge_user_prompt(task, code, scope_note)}],
         )
         # Anthropic's SDK returns a list of content blocks. We want the first
         # text block.
@@ -489,7 +515,7 @@ def _judge_intent(
             model=judge_model,
             messages=[
                 {"role": "system", "content": _SEMANTIC_JUDGE_SYSTEM},
-                {"role": "user", "content": _judge_user_prompt(task, code)},
+                {"role": "user", "content": _judge_user_prompt(task, code, scope_note)},
             ],
         )
         text = response.choices[0].message.content or ""
@@ -650,6 +676,7 @@ def generate_code_with_self_repair(
     executor: Any | None = None,
     initial_system_prompt: str | None = None,
     initial_user_prompt: str | None = None,
+    partial_scope: bool = False,
 ) -> AgenticCodegenResult:
     """Generate DSL code with grammar + semantic self-repair.
 
@@ -687,8 +714,12 @@ def generate_code_with_self_repair(
     if enable_judge and judge_client is None:
         judge_client = _get_judge_client(judge_model, client)
 
+    judge_scope = JUDGE_SCOPE_NOTE if partial_scope else None
+    system_prompt = initial_system_prompt or PLANNER_SYSTEM_PROMPT
+    if partial_scope:
+        system_prompt = system_prompt + "\n\n" + PARTIAL_SCOPE_NOTE
     messages: list[dict[str, str]] = [
-        {"role": "system", "content": initial_system_prompt or PLANNER_SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {
             "role": "user",
             "content": initial_user_prompt or build_user_prompt(task, tools),
@@ -780,7 +811,7 @@ def generate_code_with_self_repair(
         if enable_judge:
             try:
                 intent_ok, intent_issues = _judge_intent(
-                    task, code, judge_model, judge_client
+                    task, code, judge_model, judge_client, scope_note=judge_scope
                 )
             except Exception as exc:  # noqa: BLE001 -- judge failures shouldn't crash the Planner
                 # Conservative fallback: treat judge-side errors as a failed

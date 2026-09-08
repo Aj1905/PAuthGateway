@@ -213,6 +213,7 @@ def restore_channel(
     audit_log: "AuditLog | None" = None,
     operand_policy: "PolicySpec | None" = None,
     prompt_suite_loader: "Callable[[str, str], SuiteSpec] | None" = None,
+    source_trust: "SourceTrust | None" = None,
 ) -> AgentChannel | None:
     """Rebuild a persisted session without resetting its execution ledger.
 
@@ -238,6 +239,7 @@ def restore_channel(
         ),
         operand_policy=operand_policy,
         prompt_suite_loader=prompt_suite_loader,
+        source_trust=source_trust,
     )
     message = dict(entry.get("config", {}) or {})
     message.update({"kind": "prompt", "prompt": entry.get("prompt", "")})
@@ -253,6 +255,7 @@ class _Handler(BaseHTTPRequestHandler):
     sessions: dict[str, AgentChannel] = {}
     operator_token: str | None = None   # human-only credential; never an agent's
     bindings: dict[str, str] = {}       # binding key (e.g. "pid:123") -> session_id
+    source_trust = None                  # SourceTrust from --config (fail-closed); None = library default
     merged_suite_name: str = "shopping"  # what GET /tools describes
     session_owners: dict[str, str] = {}  # session_id -> authenticated principal
     _lock = threading.Lock()             # guards the session tables (threaded server)
@@ -351,6 +354,7 @@ class _Handler(BaseHTTPRequestHandler):
             execution_state_sink=sink,
             operand_policy=self.operand_policy,
             prompt_suite_loader=self.prompt_suite_loader,
+            source_trust=self.source_trust,
         )
 
     @classmethod
@@ -526,6 +530,7 @@ class _Handler(BaseHTTPRequestHandler):
                         audit_log=self.audit_log,
                         operand_policy=self.operand_policy,
                         prompt_suite_loader=self.prompt_suite_loader,
+                        source_trust=self.source_trust,
                     )
                 except SessionRestoreError as exc:
                     return 409, {
@@ -792,8 +797,10 @@ def main() -> int:
 
     _Handler.operand_policy = None
     _Handler.prompt_suite_loader = None
+    _Handler.source_trust = None
     if args.config:
         loaded = load_config(args.config)
+        _Handler.source_trust = loaded.source_trust
         # staticmethod so instance access does not bind the loader (see class def).
         _Handler.suite_loader = staticmethod(suite_loader_for(loaded))
         _Handler.operand_policy = loaded.policy
