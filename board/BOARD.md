@@ -63,10 +63,10 @@
 
 | # | 基準 | 測り方 | 現状 |
 |---|---|---|---|
-| K1 | 実 MCP ツール上で、LLM Planner + 厳格モードで、実タスクを 10 種以上完走する | 手順書どおりに再現できる実行記録(監査 JSONL) | 0 |
+| K1 | 実 MCP ツール上で、LLM Planner + 厳格モードで、実タスクを 10 種以上完走する | `docs/lab/e2e_runner.py --tasks docs/lab/tasks_fs.json` | **10/10**(9 件は承認なし、ファイルシステム MCP。2 種目の MCP はこれから) |
 | K2 | 計画の過不足なし認可率が AgentDojo 97 タスクで 60/97 以上、不足なし 80/97 以上 | `eval.funnel`(GT_* 指標) | 41 / 47 |
 | K3 | 強制攻撃の拒否は全件維持、良性の過剰拒否 0 を維持 | `eval.check`、`tests.test_unexpected_attacks` | 達成 |
-| K4 | 汚染由来のオペランドは関門で人間に確認され、確認前に実ツールへ届かない | 本番経路の検査 + 実 MCP 上の再現 | 評価専用 |
+| K4 | 汚染由来のオペランドは関門で人間に確認され、確認前に実ツールへ届かない | 本番経路の検査 + 実 MCP 上の再現 | 人間の判断面(HTTP + CLI)は実装済み。一括関門の昇格は未 |
 | K5 | Claude Code を厳格モードで使えて、日常の作業(読み書き・検索)が止まらない | 内部ツール方針を実装し、実セッションで確認 | 未決 |
 | K6 | hook や外向き遮断が外れたら検知して報告する | 健全性検査の実装と検査 | なし |
 | K7 | 監査ログから「何が許可・拒否され、なぜか」を人間が読める | 読み出し用の一覧コマンド | JSONL のみ |
@@ -92,13 +92,15 @@
 | ID | タスク | 主に触る範囲 | 担当 | 状態 | 成果・備考 |
 |---|---|---|---|---|---|
 | T1 | 実 MCP サーバー(stdio、参照実装)+ LLM Planner + 厳格モードで、実タスクを端から端まで通す。壊れた箇所を列挙し、直す。手順書を `docs/lab/E2E_REAL_MCP.md` に残す | `gateway/providers/mcp_suite.py`、`gateway/serving/`、`docs/lab/` | claude | 進行中 | |
-| T2 | 関門確認を本番経路へ昇格(`execute_with_batched_confirmation` を `gateway/runtime/gateway.py` と HTTP 経路に載せる)。設計判断は下記「引き継ぐ設計判断」の 6 点 | `gateway/runtime/gateway.py`、`gateway/runtime/batched_confirmation.py`、`gateway/serving/http_server.py`、`gateway/ingress/agent_channel.py`、検査 | | 未着手 | Codex 向けに切り出した。着手時に担当を書く |
+| T2 | 関門確認を本番経路へ昇格(`execute_with_batched_confirmation` を `gateway/runtime/gateway.py` に載せる)。設計判断は下記「引き継ぐ設計判断」の 6 点。**人間が保留を見て判断する HTTP 面と CLI は claude が先に実装済み**(`--operator-token`、`GET /sessions/<id>/pending`、`POST /sessions/<id>/decisions`、`gateway/operator/cli.py`)。T2 はその上に「読み取り相の後に一括で関門を出す」制御を載せる作業 | `gateway/runtime/gateway.py`、`gateway/runtime/batched_confirmation.py`、検査 | | 未着手 | Codex 向けに切り出した。着手時に担当を書く |
 | T3 | Claude Code 内部ツールの方針: 外向きでないツール(Read/Edit/Write/Glob/Grep 等)は計画外でも通し、外向き(Bash・WebFetch・MCP)はゲートウェイの判定に従う。方針を設定で宣言でき、`protection` に反映する | `gateway/runtime/policy.py`、`gateway/runtime/protection.py`、`gateway/hooks/`、検査 | | 未着手 | K5 |
 | T4 | Planner の生成失敗の可視化と代替: 生成器が `stop_reason`(拒否等)を無視して空の計画を保存する問題を直し、拒否時は別モデルで代替生成する | `gateway/planning/agentic_planner.py`、`eval/funnel.py`、検査 | | 未着手 | 既知の原因は下記 |
 | T5 | Planner 忠実度の改善(K2)。不足側(GT_NO_MISSING)を優先 | `gateway/planning/`、`eval/` | | 未着手 | API 費用に注意 |
 | T6 | 健全性検査(K6): hook 未登録・デーモン停止・遮断規則なしを検知して `GET /health` と hook 側で報告 | `gateway/serving/http_server.py`、`gateway/hooks/`、`gateway/deploy/` | | 未着手 | |
 | T7 | 監査ログの読み出し(K7): セッション単位で許可/拒否/理由を一覧する命令 | `gateway/runtime/audit.py`、新規 CLI | | 未着手 | |
 | T8 | hook の既定を厳格にする判断(T3・T6 の後) | `gateway/hooks/` | | 未着手 | |
+| T9 | **ゲートウェイを MCP サーバーとして Claude Code に見せる外装**(`gateway/serving/mcp_facade.py`)。Claude Code の MCP 設定にこの外装だけを登録し、実 MCP はゲートウェイの内側に置く。外装は `tools/list` をデーモンから取り、`tools/call` を `POST /sessions/<id>/messages` に変換する。セッションの対応付けは hook が送る `CLAUDE_PID` を鍵にデーモンが持つ | `gateway/serving/mcp_facade.py`、`gateway/serving/http_server.py`(`GET /tools`、対応付け経路)、`gateway/hooks/`、検査 | claude | 進行中 | 理由は方向修正の記録 2 |
+| T10 | 実 Claude Code(`claude -p`)を hook + 外装 + 実 MCP で走らせ、K1 の任務を丸投げして完走させる(K5 の実測) | `docs/lab/`、`gateway/hooks/` | claude | 未着手 | T3・T9 の後 |
 
 ---
 
@@ -155,3 +157,14 @@
 日付・記入者・理由・新しい方向を追記する。
 
 - 2026-09-08 claude: 初版。方向性は上記 3 節。
+- 2026-09-08 claude(方向修正 2): **Claude Code の hook 経路は、実 MCP を繋ぐと
+  二重実行になる。** `PreToolUse` で許可された呼び出しはゲートウェイが自分の MCP
+  接続で実行し、その後 Claude Code も自分の MCP 接続で同じ呼び出しを実行する。
+  買い物デモ(模擬実行)では気付かない欠陥。よって Claude Code 向けの実用経路は
+  「ゲートウェイを MCP サーバーとして Claude Code に登録し、実 MCP はゲートウェイの
+  内側に置く」(T9)に変える。hook は (a) プロンプトの捕捉と (b) ローカルツールの
+  方針(T3)に限定する。`docs/INGRESS_DESIGN.md` は「SDK 直結を先、傍受は後」と
+  していたが、依頼主の目的(自分のエージェントに丸投げ)には無改変 Claude Code の
+  経路が直結するので、順序を入れ替える。SDK 直結の契約は変えない。
+- 2026-09-08 claude(判定基準の補足): K1 は「通過数」だけでなく「人間の承認なしで
+  通過した数」を併記する。割り込みの回数は安心感の裏側(確認疲れ)の指標。
