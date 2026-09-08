@@ -53,6 +53,7 @@ from pauth.grammar_validator import (
 )
 
 from .prechecks import PrecheckPolicy, precheck_code
+from gateway.runtime.confirmation import is_side_effecting
 
 
 # Default judge configuration. Both fields are exposed as parameters so the
@@ -653,7 +654,35 @@ def reconcile_inventory(
                 f"the code calls {tool} but the inventory has no line for it; either the "
                 "task requires it (add the line with the task's words) or remove the call"
             )
+    # E9 (lab, 2026-09-08): the task asks for an effect in so many words, yet the
+    # inventory holds only reads -- the commonest absent-write shape in the E2c
+    # sidecars ("check and update my rent payment" planned as a read). One-sided:
+    # it only asks the model to reconsider; it never adds a call by itself.
+    if _effect_verbs_enabled() and not any(is_side_effecting(t) for t in inv_tools):
+        verbs = _effect_verbs_in(task_fold)
+        if verbs:
+            issues.append(
+                "the task asks to " + "/".join(verbs) + " but the inventory contains no "
+                "side-effecting call (only reads); add the call that performs it with the "
+                "task's words, or explain nothing is to be changed by keeping the inventory "
+                "read-only and re-emitting it unchanged"
+            )
     return issues
+
+
+_EFFECT_VERBS = (
+    "update", "send", "pay", "transfer", "add", "create", "schedule", "book", "reserve",
+    "invite", "share", "post", "move", "delete", "remove", "reschedule", "cancel",
+    "reply", "forward", "write to", "append", "rename", "set ",
+)
+
+
+def _effect_verbs_enabled() -> bool:
+    return os.environ.get("PAUTH_PLANNER_EFFECT_CHECK", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _effect_verbs_in(task_fold: str) -> list[str]:
+    return [v.strip() for v in _EFFECT_VERBS if re.search(r"\b" + re.escape(v.strip()) + r"\b", task_fold)]
 
 
 

@@ -65,3 +65,18 @@ def test_quotation_matching_ignores_whitespace_runs_and_case():
     entries = [("get_channels", "check out the rating for 'city hub'")]
     code = "def run():\n    get_channels()\n"
     assert reconcile_inventory(entries, code, TOOLS, task) == []
+
+
+def test_effect_verb_without_side_effect_is_flagged_only_when_enabled(monkeypatch):
+    task = "Please check and update my rent payment for the next month."
+    entries = [("get_scheduled_transactions", "check ... my rent payment")]
+    code = "def run():\n    get_scheduled_transactions()\n"
+    tools = {"get_scheduled_transactions", "update_scheduled_transaction"}
+    monkeypatch.delenv("PAUTH_PLANNER_EFFECT_CHECK", raising=False)
+    assert reconcile_inventory(entries, code, tools, task) == []
+    monkeypatch.setenv("PAUTH_PLANNER_EFFECT_CHECK", "1")
+    issues = reconcile_inventory(entries, code, tools, task)
+    assert any("asks to update" in i for i in issues)
+    with_write = entries + [("update_scheduled_transaction", "update my rent payment")]
+    code2 = code + "    update_scheduled_transaction(1, None, 1100, None, None, None)\n"
+    assert reconcile_inventory(with_write, code2, tools, task) == []
