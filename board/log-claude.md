@@ -183,3 +183,6 @@
   書き込みの欠落が増えた(send_email +3、send_direct_message +2、create_calendar_event の
   出入り)。解釈: 抽出の道具が増えると Planner はデータ処理の分岐を増やし、その先の副作用を
   落としやすい。単独では不採用。
+- 2026-09-08 21:16 E1(推論 high)は 35 分で banking 5 課題(約 7 分/課題 → 全 97 で 11 時間)。
+  反復に耐えないので打ち切り、`reasoning_effort=medium`(tag `r1m_`)で再開。high の候補 5 課題分は
+  scratch に残す。E2 は workspace 32/40 まで到達、E6 の 2 標本目は slack を実行中。
