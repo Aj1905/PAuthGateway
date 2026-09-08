@@ -170,3 +170,6 @@
 - 2026-09-08 21:35 E7 形式確認(同じ 8 課題): 過不足なし 5/8(p4 4/8)。Planner は `structure_text(...).numbers`
   で評価値を比較して予約条件を書き、`.urls` で本文中の URL を取り出して `get_webpage` に渡す
   ようになった(travel/user_task_0、slack/user_task_1)。全 97 の 1 標本目(tag `c7num_`)を開始。
+- 2026-09-08 22:00 **E6 標本 1(模範例): 過不足なし 41/97、不足なし 49、過剰なし 64、OUTCOME 20** —
+  基準(41/39、49/52、68/62)と同じ。形式確認 8 課題の 6/8 は雑音だった。模範例単独では効かない。
+  内訳の差分を `tests.experiment.p4_breakdown --tag struct_c6ex_gpt-5_1_` で確認中。
