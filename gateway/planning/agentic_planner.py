@@ -500,11 +500,15 @@ def run():
     ...
 
 Rules for the inventory:
-- Every line must quote words that appear in the USER TASK. A tool call you
-  cannot justify with the user's own words is NOT required: leave it out of
-  both the inventory and the code. This applies to reads too: listing,
-  looking up the current date, fetching attributes the task does not ask
-  about, or reading a whole inbox/drive when a search tool exists.
+- Every line must quote words that appear in the USER TASK, OR be written as
+  `# <tool> -- -> <other_tool>` when the call exists only to obtain an operand
+  (an ID, address, e-mail, rating, price) that <other_tool> needs and the
+  task does not state -- a lookup, a search, a read of the attribute the task
+  decides on. A tool call you can justify neither way is NOT required: leave
+  it out of both the inventory and the code. This applies to reads too:
+  listing what the task already names, looking up the current date when the
+  task states it, fetching attributes the task neither asks about nor decides
+  on, or reading a whole inbox/drive when a search tool exists.
 - Every side effect the user asks for (send, post, add, create, update,
   reschedule, share, pay) must have its own line, even when its content comes
   from data read at run time.
@@ -523,28 +527,40 @@ that quotes a real requirement of the task. Never invent a tool. Re-emit the
 full output: the inventory comment block, then the corrected `run` function,
 no explanation and no markdown fences."""
 
-_INVENTORY_RE = re.compile(
-    r"^\s*#\s*INVENTORY\s*\n(?P<body>(?:\s*#.*\n)*?)\s*#\s*END INVENTORY\s*\n",
-    re.MULTILINE,
-)
 _INVENTORY_LINE_RE = re.compile(r"^\s*#\s*([A-Za-z_][A-Za-z0-9_]*)\s*--\s*(.*)$")
+_INVENTORY_DERIVED_RE = re.compile(r"^->\s*([A-Za-z_][A-Za-z0-9_]*)\s*$")
 
 
 def split_inventory(text: str) -> tuple[list[tuple[str, str]], str]:
     """Return ``([(tool, justification), ...], code_without_inventory)``.
 
-    Missing inventory yields an empty list and the text unchanged (the
-    reconciliation then reports it).
+    The inventory is the block of comment lines that starts at ``# INVENTORY``
+    and ends at ``# END INVENTORY`` or at the first non-comment line (models
+    sometimes omit the end marker; a leftover comment block would otherwise be
+    cached as part of the plan). Missing inventory yields an empty list and the
+    text unchanged (the reconciliation then reports it).
     """
-    m = _INVENTORY_RE.search(text)
-    if not m:
+    lines = text.splitlines(keepends=True)
+    start = next((i for i, ln in enumerate(lines) if re.match(r"^\s*#\s*INVENTORY\s*$", ln)), None)
+    if start is None:
         return [], text
     entries: list[tuple[str, str]] = []
-    for line in m.group("body").splitlines():
-        lm = _INVENTORY_LINE_RE.match(line)
+    end = start + 1
+    while end < len(lines):
+        ln = lines[end]
+        if re.match(r"^\s*#\s*END INVENTORY\s*$", ln):
+            end += 1
+            break
+        if not ln.strip():
+            end += 1
+            continue
+        if not ln.lstrip().startswith("#"):
+            break
+        lm = _INVENTORY_LINE_RE.match(ln.rstrip("\n"))
         if lm:
             entries.append((lm.group(1), lm.group(2).strip().strip('"')))
-    code = text[: m.start()] + text[m.end():]
+        end += 1
+    code = "".join(lines[:start] + lines[end:])
     return entries, code.lstrip("\n")
 
 
@@ -570,6 +586,10 @@ def reconcile_inventory(
     task_fold = task.casefold()
     inv_tools = [t for t, _ in entries]
     called = _called_tools(code, tool_names)
+    quoted_tools = {
+        t for t, why in entries
+        if why and not _INVENTORY_DERIVED_RE.match(why) and why.casefold() in task_fold
+    }
     for tool, why in entries:
         if tool not in tool_names:
             issues.append(f"inventory names {tool!r}, which is not an available tool")
@@ -578,10 +598,19 @@ def reconcile_inventory(
             issues.append(
                 f"inventory requires {tool} (\"{why}\") but the code never calls it"
             )
-        if why and why.casefold() not in task_fold:
+        derived = _INVENTORY_DERIVED_RE.match(why or "")
+        if derived:
+            target = derived.group(1)
+            if target not in inv_tools or target == tool:
+                issues.append(
+                    f"inventory says {tool} supplies an operand to {target}, but {target} is "
+                    "not itself in the inventory with a quotation of the USER TASK"
+                )
+        elif why and why.casefold() not in task_fold:
             issues.append(
                 f"inventory justification for {tool} (\"{why}\") is not a quotation of the "
-                "USER TASK; quote the task's own words or drop the call"
+                "USER TASK; quote the task's own words, write `-> <tool>` if this call only "
+                "supplies an operand to another inventoried call, or drop the call"
             )
     for tool in sorted(set(called)):
         if tool not in inv_tools:
@@ -930,8 +959,14 @@ def generate_code_with_self_repair(
     failure_history = generation.failure_history
     judge_verdicts: list[JudgeVerdict] = []
     last_code = ""
+    inventory_rounds = 0          # E2: reconciliation repairs have their own budget
+    inventory_budget = 2
 
-    for attempt in range(1, max_retries + 2):  # initial + retries
+    attempt = 0
+    while attempt < max_retries + 1 + inventory_budget:  # initial + retries (+ inventory rounds)
+        attempt += 1
+        if attempt - inventory_rounds > max_retries + 1:
+            break
         raw, pt, ct = generation(messages)
         code = _strip_fences(raw)
         if not code.strip() or re.fullmatch(r"```[A-Za-z0-9]*\s*```", code.strip()):
@@ -955,7 +990,7 @@ def generate_code_with_self_repair(
             validate_semantics(func, tool_names)
         except DSLRejectionError as exc:
             failure_history.append(f"grammar: {exc}")
-            if attempt > max_retries:
+            if attempt - inventory_rounds > max_retries:
                 break
             messages.append({"role": "assistant", "content": model_output})
             messages.append(
@@ -974,7 +1009,7 @@ def generate_code_with_self_repair(
         precheck_issues = precheck_code(task, code, tools, policy=precheck_policy)
         if precheck_issues:
             failure_history.append(f"precheck: {'; '.join(precheck_issues)}")
-            if attempt > max_retries:
+            if attempt - inventory_rounds > max_retries:
                 break
             messages.append({"role": "assistant", "content": model_output})
             messages.append(
@@ -993,8 +1028,9 @@ def generate_code_with_self_repair(
             inventory_issues = reconcile_inventory(inventory_entries, code, tool_names, task)
             if inventory_issues:
                 failure_history.append(f"inventory: {'; '.join(inventory_issues)}")
-                if attempt > max_retries:
+                if inventory_rounds >= inventory_budget:
                     break
+                inventory_rounds += 1
                 messages.append({"role": "assistant", "content": model_output})
                 messages.append(
                     {
@@ -1020,7 +1056,7 @@ def generate_code_with_self_repair(
                 runtime_error = None
             if runtime_error:
                 failure_history.append(f"runtime: {runtime_error}")
-                if attempt > max_retries:
+                if attempt - inventory_rounds > max_retries:
                     break
                 messages.append({"role": "assistant", "content": model_output})
                 messages.append(
@@ -1057,7 +1093,7 @@ def generate_code_with_self_repair(
             if not intent_ok:
                 issues_text = "; ".join(intent_issues) if intent_issues else "(no issues listed)"
                 failure_history.append(f"intent: {issues_text}")
-                if attempt > max_retries:
+                if attempt - inventory_rounds > max_retries:
                     break
                 messages.append({"role": "assistant", "content": model_output})
                 messages.append(
