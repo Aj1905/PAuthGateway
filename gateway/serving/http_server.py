@@ -161,6 +161,18 @@ _SESSION_PENDING_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})/pending$"
 _SESSION_DECISIONS_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})/decisions$")
 
 
+def _session_audit(audit_log: "AuditLog | None", session_id: str) -> "AuditLog | None":
+    """One trail per session, sharing the operator's persistent JSONL.
+
+    ``AuditLog.for_session`` (T7, codex) stamps every event with the session id
+    so ``gateway.operator.audit_report`` can group a shared file by session.
+    """
+    if audit_log is None:
+        return None
+    for_session = getattr(audit_log, "for_session", None)
+    return for_session(session_id) if callable(for_session) else audit_log
+
+
 def _tool_surface(suite: SuiteSpec) -> list[dict]:
     """Describe every tool as an MCP-style entry (name, description, inputSchema).
 
@@ -232,7 +244,7 @@ def restore_channel(
         )
     channel = AgentChannel(
         suite_loader,
-        audit_log=audit_log,
+        audit_log=_session_audit(audit_log, session_id),
         restored_execution_state=execution_state,
         execution_state_sink=lambda state: store.update_execution_state(
             session_id, state
@@ -350,7 +362,7 @@ class _Handler(BaseHTTPRequestHandler):
             )
         return AgentChannel(
             self.suite_loader,
-            audit_log=self.audit_log,
+            audit_log=_session_audit(self.audit_log, session_id),
             execution_state_sink=sink,
             operand_policy=self.operand_policy,
             prompt_suite_loader=self.prompt_suite_loader,

@@ -400,14 +400,22 @@ of the task are handled elsewhere and are NOT missing from this plan. Plan
 ONLY the steps that require the listed tools, in order, and ignore everything
 else. Never invent a tool for the other parts (no shell, read, print or
 report helper): a name that is not in the list above does not exist here.
-Only when NONE of the listed tools is needed for any part of the task, output
-`def run():\n    pass` (rule G3 still applies: prefer a real plan)."""
+Information that only a listed tool can obtain (a status, a diff, a file's
+content, a listing, a record) is obtained by CALLING that tool -- "show me",
+"tell me", "check" or "what is" about such information is a plan step, not
+prose. Only when NONE of the listed tools is needed for any part of the task,
+output `def run():\n    pass` (rule G3 still applies: prefer a real plan)."""
 
 JUDGE_SCOPE_NOTE = """\
-SCOPE: the code only needs to cover the parts of the task that require the
-tools listed in it; the agent has other means (local files, shell, prose) for
-the rest. Do NOT report a step as missing unless it needs one of those listed
-tools. Judge only the covered steps for fidelity."""
+SCOPE OVERRIDE (applies before every rule above): the code is a PARTIAL plan.
+The agent executing the task also has other means -- its own file reads and
+edits, a shell, a browser, and answering the user in prose -- which are NOT
+tools of this plan. A "deficiency" therefore exists ONLY when a call to one of
+the LISTED TOOLS below is missing or wrong. Steps of the task that name other
+tools (Read, Bash, shell commands, web) or that only ask to report/tell/
+explain in prose are outside this plan: never list them as issues, and never
+return false because of them. If every step that needs a LISTED TOOL is
+covered faithfully, return true."""
 
 
 _RUNTIME_REPAIR_INSTRUCTION = """\
@@ -481,6 +489,11 @@ def _judge_intent(
     judge_client: Any,
     scope_note: str | None = None,
 ) -> tuple[bool, list[str]]:
+    system_prompt = _SEMANTIC_JUDGE_SYSTEM
+    if scope_note:
+        # The scope override must outrank the rubric, so it lives in the
+        # system prompt as well as in the user turn.
+        system_prompt = _SEMANTIC_JUDGE_SYSTEM + "\n\n" + scope_note
     """Call the judge LLM and parse its verdict.
 
     Returns ``(intent_captured, issues)``. Conservative on parse errors: if the
@@ -495,7 +508,7 @@ def _judge_intent(
         response = judge_client.messages.create(
             model=judge_model,
             max_tokens=1024,
-            system=_SEMANTIC_JUDGE_SYSTEM,
+            system=system_prompt,
             messages=[{"role": "user", "content": _judge_user_prompt(task, code, scope_note)}],
         )
         # Anthropic's SDK returns a list of content blocks. We want the first
@@ -514,7 +527,7 @@ def _judge_intent(
         response = judge_client.chat.completions.create(
             model=judge_model,
             messages=[
-                {"role": "system", "content": _SEMANTIC_JUDGE_SYSTEM},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": _judge_user_prompt(task, code, scope_note)},
             ],
         )
@@ -714,7 +727,10 @@ def generate_code_with_self_repair(
     if enable_judge and judge_client is None:
         judge_client = _get_judge_client(judge_model, client)
 
-    judge_scope = JUDGE_SCOPE_NOTE if partial_scope else None
+    judge_scope = (
+        JUDGE_SCOPE_NOTE + "\nLISTED TOOLS: " + ", ".join(sorted(t.name for t in tools))
+        if partial_scope else None
+    )
     system_prompt = initial_system_prompt or PLANNER_SYSTEM_PROMPT
     if partial_scope:
         system_prompt = system_prompt + "\n\n" + PARTIAL_SCOPE_NOTE
