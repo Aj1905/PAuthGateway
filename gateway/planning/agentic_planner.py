@@ -29,6 +29,7 @@ remains the one-shot version.
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import json
 import os
@@ -473,6 +474,124 @@ fences.
 """
 
 
+
+# ---------------------------------------------------------------------------
+# E2 (lab, 2026-09-08): action inventory + mechanical reconciliation.
+#
+# The Planner first writes an INVENTORY: one line per tool call the task
+# requires, each justified by a quoted fragment of the user's task. Then the
+# code. A deterministic check reconciles the two: every inventory tool must be
+# called, every called tool must be inventoried. Mismatches go back to the
+# model as repair instructions naming the model's OWN inventory lines -- no
+# LLM judge, so there is no "drop it and output pass" escape hatch (the T8/T11
+# failure). The inventory is stripped before the code is cached or compiled.
+# Enabled by PAUTH_PLANNER_INVENTORY=1 (experiment knob, off by default).
+# ---------------------------------------------------------------------------
+INVENTORY_NOTE = """\
+OUTPUT FORMAT (inventory first, then code). Before the `run` function, write an
+inventory of every tool call the task requires, one per line, as Python
+comments:
+
+# INVENTORY
+# <tool_name> -- "<the exact words of the USER TASK that require this call>"
+# ...
+# END INVENTORY
+def run():
+    ...
+
+Rules for the inventory:
+- Every line must quote words that appear in the USER TASK. A tool call you
+  cannot justify with the user's own words is NOT required: leave it out of
+  both the inventory and the code. This applies to reads too: listing,
+  looking up the current date, fetching attributes the task does not ask
+  about, or reading a whole inbox/drive when a search tool exists.
+- Every side effect the user asks for (send, post, add, create, update,
+  reschedule, share, pay) must have its own line, even when its content comes
+  from data read at run time.
+- The code must call exactly the tools in the inventory, nothing else. The
+  inventory is not code: it is stripped before the function is used."""
+
+_INVENTORY_REPAIR_INSTRUCTION = """\
+Your inventory and your code disagree. Reconcile them -- the inventory is your
+own statement of what the USER TASK requires:
+
+{issues}
+
+Fix by adding the missing call(s) to the code, or by removing an unrequired
+call from BOTH the code and the inventory. Do not remove an inventory line
+that quotes a real requirement of the task. Never invent a tool. Re-emit the
+full output: the inventory comment block, then the corrected `run` function,
+no explanation and no markdown fences."""
+
+_INVENTORY_RE = re.compile(
+    r"^\s*#\s*INVENTORY\s*\n(?P<body>(?:\s*#.*\n)*?)\s*#\s*END INVENTORY\s*\n",
+    re.MULTILINE,
+)
+_INVENTORY_LINE_RE = re.compile(r"^\s*#\s*([A-Za-z_][A-Za-z0-9_]*)\s*--\s*(.*)$")
+
+
+def split_inventory(text: str) -> tuple[list[tuple[str, str]], str]:
+    """Return ``([(tool, justification), ...], code_without_inventory)``.
+
+    Missing inventory yields an empty list and the text unchanged (the
+    reconciliation then reports it).
+    """
+    m = _INVENTORY_RE.search(text)
+    if not m:
+        return [], text
+    entries: list[tuple[str, str]] = []
+    for line in m.group("body").splitlines():
+        lm = _INVENTORY_LINE_RE.match(line)
+        if lm:
+            entries.append((lm.group(1), lm.group(2).strip().strip('"')))
+    code = text[: m.start()] + text[m.end():]
+    return entries, code.lstrip("\n")
+
+
+def _called_tools(code: str, tool_names: set[str]) -> list[str]:
+    try:
+        module = ast.parse(code)
+    except SyntaxError:
+        return []
+    return [
+        node.func.id
+        for node in ast.walk(module)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in tool_names
+    ]
+
+
+def reconcile_inventory(
+    entries: list[tuple[str, str]], code: str, tool_names: set[str], task: str
+) -> list[str]:
+    """Deterministic issues between the inventory and the code (empty = consistent)."""
+    issues: list[str] = []
+    if not entries:
+        return ["no INVENTORY block was found before the code; write it first"]
+    task_fold = task.casefold()
+    inv_tools = [t for t, _ in entries]
+    called = _called_tools(code, tool_names)
+    for tool, why in entries:
+        if tool not in tool_names:
+            issues.append(f"inventory names {tool!r}, which is not an available tool")
+            continue
+        if tool not in called:
+            issues.append(
+                f"inventory requires {tool} (\"{why}\") but the code never calls it"
+            )
+        if why and why.casefold() not in task_fold:
+            issues.append(
+                f"inventory justification for {tool} (\"{why}\") is not a quotation of the "
+                "USER TASK; quote the task's own words or drop the call"
+            )
+    for tool in sorted(set(called)):
+        if tool not in inv_tools:
+            issues.append(
+                f"the code calls {tool} but the inventory has no line for it; either the "
+                "task requires it (add the line with the task's words) or remove the call"
+            )
+    return issues
+
+
 def _judge_user_prompt(task: str, code: str, scope_note: str | None = None) -> str:
     scope = f"{scope_note}\n\n" if scope_note else ""
     return (
@@ -733,6 +852,9 @@ def generate_code_with_self_repair(
     system_prompt = initial_system_prompt or PLANNER_SYSTEM_PROMPT
     if partial_scope:
         system_prompt = system_prompt + "\n\n" + PARTIAL_SCOPE_NOTE
+    use_inventory = os.environ.get("PAUTH_PLANNER_INVENTORY", "").strip().lower() in ("1", "true", "yes", "on")
+    if use_inventory:
+        system_prompt = system_prompt + "\n\n" + INVENTORY_NOTE
     messages: list[dict[str, str]] = [
         {"role": "system", "content": system_prompt},
         {
@@ -754,6 +876,10 @@ def generate_code_with_self_repair(
             raise GenerationFailure(generation.model, "empty_plan", pt, ct)
         total_prompt_tokens += pt
         total_completion_tokens += ct
+        inventory_entries: list[tuple[str, str]] = []
+        model_output = code
+        if use_inventory:
+            inventory_entries, code = split_inventory(code)
         last_code = code
 
         # Stage 1: full grammar -- mirror pauth.pipeline.prepare so the loop
@@ -769,7 +895,7 @@ def generate_code_with_self_repair(
             failure_history.append(f"grammar: {exc}")
             if attempt > max_retries:
                 break
-            messages.append({"role": "assistant", "content": code})
+            messages.append({"role": "assistant", "content": model_output})
             messages.append(
                 {
                     "role": "user",
@@ -788,7 +914,7 @@ def generate_code_with_self_repair(
             failure_history.append(f"precheck: {'; '.join(precheck_issues)}")
             if attempt > max_retries:
                 break
-            messages.append({"role": "assistant", "content": code})
+            messages.append({"role": "assistant", "content": model_output})
             messages.append(
                 {
                     "role": "user",
@@ -798,6 +924,25 @@ def generate_code_with_self_repair(
                 }
             )
             continue
+
+        # Stage 1.6 (E2): reconcile the model's own action inventory with the
+        # code. Deterministic; the repair names the model's inventory lines.
+        if use_inventory:
+            inventory_issues = reconcile_inventory(inventory_entries, code, tool_names, task)
+            if inventory_issues:
+                failure_history.append(f"inventory: {'; '.join(inventory_issues)}")
+                if attempt > max_retries:
+                    break
+                messages.append({"role": "assistant", "content": model_output})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": _INVENTORY_REPAIR_INSTRUCTION.format(
+                            issues="\n".join(f"- {i}" for i in inventory_issues)
+                        ),
+                    }
+                )
+                continue
 
         # Stage 1.75: runtime probe. Execute the DSL-valid code against a
         # throwaway mock environment to catch crashes (bad field / index / type
@@ -815,7 +960,7 @@ def generate_code_with_self_repair(
                 failure_history.append(f"runtime: {runtime_error}")
                 if attempt > max_retries:
                     break
-                messages.append({"role": "assistant", "content": code})
+                messages.append({"role": "assistant", "content": model_output})
                 messages.append(
                     {
                         "role": "user",
@@ -852,7 +997,7 @@ def generate_code_with_self_repair(
                 failure_history.append(f"intent: {issues_text}")
                 if attempt > max_retries:
                     break
-                messages.append({"role": "assistant", "content": code})
+                messages.append({"role": "assistant", "content": model_output})
                 messages.append(
                     {
                         "role": "user",

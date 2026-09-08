@@ -35,6 +35,9 @@ def call_generator(client: Any, model: str, messages: list[dict[str, str]]) -> t
         effort = os.environ.get('PAUTH_PLANNER_REASONING', '').strip().lower()
         if effort in ('minimal', 'low', 'medium', 'high'):
             kwargs['reasoning_effort'] = effort
+            # Reasoning tokens count against the completion budget; 4096 was
+            # truncated (finish_reason=length) on the first E1 run.
+            kwargs['max_completion_tokens'] = 16384
         response = client.chat.completions.create(**kwargs)
         usage = response.usage
         pt, ct = getattr(usage, 'prompt_tokens', 0) or 0, getattr(usage, 'completion_tokens', 0) or 0
