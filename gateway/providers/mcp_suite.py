@@ -448,8 +448,9 @@ def _tool_doc_from_mcp(
         returns = f"object {{{fields}}}"
     else:
         returns = (
-            "string -- the tool's text output as one value; use the whole value, "
-            "it has no fields"
+            "string -- a plain text value, NOT an object: it has no fields "
+            "(never write result.content / result.text / result.value); pass "
+            "the variable itself, or structure_text(result) to extract fields"
         )
     doc = ToolDoc(
         name=tool["name"],
