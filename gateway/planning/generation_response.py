@@ -1,5 +1,6 @@
 """Provider response validation and bounded refusal fallback for code generation."""
 from __future__ import annotations
+import os
 import logging
 from typing import Any, Callable
 
@@ -27,7 +28,14 @@ def call_generator(client: Any, model: str, messages: list[dict[str, str]]) -> t
         if reason not in (None, 'end_turn', 'stop_sequence'):
             raise GenerationFailure(model, str(reason), pt, ct)
     else:
-        response = client.chat.completions.create(model=model, messages=messages, max_completion_tokens=4096)
+        kwargs = {'model': model, 'messages': messages, 'max_completion_tokens': 4096}
+        # Experiment knob (lab 2026-09-08): reasoning effort for the gpt-5 family.
+        # Off unless PAUTH_PLANNER_REASONING is set, so recorded P-version numbers
+        # keep their meaning.
+        effort = os.environ.get('PAUTH_PLANNER_REASONING', '').strip().lower()
+        if effort in ('minimal', 'low', 'medium', 'high'):
+            kwargs['reasoning_effort'] = effort
+        response = client.chat.completions.create(**kwargs)
         usage = response.usage
         pt, ct = getattr(usage, 'prompt_tokens', 0) or 0, getattr(usage, 'completion_tokens', 0) or 0
         if not response.choices:
