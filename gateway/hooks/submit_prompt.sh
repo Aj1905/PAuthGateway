@@ -60,6 +60,20 @@ print(json.dumps(body))
 AUTH_HEADER=()
 [[ -n "${GATEWAY_AUTH_TOKEN:-}" ]] && AUTH_HEADER=(-H "Authorization: Bearer ${GATEWAY_AUTH_TOKEN}")
 
+# Deployment health at the start of every task (gateway/operator/health.py,
+# codex T6): hooks registered, egress lockdown present, daemon reachable.
+# Reported, not enforced: an unverifiable check ("unknown") is not a failure of
+# the plan, but the user must see that a protection is not confirmed.
+if [[ "${GATEWAY_HEALTH_CHECK:-1}" != "0" ]]; then
+  health=$(cd "$(dirname "$0")/../.." && PYTHONPATH=. /usr/bin/python3 -m gateway.operator.health --url "$GATEWAY_URL" 2>/dev/null) || true
+  if [[ -n "$health" ]]; then
+    healthy=$(printf '%s' "$health" | /usr/bin/python3 -c 'import sys,json; d=json.load(sys.stdin); print("1" if d.get("healthy") else "0")' 2>/dev/null || echo "0")
+    if [[ "$healthy" != "1" ]]; then
+      echo "[gateway-hook] deployment health NOT confirmed :: $health" >&2
+    fi
+  fi
+fi
+
 response=$(curl --silent --show-error --fail-with-body \
   --max-time 30 \
   -X POST \

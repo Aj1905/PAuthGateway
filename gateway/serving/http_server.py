@@ -161,6 +161,18 @@ _SESSION_PENDING_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})/pending$"
 _SESSION_DECISIONS_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})/decisions$")
 
 
+def _deployment_health() -> dict:
+    """``gateway.operator.health.deployment_health`` guarded so /health stays up."""
+    try:
+        from gateway.operator.health import deployment_health
+    except Exception:  # noqa: BLE001 -- module optional in older checkouts
+        return {"healthy": False, "checks": {"module": {"status": "unknown", "code": "health_module_missing"}}}
+    try:
+        return deployment_health()
+    except Exception as exc:  # noqa: BLE001 -- a probe crash must not take /health down
+        return {"healthy": False, "checks": {"probe": {"status": "unknown", "code": f"probe_error:{type(exc).__name__}"}}}
+
+
 def _session_audit(audit_log: "AuditLog | None", session_id: str) -> "AuditLog | None":
     """One trail per session, sharing the operator's persistent JSONL.
 
@@ -394,6 +406,12 @@ class _Handler(BaseHTTPRequestHandler):
                 "auth": self.auth is not None,
                 "session_store": self.session_store is not None,
                 "audit_persisted": self.audit_log is not None,
+                "operator_surface": bool(self.operator_token),
+                # Deployment checks (codex T6): hooks registered, OS egress
+                # lockdown present. Value-free status codes only. "unknown"
+                # means the daemon lacks the privilege to verify -- never
+                # reported as ok.
+                "deployment": _deployment_health(),
             })
             return
         if self.path == "/sessions":  # operator: list live sessions
