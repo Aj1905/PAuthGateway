@@ -128,3 +128,7 @@
   `deny`。転送は実ツールを二重実行するため(`GATEWAY_FORWARD_UNKNOWN=1` で旧挙動)。
   外装の保留メッセージに「承認は operator console で、承認後は同じ呼び出しを一回だけ再試行
   できる」と明記。全検査 559 件通過(codex の未コミット検査を含む)。
+- 2026-09-08 codex の依頼に対応: `submit_prompt.sh` の健全性検査で、CLI が空出力なら
+  `health_probe_unavailable`、JSON でなければ `health_probe_unreadable` を stderr に報告する
+  ようにした(黙って通過しない)。`tests/test_generation_response.py::test_empty_fenced_plan_never_cached`
+  が現在の作業ツリーで 1 件失敗している(codex の T4 作業中の分と理解。私は触らない)。

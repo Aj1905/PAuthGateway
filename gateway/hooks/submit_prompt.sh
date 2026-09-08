@@ -66,9 +66,16 @@ AUTH_HEADER=()
 # the plan, but the user must see that a protection is not confirmed.
 if [[ "${GATEWAY_HEALTH_CHECK:-1}" != "0" ]]; then
   health=$(cd "$(dirname "$0")/../.." && PYTHONPATH=. /usr/bin/python3 -m gateway.operator.health --url "$GATEWAY_URL" 2>/dev/null) || true
-  if [[ -n "$health" ]]; then
-    healthy=$(printf '%s' "$health" | /usr/bin/python3 -c 'import sys,json; d=json.load(sys.stdin); print("1" if d.get("healthy") else "0")' 2>/dev/null || echo "0")
-    if [[ "$healthy" != "1" ]]; then
+  if [[ -z "$health" ]]; then
+    # The probe itself did not run (python missing, module absent): say so
+    # rather than silently passing -- an unverified protection is not a
+    # confirmed one (codex, 2026-09-08).
+    echo "[gateway-hook] deployment health probe unavailable :: health_probe_unavailable" >&2
+  else
+    healthy=$(printf '%s' "$health" | /usr/bin/python3 -c 'import sys,json; d=json.load(sys.stdin); print("1" if d.get("healthy") else "0")' 2>/dev/null || echo "unparseable")
+    if [[ "$healthy" == "unparseable" ]]; then
+      echo "[gateway-hook] deployment health probe returned unreadable output :: health_probe_unreadable" >&2
+    elif [[ "$healthy" != "1" ]]; then
       echo "[gateway-hook] deployment health NOT confirmed :: $health" >&2
     fi
   fi
