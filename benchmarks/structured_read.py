@@ -24,13 +24,13 @@ from pauth.suites.base import SuiteSpec, ToolSpec
 import os as _os
 
 _EXTENDED = _os.environ.get("PAUTH_STRUCTURE_EXTENDED", "").strip().lower() in ("1", "true", "yes", "on")
+_URLS = _EXTENDED or _os.environ.get("PAUTH_STRUCTURE_URLS", "").strip().lower() in ("1", "true", "yes", "on")
 _VIEW_SCHEMA = (
-    "object {amounts: list of number, numbers: list of number, ibans: list of "
-    "string, dates: list of string, emails: list of string, urls: list of string, "
-    "lines: list of string, taint: boolean}"
-) if _EXTENDED else (
-    "object {amounts: list of number, ibans: list of string, dates: list of "
-    "string, emails: list of string, lines: list of string, taint: boolean}"
+    "object {amounts: list of number"
+    + (", numbers: list of number" if _EXTENDED else "")
+    + ", ibans: list of string, dates: list of string, emails: list of string"
+    + (", urls: list of string" if _URLS else "")
+    + ", lines: list of string, taint: boolean}"
 )
 
 STRUCTURE_TOOL = ToolSpec(
@@ -46,7 +46,7 @@ STRUCTURE_TOOL = ToolSpec(
             + ("; numbers matches EVERY numeric token (integers, ratings such as 4.2, "
                "prices without cents), in order of appearance" if _EXTENDED else "") + ". "
             "dates matches YYYY-MM-DD; ibans and emails match their token shapes"
-            + ("; urls matches http(s)://... and www.... tokens" if _EXTENDED else "") + ". "
+            + ("; urls matches http(s)://... and www.... tokens" if _URLS else "") + ". "
             "lines contains the original text split into lines, not parsed names "
             "or addresses. Missing matches produce empty lists. This tool does "
             "not interpret arbitrary prose, compute values, or infer fields. "

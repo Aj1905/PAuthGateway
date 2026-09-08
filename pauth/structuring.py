@@ -133,15 +133,24 @@ def structure(text: str) -> StructuredView:
         line_items=_line_items(text),
         numbers=_uniq([float(m.replace(",", "")) for m in _NUMBER.findall(_DATE.sub(" ", text))])
         if _extended_fields() else [],
-        urls=_uniq([u.rstrip(".,;:") for u in _URL.findall(text)]) if _extended_fields() else [],
+        urls=_uniq([u.rstrip(".,;:") for u in _URL.findall(text)])
+        if (_extended_fields() or _urls_field()) else [],
     )
 
 
-def _extended_fields() -> bool:
-    """E7 knob: expose ``numbers``/``urls`` (default off, so the recorded
-    P-version numbers keep their meaning until E7 is measured)."""
+def _flag(name: str) -> bool:
     import os
-    return os.environ.get("PAUTH_STRUCTURE_EXTENDED", "").strip().lower() in ("1", "true", "yes", "on")
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _extended_fields() -> bool:
+    """E7 knob: expose ``numbers``/``urls`` (default off; E7 measured worse)."""
+    return _flag("PAUTH_STRUCTURE_EXTENDED")
+
+
+def _urls_field() -> bool:
+    """E7b knob: expose only ``urls`` (the numbers field invited over-processing)."""
+    return _flag("PAUTH_STRUCTURE_URLS")
 
 
 # --------------------------------------------------------------------------
