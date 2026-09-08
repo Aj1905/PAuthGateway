@@ -47,6 +47,12 @@ _AMOUNT = re.compile(r"(?<![\d.])\d{1,3}(?:,\d{3})*\.\d{2}(?!\d)")
 _IBAN = re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{8,30}\b")
 _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
+# Any numeric token (integer or decimal): ratings ("4.2"), counts, prices
+# written without cents. A superset of ``amounts``; deterministic, so still
+# re-derivable by the enforcer (lab E7, 2026-09-08).
+_NUMBER = re.compile(r"(?<![\w.])-?\d+(?:,\d{3})*(?:\.\d+)?(?![\w.])")
+# URLs as they appear in chat messages and pages (with or without a scheme).
+_URL = re.compile(r"(?:https?://|www\.)[^\s\"'<>)\]]+")
 # A human-facing "unknown purpose" marker. An amount the extractor could NOT tie
 # to an item is shown this way -- deliberately suspicious, because an amount with
 # no clear purpose is exactly where an injection hides.
@@ -92,10 +98,12 @@ class StructuredView:
     lines: list[str]
     line_items: list[LineItem]
     taint: bool = True
+    numbers: list[float] = dataclasses.field(default_factory=list)
+    urls: list[str] = dataclasses.field(default_factory=list)
 
     def candidates(self) -> set:
         """All typed scalar candidates, for availability checks."""
-        return {*self.amounts, *self.ibans, *self.dates, *self.emails}
+        return {*self.amounts, *self.ibans, *self.dates, *self.emails, *self.numbers, *self.urls}
 
 
 def _line_items(text: str) -> list[LineItem]:
@@ -123,7 +131,17 @@ def structure(text: str) -> StructuredView:
         emails=_uniq(_EMAIL.findall(text)),
         lines=[ln.strip() for ln in text.splitlines() if ln.strip()],
         line_items=_line_items(text),
+        numbers=_uniq([float(m.replace(",", "")) for m in _NUMBER.findall(_DATE.sub(" ", text))])
+        if _extended_fields() else [],
+        urls=_uniq([u.rstrip(".,;:") for u in _URL.findall(text)]) if _extended_fields() else [],
     )
+
+
+def _extended_fields() -> bool:
+    """E7 knob: expose ``numbers``/``urls`` (default off, so the recorded
+    P-version numbers keep their meaning until E7 is measured)."""
+    import os
+    return os.environ.get("PAUTH_STRUCTURE_EXTENDED", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 # --------------------------------------------------------------------------
