@@ -7,14 +7,17 @@
 #
 # Env vars:
 #   GATEWAY_URL          default http://127.0.0.1:8081
-#   GATEWAY_MODE_TOOL    "strict" or "log". Default: log (don't break Claude Code
-#                         while integration is being validated; flip to strict when
-#                         the suite of enforced tools is established).
+#   GATEWAY_MODE_TOOL    "strict" or "log". Default: strict (2026-09-08). With the
+#                         local-tool policy below and the MCP facade, strict no
+#                         longer breaks everyday Claude Code work: workspace tools
+#                         pass, facade tools are enforced by the gateway, and only
+#                         unobserved egress (Bash, WebFetch, foreign MCP) is blocked.
+#                         Set "log" to observe without enforcing.
 
 set -uo pipefail
 
 GATEWAY_URL="${GATEWAY_URL:-http://127.0.0.1:8081}"
-GATEWAY_MODE="${GATEWAY_MODE_TOOL:-${GATEWAY_MODE:-log}}"
+GATEWAY_MODE="${GATEWAY_MODE_TOOL:-${GATEWAY_MODE:-strict}}"
 
 payload=$(cat)
 

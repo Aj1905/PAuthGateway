@@ -91,7 +91,7 @@ JSONL として追記される(運用者向け; 値を含みうるため、エ�
 | `GATEWAY_URL` | URL | `http://127.0.0.1:8081` | POST の宛先。 |
 | `GATEWAY_AUTH_TOKEN` | token | (未設定) | デーモンを `--auth-token` 付きで起動する場合、同じ値をここに設定すると hook が `Authorization: Bearer <token>` を送る。 |
 | `GATEWAY_MODE_PROMPT` | `strict` / `log` | `strict` | ゲートウェイが prompt を拒否したとき、Claude Code をブロックする(`strict`)か、ログだけ残して続行する(`log`)か。 |
-| `GATEWAY_MODE_TOOL` | `strict` / `log` | `log` | ツール呼び出しに対する同じ設定。統合の検証中は既定の `log` のままにし、強制対象のツール集合が固まったら `strict` に切り替える。 |
+| `GATEWAY_MODE_TOOL` | `strict` / `log` | `strict`(2026-09-08 に `log` から変更) | ツール呼び出しに対する同じ設定。ローカルツール方針と MCP 外装により、`strict` でも作業場内の読み書きは止まらない。観測だけしたいときに `log`。 |
 | `GATEWAY_MODE` | `strict` / `log` | — | より具体的な変数が未設定のときの代替。 |
 | `PAUTH_PLANNER_STRATEGY` | `deterministic` / `llm-freeform` / `auto` / `sufficiency-tightness` / `interactive-structuring` / `specialized-codegen` / `formal-semantic` | `auto` | Planner 戦略を選ぶ(未設定なら `AgentChannel` の既定 `auto`)。 |
 | `PAUTH_PLANNER_SUITE` | suite 名 | — | `llm-freeform`、`sufficiency-tightness`、`interactive-structuring`、`specialized-codegen`、`formal-semantic` に必須。`auto` では LLM フォールバック先を有効にする。例: `shopping`。 |
