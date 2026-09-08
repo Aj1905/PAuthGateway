@@ -53,16 +53,21 @@ git = Python SDK 製 `mcp-server-git`)併合し、`source_trust` を fail-closed
 ## 2. 台本実行(K1)
 
 ```bash
-.venv/bin/python docs/lab/e2e_runner.py --tasks docs/lab/tasks_fs.json --operator-token humantoken
+.venv/bin/python docs/lab/e2e_runner.py --tasks docs/lab/tasks_fs.json --operator-token humantoken --approval-mode interactive
 ```
 
 タスクごとに `setup`(実バックエンドの準備)→ プロンプト提出 → 呼び出し列。
 `expect: false` の呼び出しは攻撃(宛先の付け替え、計画外ツール、`..` 経由の脱出)で、
-実ツールに届かないことを確認する。保留になった正当な呼び出しは
-`--operator-token` があれば一度承認して再試行し、承認回数を数える。
+実ツールに届かないことを確認する。承認の既定は `--approval-mode none`。運用者トークンを指定するだけでは承認しない。
+`--approval-mode interactive` は端末に保留内容と出所を表示し、運用者が y(承認) /
+n(却下) / s(保留)で判断する。入力終了や不明な返答では承認しない。
+`--approval-mode oracle` はテストの期待値を使った自動承認専用で、人間確認の実測ではない。
+結果JSONは承認モード、判断主体、承認/却下、API上の解決成否を記録する。
+承認APIが成功した分だけを数え、実ツールの結果が `succeeded` のときだけ実行成功と判定する。
+`error` / `indeterminate` は成功に数えない。
 
 K1 の到達点(2026-09-08): fs 11/11(10 件は承認なし、fs11 は汚染由来の移動先を関門で
-1 回承認)、git 5 課題(スイート絞り込みの修正後に再測定、下記ログ参照)。
+1回自動承認。人間確認は未実測)、git 5 課題(スイート絞り込みの修正後に再測定、下記ログ参照)。
 
 ## 3. 実 Claude Code(K5)
 

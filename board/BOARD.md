@@ -104,7 +104,7 @@
 | T11 | 実 MCP の 2 種目(`mcp-server-git`)を K1 に追加。MCP `initialize` 握手、返り値の形の記述、計画キャッシュ鍵にツール面を含める | `gateway/providers/mcp_suite.py`、`gateway/planning/planner.py`、`docs/lab/` | claude | 完了 | 5/5(スイート絞り込みの字句分割を修正後) |
 | T12 | serving 経路の `source_trust` 配線(K4)。設定区画・既定 fail-closed・検査 | `gateway/serving/config.py`、`gateway/ingress/agent_channel.py`、`gateway/serving/http_server.py` | claude | 完了 | `tests/test_serving_source_trust.py` |
 | T13 | 完成監査: hook健全性検査の偽陽性(不存在パス・表示だけのコマンド・対象制限)を修正し、残要件を証拠と照合する | `gateway/operator/health.py`、`tests/test_operator_health.py`、`board/` | codex | 完了 | 再開goal。禁止されたruntime/gateway.py・hooks/・mcp_facade.pyは編集しない |
-| T14 | 実MCP測定の自動承認と人間承認を分離し、人間確認付き実験を再現可能にする | `docs/lab/e2e_runner.py`、検査、`board/` | codex | 進行中 | 明示モード・承認主体記録・実行成功の厳密判定を追加する。人間による実測は別途必要 |
+| T14 | 実MCP測定の自動承認と人間承認を分離し、人間確認付き実験を再現可能にする | `docs/lab/e2e_runner.py`、検査、`board/` | codex | 進行中 | none/interactive/oracleと判断記録、succeededのみ成功判定を実装。全体601件・最終関連19件通過。人間による実MCP実測は未実施 |
 
 ---
 
@@ -230,7 +230,7 @@
 |---|---|---|
 | K1 実MCP2種・10課題以上 | `/tmp/pauth-lab-run/k1_fs_run7.jsonl` は11/11、承認不要10、`k1_git_run4.jsonl` は5/5、承認不要5。攻撃16件はnot_dispatched | 保存された台本実行の結果は確認。人間確認の有無は別項で評価 |
 | K2 過不足なし60/97・不足なし80/97 | 台帳41/47。方向修正3で関門から外している | 元の数値条件は未達。条件変更と数値達成を混同しない |
-| K3 強制攻撃全拒否・良性過剰拒否0 | 直前全検査571通過。実MCP記録の攻撃16件不達 | `eval.check`の現在版での数値確認は別途必要 |
+| K3 強制攻撃全拒否・良性過剰拒否0 | `board/evidence-codex-k3.txt`: 9枠・2440攻撃の許可0、良性過剰拒否0、SKIP行なし | 現在版の有限な強制攻撃の部品検査で確認。人間確認付き実験の代用ではない |
 | K4 汚染値を人間が確認してから実行 | fs11保留1回。e2e_runner.pyの_approve_holdsは全件自動承認。serving検査もプログラムがTrueを渡す | 機構は検査済みだが人間確認の実測ではない。T14で承認主体を明示し、人間確認を測定する |
 | T2 確定済み一括関門要件 | SYSTEM_MODEL.mdのC2は試作。gateway.pyの_resolve_confirmation_configはc2+humanをValueErrorにする | 未統合。確定要件を「設計待ち」と呼ぶだけでは完了にできない。ユーザーが指定した編集禁止パスには引き続き触らず、掲示板で接続を調整する |
 | K5 日常作業・T3保護水準の報告 | claudeログの混在依頼2/2、手順書。T3はprotection反映未、対話/clearも未実測 | 報告と実行記録を区別。対話経路と方針の状態報告が残る |
