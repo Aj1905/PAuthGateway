@@ -11,6 +11,7 @@ import types
 
 from gateway.planning.agentic_planner import (
     GATEWAY_PLANNER_RULES,
+    INVENTORY_NOTE,
     PLANNER_SYSTEM_PROMPT,
     _PRECHECK_REPAIR_INSTRUCTION,
     _rule_reminder,
@@ -53,7 +54,8 @@ def test_self_repair_planner_sends_gateway_rules_by_default():
     generate_code_with_self_repair("list the items", TOOLS, model="gpt-4.1", max_retries=1,
                                    client=client, enable_judge=False)
     system = client.request_kwargs[0]["messages"][0]["content"]
-    assert system == PLANNER_SYSTEM_PROMPT
+    # p5: the gateway rules plus the inventory note (E2d) are the default.
+    assert system == PLANNER_SYSTEM_PROMPT + "\n\n" + INVENTORY_NOTE
 
 
 def test_explicit_system_prompt_still_overrides():
