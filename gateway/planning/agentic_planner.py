@@ -592,6 +592,66 @@ def reconcile_inventory(
     return issues
 
 
+
+# ---------------------------------------------------------------------------
+# E6 (lab, 2026-09-08): worked examples of MINIMAL plans. Generic tools only
+# (none of them exists in any benchmark suite). Each example shows one shape
+# the E0 diagnosis found the Planner getting wrong: a named target is used
+# directly (no listing), only the asked attributes are read, a search tool is
+# preferred over a full listing, a given date is not looked up, a side effect
+# whose content comes from data is still emitted, and "show/tell me" about
+# tool-held information is a read. Enabled by PAUTH_PLANNER_EXEMPLARS=1.
+# ---------------------------------------------------------------------------
+PLANNER_EXEMPLARS = """\
+WORKED EXAMPLES OF MINIMAL PLANS (generic tools; the shapes are what matter):
+
+Task: "Post 'deploy done' in the #ops room."
+    (the room is NAMED -> use it directly; do NOT list rooms first)
+    def run():
+        post_room_message("ops", "deploy done")
+
+Task: "What is the rating of the Blue Fig cafe?"
+    (asked for ONE attribute -> read only that; no address, hours, menu)
+    def run():
+        rating = get_cafe_rating("Blue Fig")
+
+Task: "Find the note about the Q3 budget and tell me who wrote it."
+    (a search tool exists -> search with the user's words; no full listing,
+     no second read of an item the search already returned)
+    def run():
+        notes = search_notes("Q3 budget")
+
+Task: "Move my 3pm call on 2024-05-20 to 4pm."
+    (the date is GIVEN -> no current-date lookup; locate, then act)
+    def run():
+        events = search_events("call", "2024-05-20")
+        target = first(events, predicate=lambda e: e.start == "2024-05-20 15:00")
+        reschedule_event(target.id, "2024-05-20 16:00")
+
+Task: "Read the invoice mail from Acme and pay the amount it states to their IBAN."
+    (the side effect is REQUIRED even though its operands come from data;
+     read what is needed, then act with fields of the result)
+    def run():
+        mails = search_mail("invoice Acme")
+        invoice = first(mails, predicate=lambda m: m.sender == "billing@acme.example")
+        pay(invoice.iban, invoice.amount, "Acme invoice")
+
+Task: "Add Dana to every room she is not in yet."
+    (act on SOME elements -> read the collection, filter with a comprehension,
+     loop at top level; no extra reads)
+    def run():
+        rooms = list_rooms()
+        missing = [r for r in rooms if "Dana" not in r.members]
+        for r in missing:
+            add_member(r.name, "Dana")
+
+Counter-examples (do NOT do these): listing rooms before posting to a named
+room; reading hours/price/menu when only the rating was asked; calling
+get_current_date when the task states the date; fetching the whole inbox when
+search_mail exists; creating a file or sending a message to REPORT a result
+the user only asked to be told."""
+
+
 def _judge_user_prompt(task: str, code: str, scope_note: str | None = None) -> str:
     scope = f"{scope_note}\n\n" if scope_note else ""
     return (
@@ -852,6 +912,8 @@ def generate_code_with_self_repair(
     system_prompt = initial_system_prompt or PLANNER_SYSTEM_PROMPT
     if partial_scope:
         system_prompt = system_prompt + "\n\n" + PARTIAL_SCOPE_NOTE
+    if os.environ.get("PAUTH_PLANNER_EXEMPLARS", "").strip().lower() in ("1", "true", "yes", "on"):
+        system_prompt = system_prompt + "\n\n" + PLANNER_EXEMPLARS
     use_inventory = os.environ.get("PAUTH_PLANNER_INVENTORY", "").strip().lower() in ("1", "true", "yes", "on")
     if use_inventory:
         system_prompt = system_prompt + "\n\n" + INVENTORY_NOTE
