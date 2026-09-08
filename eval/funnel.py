@@ -24,6 +24,7 @@ Subsumes as argument choices:
   hitl_agentdojo = funnel(agentdojo, mode=hitl [--confirmer interactive])   (gate footprint)
 
 Usage:  python -m eval.funnel <corpus> [--mode ...] [--planner ...] [--confirmer ...] [--limit N]
+        [--tag PREFIX]   (planner=bestof/agentic: separate candidate cache per prompt variant)
 """
 
 from __future__ import annotations
@@ -102,6 +103,8 @@ _BESTOF_N = 3         # set by --n: number of candidates for planner=bestof
 _MODEL = "gpt-4.1"    # set by --model: the Planner LLM
 _EXECUTOR = False     # set by --executor: dry-run each candidate against a mock env
                       # at plan time and feed crashes back for repair
+_TAG = ""             # set by --tag: free-form prefix inserted into the scratch tag so
+                      # planner-prompt variants keep separate candidate caches
 
 
 def _corpus_agentdojo() -> list[Corpus]:
@@ -240,7 +243,7 @@ def _authorize_footprint() -> None:
     scratch = Path("tests/experiment/funnel_scratch")
     # match run()'s cache tag so the footprint reads the CURRENT model's plans
     tag = ("struct_" if _STRUCTURING else "") + ("judge_" if _JUDGE else "") + \
-          ("exec_" if _EXECUTOR else "") + \
+          ("exec_" if _EXECUTOR else "") + _TAG + \
           (f"n{_BESTOF_N}_" if _BESTOF_N != 3 else "") + \
           (f"{_MODEL.replace(chr(46), chr(95))}_" if _MODEL != "gpt-4.1" else "")
     base_required = auth_required = base_out = auth_out = ran = confirms = gated = 0
@@ -595,7 +598,7 @@ def run(corpus_name: str, mode: str = "headless", planner: str = "cached",
         for task in tasks:
             if planner in ("agentic", "bestof"):
                 tag = ("struct_" if _STRUCTURING else "") + ("judge_" if _JUDGE else "") + \
-                      ("exec_" if _EXECUTOR else "") + \
+                      ("exec_" if _EXECUTOR else "") + _TAG + \
                       (f"n{_BESTOF_N}_" if planner == "bestof" and _BESTOF_N != 3 else "") + \
                       (f"{_MODEL.replace(chr(46),chr(95))}_" if _MODEL != "gpt-4.1" else "")
                 scratch = f"tests/experiment/funnel_scratch/{tag}{planner}_{corpus.name.replace(':','_')}"
@@ -645,8 +648,9 @@ def _flag(name, default=None):
 
 def main() -> int:
     corpus = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else "agentdojo"
-    global _STRUCTURING, _JUDGE, _BESTOF_N, _MODEL, _EXECUTOR
+    global _STRUCTURING, _JUDGE, _BESTOF_N, _MODEL, _EXECUTOR, _TAG
     _STRUCTURING = "--structuring" in sys.argv
+    _TAG = _flag("--tag", "")
     _JUDGE = "--judge" in sys.argv
     _EXECUTOR = "--executor" in sys.argv
     _BESTOF_N = int(_flag("--n", "3"))
