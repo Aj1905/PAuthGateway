@@ -246,6 +246,12 @@ pip install 'openai>=2.0,<3.0' && export OPENAI_API_KEY=sk-... PAUTH_PLANNER_STR
 
 ### A. ローカルエージェント(Claude Code)
 
+> **2026-09-08(実験用リポジトリ)**: Claude Code 向けの実用経路は「hook + MCP 外装」に
+> 変わった。実 MCP はデーモンの設定に置き、Claude Code には外装
+> (`gateway/serving/mcp_facade.py`)だけを MCP サーバーとして登録する。以下の hook だけの
+> 手順は、模擬スイート(買い物デモ)向け。実 MCP を hook 経由で許可すると二重実行になる。
+> 手順と実測は `docs/lab/E2E_REAL_MCP.md`、設定の雛形は `docs/lab/claude_code/`。
+
 Claude Code は改造しない。フックを二つ登録するだけでよい。`~/.claude/settings.json`:
 
 ```json

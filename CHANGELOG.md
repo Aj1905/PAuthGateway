@@ -8,6 +8,40 @@ PAuth Gateway に対する重要な変更はすべてここに記録する。形
 
 最初のタグ付きリリース `0.1.0` に向けて作業中。
 
+### 実験用リポジトリ(2026-09-08、`lab` ブランチ)での追加・修正
+
+無改変の Claude Code に実タスクを丸投げし、厳格モードのまま完走させるための変更。
+経緯と実測は `board/`(掲示板)と `docs/lab/E2E_REAL_MCP.md`。
+
+- **MCP 外装**(`gateway/serving/mcp_facade.py`): ゲートウェイをエージェントの唯一の
+  MCP サーバーとして見せる。実 MCP はデーモンの設定に置く。`PreToolUse` hook 経由で
+  実 MCP を許可する構成は二重実行になるため、Claude Code 向けの実用経路はこちら。
+  デーモンに `GET /tools`、`GET /bindings/<key>`(hook が送る `pid:$CLAUDE_PID` で
+  セッションを対応付け)を追加。
+- **人間の判断面**: `--operator-token`(エージェント用とは別)で `GET /sessions`、
+  `GET /sessions/<id>/pending`、`POST /sessions/<id>/decisions`。端末用 CLI
+  `python -m gateway.operator.cli`。従来は保留(計画外の呼び出し、汚染由来オペランド)を
+  HTTP 経由で解決する手段が無かった。
+- **`source_trust` 設定**(既定 fail-closed)を serving 経路に配線。従来 `AgentChannel` は
+  `SourceTrust` を渡しておらず、本番経路では確認関門が発火しなかった。
+- **`verification_reads`**: 読み取り専用と宣言したツールは、オペランドが全部プロンプト由来
+  (または名指しした経路の直上ディレクトリ)なら計画外でも実行する。
+- **ローカルツール方針**(`gateway/hooks/local_policy.py`): 作業場内ツールは通す、外装
+  ツールは通す(外装が執行)、Bash・WebFetch・外装外 MCP・未知のツールは遮断。
+  `pretool.sh` の既定を `strict` に変更。`submit_prompt.sh` は計画棄却でも会話を止めず
+  (ゲートウェイのツールは拒否のまま)、各タスク開始時に配備の健全性を報告する。
+- **serving 専用の範囲注記**: Planner と判定器に「一覧のツールが要る部分だけを計画せよ」
+  と伝える(`PAUTH_PLANNER_PARTIAL_SCOPE`)。評価経路の字面は不変。
+- 事前検査: プロンプトの断片から合成した経路(`archive/notes.txt`)を含意とみなす。
+  経路の境界で文末のピリオドを経路の続きと誤認しない。
+- MCP アダプタ: `initialize` 握手(Python SDK 製サーバーは握手なしでは全要求に -32602)、
+  返り値の形を正直に記述(`outputSchema` がなければ文字列)、`structuredContent` を優先、
+  入力スキーマを保持。
+- スイート絞り込み: 識別子を `_`/`-` で分割して語も数える(ツール名だけに現れる語で
+  スイートが落ちていた)。
+- 計画キャッシュの鍵にツール面のハッシュを含める。意味判定器は Anthropic 鍵が無ければ
+  生成器のモデルで動く。空計画の棄却理由に判定器の指摘を添える。
+
 ### Fixed
 - 正解忠実性の測定修正: ゲートウェイが計画に提供する内部抽出ツール
   (`structure_text`)の呼び出しは、ベンチマークの正解ツール呼び出し列の
