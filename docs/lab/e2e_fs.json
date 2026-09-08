@@ -5,7 +5,13 @@
       "name": "fs",
       "kind": "mcp",
       "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp/pauth-lab-fs"],
-      "signer": "fs-mcp"
+      "signer": "fs-mcp",
+      "operand_policy": {
+        "search_files": ["pattern", "excludePatterns"],
+        "directory_tree": ["excludePatterns"],
+        "read_text_file": ["head", "tail"],
+        "read_file": ["head", "tail"]
+      }
     }
   ]
 }
