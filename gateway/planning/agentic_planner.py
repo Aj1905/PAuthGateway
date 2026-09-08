@@ -686,20 +686,20 @@ Task: "Read the invoice mail from Acme and pay the amount it states to their IBA
         invoice = first(mails, predicate=lambda m: m.sender == "billing@acme.example")
         pay(invoice.iban, invoice.amount, "Acme invoice")
 
-Task: "Add Dana to every room she is not in yet."
-    (act on SOME elements -> read the collection, filter with a comprehension,
-     loop at top level; no extra reads)
+Task: "Add Dana to every room about the launch."
+    (act on SOME elements -> obtain exactly those elements with the search
+     tool, then loop at top level; do NOT fetch everything and filter in code)
     def run():
-        rooms = list_rooms()
-        missing = [r for r in rooms if "Dana" not in r.members]
-        for r in missing:
+        rooms = search_rooms("launch")
+        for r in rooms:
             add_member(r.name, "Dana")
 
 Counter-examples (do NOT do these): listing rooms before posting to a named
 room; reading hours/price/menu when only the rating was asked; calling
-get_current_date when the task states the date; fetching the whole inbox when
-search_mail exists; creating a file or sending a message to REPORT a result
-the user only asked to be told."""
+get_current_date when the task states the date; `get_all_mail()` or
+`get_unread_mail()` followed by a comprehension that filters for a word, when
+`search_mail(word)` exists -- the search IS the filter; creating a file or
+sending a message to REPORT a result the user only asked to be told."""
 
 
 def _judge_user_prompt(task: str, code: str, scope_note: str | None = None) -> str:
