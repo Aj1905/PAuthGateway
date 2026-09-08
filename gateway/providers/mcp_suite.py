@@ -422,6 +422,11 @@ def build_mcp_suite_from_transport(
             params=order,
             doc=doc,
             signer=signer,
+            input_schema=(
+                dict(tool_entry["inputSchema"])
+                if isinstance(tool_entry.get("inputSchema"), dict)
+                else None
+            ),
         )
         param_order[tool_entry["name"]] = order
         required_params[tool_entry["name"]] = required

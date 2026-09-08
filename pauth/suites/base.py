@@ -30,12 +30,18 @@ class Call:
 
 @dataclasses.dataclass
 class ToolSpec:
-    """A tool: its ordered parameters, codegen schema and signing server."""
+    """A tool: its ordered parameters, codegen schema and signing server.
+
+    ``input_schema`` is the source's own JSON Schema for the arguments when it
+    has one (MCP servers do). It is carried unchanged so a facade can re-expose
+    the tool to an agent without lossy round-tripping through ``ToolDoc``.
+    """
 
     name: str
     params: list[str]
     doc: ToolDoc
     signer: str
+    input_schema: dict[str, Any] | None = None
 
 
 @dataclasses.dataclass

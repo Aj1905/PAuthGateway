@@ -49,6 +49,11 @@ if os.environ.get("PAUTH_PLANNER_MAX_RETRIES"):
     body["max_retries"] = int(os.environ["PAUTH_PLANNER_MAX_RETRIES"])
 if os.environ.get("PAUTH_PLANNER_ENABLE_JUDGE"):
     body["enable_judge"] = os.environ["PAUTH_PLANNER_ENABLE_JUDGE"].lower() in {"1", "true", "yes", "on"}
+# Bind the session to this agent process so the MCP facade spawned by the same
+# process (gateway/serving/mcp_facade.py) can find the plan without a session
+# id in the MCP protocol. Claude Code exports CLAUDE_PID to hooks and servers.
+if os.environ.get("CLAUDE_PID"):
+    body["binding"] = "pid:" + os.environ["CLAUDE_PID"]
 print(json.dumps(body))
 ' "$prompt")
 

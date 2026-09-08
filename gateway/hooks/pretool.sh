@@ -27,6 +27,27 @@ if [[ -z "$session_id" || -z "$tool_name" ]]; then
   exit 0
 fi
 
+# Local policy first (gateway/hooks/local_policy.py): the agent's own tools are
+# allowed (workspace), denied (unobserved egress such as Bash/WebFetch/foreign
+# MCP) or forwarded to the gateway. Facade tools (mcp__pauth__*) are allowed
+# here because the facade itself enforces and executes them.
+policy_line=$(/usr/bin/python3 "$(dirname "$0")/local_policy.py" "$tool_name" 2>/dev/null || echo "forward	policy unavailable")
+policy_action="${policy_line%%	*}"
+policy_reason="${policy_line#*	}"
+case "$policy_action" in
+  allow)
+    echo "[gateway-hook] tool '$tool_name' allowed locally :: $policy_reason" >&2
+    exit 0
+    ;;
+  deny)
+    echo "[gateway-hook] tool '$tool_name' DENIED locally :: $policy_reason" >&2
+    if [[ "$GATEWAY_MODE" == "log" ]]; then
+      exit 0
+    fi
+    exit 2
+    ;;
+esac
+
 body=$(/usr/bin/python3 -c '
 import json, sys
 tool = sys.argv[1]

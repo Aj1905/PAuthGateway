@@ -11,6 +11,11 @@ Wire protocol
 * ``DELETE /sessions/<id>`` -- discard a session.
 * ``GET /health`` -- liveness + config summary (session count, whether the
   session store / audit log persistence are enabled). Value-free.
+* ``GET /tools`` -- the tool surface the gateway enforces (name, description,
+  JSON-Schema input), so an MCP facade can re-expose it to the agent.
+* ``GET /bindings/<key>`` -- the session most recently planned under
+  ``binding: <key>`` (a prompt-message field the hooks fill with the agent
+  process id), so a facade spawned by that same process finds its session.
 * ``GET /sessions/<id>`` -- value-free session status for health checks:
   protection level + caveats, whether a plan is active, rule count, pending
   confirmation count. Carries no operand values, so it is safe on the
@@ -151,8 +156,50 @@ def default_suite_loader(name: str) -> SuiteSpec:
 # Accept any non-trivial path-safe string.
 _SESSION_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})/messages$")
 _SESSION_DELETE_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})$")
+_BINDING_RE = re.compile(r"^/bindings/([A-Za-z0-9_\-.:]{1,128})$")
 _SESSION_PENDING_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})/pending$")
 _SESSION_DECISIONS_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})/decisions$")
+
+
+def _tool_surface(suite: SuiteSpec) -> list[dict]:
+    """Describe every tool as an MCP-style entry (name, description, inputSchema).
+
+    MCP-backed suites carry the server's own schema; others are synthesised
+    from the codegen ``ToolDoc`` (all declared parameters, typed loosely).
+    """
+    entries = []
+    for name, spec in suite.tools.items():
+        schema = spec.input_schema
+        if schema is None:
+            props = {}
+            for param in spec.doc.parameters:
+                ptype = str(param.get("type", "any"))
+                json_type = {
+                    "string": "string", "integer": "integer", "number": "number",
+                    "boolean": "boolean",
+                }.get(ptype)
+                prop: dict = {"description": param.get("desc", "")}
+                if json_type:
+                    prop["type"] = json_type
+                props[param["name"]] = prop
+            schema = {"type": "object", "properties": props, "required": list(props)}
+        entries.append({
+            "name": name,
+            "description": spec.doc.description,
+            "inputSchema": schema,
+        })
+    return entries
+
+
+def _rebuild_bindings(store: "SessionStore") -> dict[str, str]:
+    """Latest session per binding key, from the persisted prompt configs."""
+    bindings: dict[str, str] = {}
+    for session_id, entry in store.all().items():
+        config = entry.get("config") or {}
+        key = config.get("binding") if isinstance(config, dict) else None
+        if isinstance(key, str):
+            bindings[key] = session_id
+    return bindings
 
 
 class SessionRestoreError(RuntimeError):
@@ -205,6 +252,8 @@ def restore_channel(
 class _Handler(BaseHTTPRequestHandler):
     sessions: dict[str, AgentChannel] = {}
     operator_token: str | None = None   # human-only credential; never an agent's
+    bindings: dict[str, str] = {}       # binding key (e.g. "pid:123") -> session_id
+    merged_suite_name: str = "shopping"  # what GET /tools describes
     session_owners: dict[str, str] = {}  # session_id -> authenticated principal
     _lock = threading.Lock()             # guards the session tables (threaded server)
     # Serialize the full lookup -> restore/create -> receive -> persist transition
@@ -357,6 +406,24 @@ class _Handler(BaseHTTPRequestHandler):
         principal = self._authenticate()
         if principal is None:
             return
+        if self.path == "/tools":
+            try:
+                suite = self.suite_loader(self.merged_suite_name)
+            except Exception as exc:  # noqa: BLE001
+                self._send_json(500, {"error": f"tool surface unavailable: {exc}"})
+                return
+            self._send_json(200, {"suite": suite.name, "tools": _tool_surface(suite)})
+            return
+        m = _BINDING_RE.match(self.path)
+        if m:
+            key = m.group(1)
+            with self._lock:
+                session_id = self.bindings.get(key)
+            if session_id is None or self._owner_of(session_id) != principal:
+                self._send_json(404, {"error": "no session bound to this key", "key": key})
+                return
+            self._send_json(200, {"key": key, "session_id": session_id})
+            return
         m = _SESSION_DELETE_RE.match(self.path)  # GET /sessions/<id> -> status
         if m:
             session_id = m.group(1)
@@ -470,6 +537,11 @@ class _Handler(BaseHTTPRequestHandler):
             self._add_session(session_id, channel, principal)
 
         response = channel.receive_json(payload)
+        if payload.get("kind") == "prompt" and response.get("accepted"):
+            binding = payload.get("binding")
+            if isinstance(binding, str) and _BINDING_RE.match(f"/bindings/{binding}"):
+                with self._lock:
+                    self.bindings[binding] = session_id
         if (
             self.session_store is not None
             and payload.get("kind") == "prompt"
@@ -710,6 +782,7 @@ def main() -> int:
 
     if args.session_store:
         _Handler.session_store = SessionStore(args.session_store)
+        _Handler.bindings = _rebuild_bindings(_Handler.session_store)
         restored = len(_Handler.session_store)
         print(f"session store: {args.session_store} ({restored} persisted)", file=sys.stderr)
 
@@ -727,6 +800,7 @@ def main() -> int:
         _Handler.prompt_suite_loader = staticmethod(
             prompt_suite_loader_for(loaded)
         )
+        _Handler.merged_suite_name = loaded.merged_name
         print(
             f"loaded config :: merged={loaded.merged_name} "
             f"sources={sorted(loaded.sources)}",
