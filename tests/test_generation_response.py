@@ -4,6 +4,16 @@ import pytest
 from gateway.planning.generation_response import GenerationFailure, GenerationSession, call_generator
 
 
+@pytest.fixture(autouse=True)
+def _p4_prompt_path(monkeypatch):
+    """These tests drive the generator with fixed fake outputs that carry no
+    inventory block. Since p5 (2026-09-08) the self-repair loop reconciles an
+    action inventory by default, which would add repair rounds and change the
+    call counts asserted here; pin the p4 prompt path (claude, coordinated on
+    the board)."""
+    monkeypatch.setenv("PAUTH_PLANNER_INVENTORY", "0")
+
+
 def anthropic(reason, text=''):
     return NS(messages=NS(create=Mock(return_value=NS(stop_reason=reason, content=[NS(type='text', text=text)], usage=NS(input_tokens=10, output_tokens=2)))))
 
