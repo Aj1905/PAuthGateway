@@ -305,3 +305,14 @@ def test_path_to_shallower_unnamed_directory_rejected():
 def test_path_traversal_rejected():
     violations = precheck_code(FS_PROMPT, _move("/tmp/work/../notes.txt"), FS_TOOLS)
     assert any("/tmp/work/../notes.txt" in v for v in violations)
+
+
+def test_path_followed_by_sentence_period_is_entailed():
+    prompt = "Rename /tmp/work/draft.md to /tmp/work/final.md."
+    assert precheck_code(prompt, _move("/tmp/work/final.md"), FS_TOOLS) == []
+
+
+def test_path_extended_after_period_is_not_entailed():
+    prompt = "Rename /tmp/work/draft.md to /tmp/work/final.md.bak"
+    violations = precheck_code(prompt, _move("/tmp/work/final.md"), FS_TOOLS)
+    assert any("/tmp/work/final.md" in v for v in violations)

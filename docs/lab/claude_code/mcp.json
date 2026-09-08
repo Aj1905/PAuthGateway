@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "pauth": {
+      "command": "/ABS/PATH/PAuthGateway-lab/.venv/bin/python",
+      "args": ["-m", "gateway.serving.mcp_facade"],
+      "cwd": "/ABS/PATH/PAuthGateway-lab",
+      "env": {"GATEWAY_URL": "http://127.0.0.1:8091", "GATEWAY_AUTH_TOKEN": "labtoken", "PYTHONPATH": "/ABS/PATH/PAuthGateway-lab"}
+    }
+  }
+}

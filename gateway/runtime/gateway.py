@@ -99,6 +99,11 @@ from gateway.runtime.protection import (
     assess,
 )
 from gateway.runtime.policy import PolicyAwareEnforcer, PolicySpec
+from gateway.planning.prechecks import (
+    _path_parent_of_named,
+    _prompt_numbers,
+    _string_entailed,
+)
 
 _MAX_PENDING_REAUTHORIZATIONS = 32
 
@@ -151,6 +156,37 @@ def _resolve_confirmation_config(
             "(under which c2 collapses to an immediate decision)"
         )
     return ux, policy
+
+
+def _empty_plan_hint(metadata: dict[str, Any] | None) -> str:
+    """Why the Planner ended with an empty plan, in the user's terms.
+
+    The self-repairing Planner records each round's failure ("intent: ...",
+    "precheck: ...", "grammar: ..."). Surfacing the last intent finding turns
+    "plan authorizes no tool calls" into something the user can act on
+    (rephrase with concrete actions; the plan cannot delegate decisions to
+    data read at runtime). These findings derive from the clean prompt and
+    the tool schemas only, never from tool output.
+    """
+    if not isinstance(metadata, dict):
+        return ""
+    history = metadata.get("failure_history")
+    if not isinstance(history, list) or not history:
+        return ""
+    last = str(history[-1])
+    kind, _, detail = last.partition(":")
+    detail = detail.strip()[:300]
+    if kind == "intent" and detail:
+        return (
+            f" :: the Planner could not express the task as a fixed plan: {detail}"
+            " (rephrase with concrete actions; a plan cannot defer decisions to "
+            "data read at runtime)"
+        )
+    if kind == "precheck" and detail:
+        return f" :: the Planner's last attempt failed a safety precheck: {detail}"
+    if kind == "grammar" and detail:
+        return " :: the task needs operations the plan language cannot express"
+    return ""
 
 
 def _ordered_tools(rules) -> set[str] | None:
@@ -1129,6 +1165,7 @@ class Gateway:
         # happening to be zero downstream.
         if not prepared.rules:
             reason = "plan authorizes no tool calls; rejected (default-deny)"
+            reason += _empty_plan_hint(draft.planner_metadata)
             self._session = self._rejected_session(
                 prompt,
                 reason,
@@ -1402,6 +1439,17 @@ class Gateway:
         decision = session.enforcer.check(tool, args, live=True)
         if not decision.permit:
             if classify_reason(decision.reason) == ReasonCode.NO_RULE:
+                if self._is_verification_read(session, tool, args):
+                    # Deployment-declared read-only tool, every operand named by
+                    # the user: run it without widening the plan (no rule, no
+                    # envelope, no grant survives this call).
+                    return self._execute_authorized_tool(
+                        session,
+                        tool,
+                        args,
+                        "verification read: read-only tool whose operands are all "
+                        "named in the user prompt (deployment policy, off-plan)",
+                    )
                 held = self._hold_plan_external_call(
                     session,
                     tool,
@@ -1438,6 +1486,33 @@ class Gateway:
         if record_failure is not None:
             return record_failure
         return result
+
+    def _is_verification_read(self, session: _Session, tool: str, args: list[Any]) -> bool:
+        if tool not in self._operand_policy.verification_reads:
+            return False
+        params = session.tool_params.get(tool)
+        if params is None or len(params) != len(args):
+            return False
+        prompt = session.prompt
+        numbers = _prompt_numbers(prompt)
+        for value in args:
+            if value is None or isinstance(value, bool):
+                continue
+            if isinstance(value, str):
+                if not (_string_entailed(value, prompt) or _path_parent_of_named(value, prompt)):
+                    return False
+            elif isinstance(value, (int, float)):
+                if float(value) not in numbers:
+                    return False
+            elif isinstance(value, list):
+                if any(
+                    not isinstance(item, str) or not _string_entailed(item, prompt)
+                    for item in value
+                ):
+                    return False
+            else:
+                return False
+        return True
 
     @staticmethod
     def _reauthorization_key(

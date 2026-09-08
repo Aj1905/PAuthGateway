@@ -23,6 +23,10 @@ Config schema (JSON for now -- swap to TOML if dependency budget allows)::
 * ``openapi``    -- an HTTP API described by an OpenAPI 3.x document.
 * ``agentdojo``  -- an AgentDojo suite by name (``banking``/``slack``/...).
 
+Per-suite policy keys: ``operand_policy`` (``{tool: [free_param, ...]}``) and
+``verification_reads`` (``[read_only_tool, ...]``; off-plan calls to these run
+when every operand is entailed by the user's prompt).
+
 The gateway loads the config and builds one ``SuiteSpec`` per entry,
 then folds them with :func:`gateway.registry.merge_suites`. The merged
 suite is what the runtime gateway / ``AgentChannel`` operates over.
@@ -140,6 +144,7 @@ def load_config(path: str | Path) -> LoadedConfig:
 
     sources: dict[str, SuiteSpec] = {}
     raw_policy: dict[str, list[str]] = {}  # merged: tool_name -> [param_names]
+    verification_reads: list[str] = []      # merged tool names declared read-only
     for entry in suite_entries:
         if not isinstance(entry, dict):
             raise ValueError(f"each suite entry must be an object, got {entry!r}")
@@ -176,8 +181,21 @@ def load_config(path: str | Path) -> LoadedConfig:
                 )
             raw_policy[tool_name] = list(free_params)
 
+        # Read-only tools the deployment lets an agent call off-plan when every
+        # operand is entailed by the prompt (see PolicySpec.verification_reads).
+        reads = entry.get("verification_reads") or []
+        if not isinstance(reads, list) or any(not isinstance(r, str) for r in reads):
+            raise ValueError(f"verification_reads for {name!r} must be a list of tool names")
+        verification_reads.extend(reads)
+
     merged = merge_suites(merged_name, sources)
-    policy = PolicySpec.from_param_names(raw_policy, merged.tool_params()) if raw_policy else PolicySpec({})
+    policy = (
+        PolicySpec.from_param_names(
+            raw_policy, merged.tool_params(), verification_reads=verification_reads
+        )
+        if raw_policy or verification_reads
+        else PolicySpec({})
+    )
 
     # Suite filter knobs are top-level (not per source).
     filter_cfg = raw.get("suite_filter") or {}

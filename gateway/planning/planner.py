@@ -194,6 +194,11 @@ class LLMFreeformPlanner:
                 kwargs["judge_model"] = self.judge_model
             result = generate_code_with_self_repair(prompt, suite.tool_docs(), **kwargs)
             code = result.code
+            metadata = {
+                "attempts": getattr(result, "attempts", None),
+                "failure_history": list(getattr(result, "failure_history", []) or []),
+                "model": getattr(result, "model", self.model),
+            }
         else:
             result = generate_code(
                 prompt,
@@ -202,10 +207,12 @@ class LLMFreeformPlanner:
                 cache_path=self.cache_path,
             )
             code = result.code
+            metadata = {"model": self.model}
         return PlanDraft(
             suite_name=self.suite_name,
             code=code,
             reason=f"plan accepted via LLM the Planner ({self.suite_name})",
+            planner_metadata=metadata,
         )
 
 

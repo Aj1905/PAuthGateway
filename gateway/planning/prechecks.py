@@ -169,10 +169,35 @@ def _token_entailed(value: str, prompt: str) -> bool:
 _PATH_CHARS = r"A-Za-z0-9/._\-"
 
 
+# What may NOT follow a whole path: another path character, or a "." that
+# itself continues the path. A sentence-ending "." ("... to /a/b/final.md.")
+# does not extend the path.
+_PATH_END = r"(?!(?:[A-Za-z0-9/_\-]|\.[A-Za-z0-9/_\-]))"
+
+
 def _path_prefix_entailed(prefix: str, prompt: str) -> bool:
     return bool(
         re.search(
-            rf"(?<![{_PATH_CHARS}]){re.escape(prefix)}(?![{_PATH_CHARS}])",
+            rf"(?<![{_PATH_CHARS}]){re.escape(prefix)}{_PATH_END}",
+            prompt,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _path_parent_of_named(value: str, prompt: str) -> bool:
+    """``value`` is the immediate parent directory of a path named in the prompt.
+
+    Used only for declared read-only verification reads: an agent that just
+    wrote ``/a/b/x.txt`` will list ``/a/b``. Deeper ancestors (``/a``) are not
+    entailed, so a read cannot wander up the tree.
+    """
+    stripped = value.rstrip("/")
+    if not stripped or "/" not in stripped:
+        return False
+    return bool(
+        re.search(
+            rf"(?<![{_PATH_CHARS}]){re.escape(stripped)}/[A-Za-z0-9._\-]+{_PATH_END}",
             prompt,
             re.IGNORECASE,
         )
@@ -214,9 +239,12 @@ def _string_entailed(value: str, prompt: str) -> bool:
             match.rstrip(".,;:!?").casefold() == value.casefold()
             for match in EMAIL_RE.findall(prompt)
         )
+    if "/" in value:
+        # Path-shaped: a bare prefix of a longer prompt path (``/tmp`` inside
+        # ``/tmp/work/x``) is not entailed; a whole path or a composition of
+        # prompt fragments is.
+        return _path_prefix_entailed(value, prompt) or _path_composed_from_prompt(value, prompt)
     if _token_entailed(value, prompt):
-        return True
-    if _path_composed_from_prompt(value, prompt):
         return True
     # IBANs are often written with grouping spaces; compare space-insensitively.
     squeezed_value = re.sub(r"\s+", "", value).casefold()

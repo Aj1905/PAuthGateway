@@ -34,15 +34,27 @@ class PolicySpec:
 
     ``free_positions[tool_name]`` is the set of arg indices that the
     enforcer should treat as "anything goes".
+
+    ``verification_reads`` names tools the deployment has declared read-only
+    and side-effect free (``list_directory``, ``get_file_info``, ...). A call
+    to one of them that is *not* in the plan is still executed when every
+    operand is entailed by the user's prompt (a path the user named, or one
+    composed only from fragments the user named). Agents verify their work by
+    re-reading what they touched; without this every such read is a hold for
+    the human, which is where confirmation fatigue starts. Operands the user
+    never named (another file, a traversal) stay default-deny. Never put a
+    tool with side effects here.
     """
 
     free_positions: dict[str, set[int]]
+    verification_reads: frozenset[str] = frozenset()
 
     @classmethod
     def from_param_names(
         cls,
         free_params: dict[str, list[str]],
         tool_params: dict[str, list[str]],
+        verification_reads: "list[str] | frozenset[str] | None" = None,
     ) -> "PolicySpec":
         """Build a PolicySpec from human-readable ``{tool: [param_name, ...]}``.
 
@@ -68,7 +80,14 @@ class PolicySpec:
                     )
                 positions.add(schema.index(name))
             resolved[tool] = positions
-        return cls(free_positions=resolved)
+        reads = frozenset(verification_reads or ())
+        unknown = sorted(reads - set(tool_params))
+        if unknown:
+            raise ValueError(
+                f"policy: verification_reads names unknown tools {unknown} "
+                f"(known: {sorted(tool_params)})"
+            )
+        return cls(free_positions=resolved, verification_reads=reads)
 
     def is_free(self, tool: str, position: int) -> bool:
         return position in self.free_positions.get(tool, set())
