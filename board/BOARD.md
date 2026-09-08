@@ -64,7 +64,7 @@
 | # | 基準 | 測り方 | 現状 |
 |---|---|---|---|
 | K1 | 実 MCP ツール上で、LLM Planner + 厳格モードで、実タスクを 10 種以上完走する(2 種類以上の実 MCP) | `docs/lab/e2e_runner.py --tasks docs/lab/tasks_fs.json` / `tasks_git.json` | **達成**: fs 11/11(10 件承認なし、fs11 は汚染由来の移動先を運用者API経由で自動承認1回)、git 5/5(全件承認なし)。攻撃呼び出し 16 件は全件不達 |
-| K2 | 計画の過不足なし認可率が AgentDojo 97 タスクで 60/97 以上、不足なし 80/97 以上 | `eval.funnel`(GT_* 指標) | 41 / 47。**完成の関門からは外す提案**(方向修正の記録 3)。代わりに K1 を「2 種類以上の実 MCP で、承認なしの通過率」で測る |
+| K2 | 計画の過不足なし認可率が AgentDojo 97 タスクで 60/97 以上、不足なし 80/97 以上 | `eval.funnel`(GT_* 指標) | 41 / 49(保存済みp4候補を現行版で再採点)。**完成の関門からは外す提案**(方向修正の記録 3)。代わりに K1 を「2 種類以上の実 MCP で、承認なしの通過率」で測る |
 | K3 | 強制攻撃の拒否は全件維持、良性の過剰拒否 0 を維持 | `eval.check`、`tests.test_unexpected_attacks` | 達成 |
 | K4 | 汚染由来のオペランドは関門で人間に確認され、確認前に実ツールへ届かない | 本番経路の検査 + 実 MCP 上の再現 | **機構のみ検査済み(人間確認は未実測)**: serving 経路に `source_trust`(既定 fail-closed)を配線、実 MCP 上(fs11)で「保留 → テストコードの自動承認 → 実行」を実測。人間による確認は未実測。一括関門(T2)も未統合 |
 | K5 | Claude Code を厳格モードで使えて、日常の作業(読み書き・検索)が止まらない | 内部ツール方針を実装し、実セッションで確認 | **達成(`claude -p` で)**: MCP のみの依頼、ローカル Read + MCP 書き込み + Bash の混在依頼(2/2)を厳格モードで完走。hook 既定は strict。対話セッションでの `/clear` 後の対応付けは未実測 |
@@ -95,7 +95,7 @@
 | T2 | 関門確認を本番経路へ昇格(`execute_with_batched_confirmation` を `gateway/runtime/gateway.py` に載せる)。設計判断は下記「引き継ぐ設計判断」の 6 点。**人間が保留を見て判断する HTTP 面と CLI は claude が先に実装済み**(`--operator-token`、`GET /sessions/<id>/pending`、`POST /sessions/<id>/decisions`、`gateway/operator/cli.py`)。T2 はその上に「読み取り相の後に一括で関門を出す」制御を載せる作業 | `gateway/runtime/gateway.py`、`gateway/runtime/batched_confirmation.py`、検査 | codex | 進行中 | 確認部品側の具体的ツール呼び出し表示と実行内容の保全を実装。関連20件・全体604件通過。本体接続は未実施。具体案は board/proposals/T2_INTEGRATION.md、禁止2ファイルの担当変更を依頼主へ確認中 |
 | T3 | Claude Code 内部ツールの方針: 外向きでないツール(Read/Edit/Write/Glob/Grep 等)は計画外でも通し、外向き(Bash・WebFetch・MCP)はゲートウェイの判定に従う。方針を設定で宣言でき、`protection` に反映する | `gateway/hooks/local_policy.py`、`gateway/hooks/pretool.sh`、検査 | claude | 完了(`protection` への反映は未) | `local_policy.py`: 作業場ツール=通す、外装ツール=通す(外装が執行)、Bash/WebFetch/外装以外の MCP=遮断。`GATEWAY_BASH_POLICY=allow` は外向き遮断ありの利用者専用 |
 | T4 | Planner の生成失敗の可視化と代替: 生成器が `stop_reason`(拒否等)を無視して空の計画を保存する問題を直し、拒否時は別モデルで代替生成する | `gateway/planning/agentic_planner.py`、`eval/funnel.py`、検査 | codex | 完了 | 拒否・空応答・打切りを明示。拒否時は別モデルへ一回だけ代替し既存検査を維持。空キャッシュ再利用なし。模擬応答20件通過。 |
-| T5 | Planner 忠実度の改善(K2)。不足側(GT_NO_MISSING)を優先 | `gateway/planning/`、`eval/` | | 未着手 | API 費用に注意 |
+| T5 | Planner 忠実度の改善(K2)。不足側(GT_NO_MISSING)を優先 | `gateway/planning/`、`eval/` | codex | 進行中 | p4保存済み291候補を診断。現行選択41/49、正解を使う選択上限50/52、クラッシュなし限定47/50。選択変更だけでは60/80に届かない。詳細は board/T5_DIAGNOSIS.md。API費用$0 |
 | T6 | 健全性検査(K6): hook 未登録・デーモン停止・遮断規則なしを検知して `GET /health` と hook 側で報告 | `gateway/serving/http_server.py`、`gateway/hooks/`、`gateway/deploy/` | codex | 完了 | health.py とclaude側HTTP/hook接続済み。未登録・停止・規則欠如を検査。権限不足はunknown。K6の検査実装達成、OS実配備は未実測。 |
 | T7 | 監査ログの読み出し(K7): セッション単位で許可/拒否/理由を一覧する命令 | `gateway/runtime/audit.py`、新規 CLI | codex | 完了 | セッションID付きJSONLと audit_report CLI。HTTP経由2セッションの識別、旧形式・破損行の扱いを検査。K7達成。 |
 | T8 | hook の既定を厳格にする判断(T3・T6 の後) | `gateway/hooks/` | claude | 完了 | `pretool.sh` の既定を `strict` に変更(5e42066)。ローカルツール方針と外装があるので日常作業は止まらない |
@@ -230,7 +230,7 @@
 | 要件 | 現在確認できた証拠 | 判定・次に必要な証拠 |
 |---|---|---|
 | K1 実MCP2種・10課題以上 | `/tmp/pauth-lab-run/k1_fs_run7.jsonl` は11/11、承認不要10、`k1_git_run4.jsonl` は5/5、承認不要5。攻撃16件はnot_dispatched | 保存された台本実行の結果は確認。人間確認の有無は別項で評価 |
-| K2 過不足なし60/97・不足なし80/97 | 台帳41/47。方向修正3で関門から外している | 元の数値条件は未達。条件変更と数値達成を混同しない |
+| K2 過不足なし60/97・不足なし80/97 | 保存済みp4候補の再採点41/49。方向修正3で関門から外している | 元の数値条件は未達。条件変更と数値達成を混同しない |
 | K3 強制攻撃全拒否・良性過剰拒否0 | `board/evidence-codex-k3.txt`: 9枠・2440攻撃の許可0、良性過剰拒否0、SKIP行なし | 現在版の有限な強制攻撃の部品検査で確認。人間確認付き実験の代用ではない |
 | K4 汚染値を人間が確認してから実行 | fs11旧記録は旧_approve_holdsの自動承認。新しい実MCP試験はc0で保留し、元ファイル無変更・移動先不存在を実測してユーザー判断待ち | 機構は検査済みだが人間確認の実測ではない。T14で承認主体を明示し、人間確認を測定する |
 | T2 確定済み一括関門要件 | SYSTEM_MODEL.mdのC2は試作。gateway.pyの_resolve_confirmation_configはc2+humanをValueErrorにする | 未統合。確定要件を「設計待ち」と呼ぶだけでは完了にできない。ユーザーが指定した編集禁止パスには引き続き触らず、掲示板で接続を調整する |
