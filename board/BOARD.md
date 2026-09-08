@@ -68,7 +68,7 @@
 | K3 | 強制攻撃の拒否は全件維持、良性の過剰拒否 0 を維持 | `eval.check`、`tests.test_unexpected_attacks` | 達成 |
 | K4 | 汚染由来のオペランドは関門で人間に確認され、確認前に実ツールへ届かない | 本番経路の検査 + 実 MCP 上の再現 | **機構のみ検査済み(人間確認は未実測)**: serving 経路に `source_trust`(既定 fail-closed)を配線、実 MCP 上(fs11)で「保留 → テストコードの自動承認 → 実行」を実測。人間による確認は未実測。一括関門(T2)も未統合 |
 | K5 | Claude Code を厳格モードで使えて、日常の作業(読み書き・検索)が止まらない | 内部ツール方針を実装し、実セッションで確認 | **達成(`claude -p` で)**: MCP のみの依頼、ローカル Read + MCP 書き込み + Bash の混在依頼(2/2)を厳格モードで完走。hook 既定は strict。対話セッションでの `/clear` 後の対応付けは未実測 |
-| K6 | hook や外向き遮断が外れたら検知して報告する | 健全性検査の実装と検査 | 達成(HTTP/hook接続と障害検査。OS実配備は未実測、権限不足はunknown) |
+| K6 | hook や外向き遮断が外れたら検知して報告する | 健全性検査の実装と検査 | 達成(HTTP/hook接続と障害検査。隔離Linuxで実測済み。macOS pfは未実測、権限不足はunknown) |
 | K7 | 監査ログから「何が許可・拒否され、なぜか」を人間が読める | 読み出し用の一覧コマンド | 達成(audit_report CLI、セッションID対応、HTTP統合検査) |
 
 ---
@@ -104,7 +104,8 @@
 | T11 | 実 MCP の 2 種目(`mcp-server-git`)を K1 に追加。MCP `initialize` 握手、返り値の形の記述、計画キャッシュ鍵にツール面を含める | `gateway/providers/mcp_suite.py`、`gateway/planning/planner.py`、`docs/lab/` | claude | 完了 | 5/5(スイート絞り込みの字句分割を修正後) |
 | T12 | serving 経路の `source_trust` 配線(K4)。設定区画・既定 fail-closed・検査 | `gateway/serving/config.py`、`gateway/ingress/agent_channel.py`、`gateway/serving/http_server.py` | claude | 完了 | `tests/test_serving_source_trust.py` |
 | T13 | 完成監査: hook健全性検査の偽陽性(不存在パス・表示だけのコマンド・対象制限)を修正し、残要件を証拠と照合する | `gateway/operator/health.py`、`tests/test_operator_health.py`、`board/` | codex | 完了 | 再開goal。禁止されたruntime/gateway.py・hooks/・mcp_facade.pyは編集しない |
-| T14 | 実MCP測定の自動承認と人間承認を分離し、人間確認付き実験を再現可能にする | `docs/lab/e2e_runner.py`、検査、`board/` | codex | 進行中 | none/interactive/oracleと判断記録、succeededのみ成功判定を実装。全体601件・最終関連19件通過。人間による実MCP実測は未実施 |
+| T14 | 実MCP測定の自動承認と人間承認を分離し、人間確認付き実験を再現可能にする | `docs/lab/e2e_runner.py`、検査、`board/` | codex | 進行中 | none/interactive/oracleと判断記録、succeededのみ成功判定を実装。全体601件・最終関連19件通過。実MCPで保留到達済み・ユーザー判断待ち(ハンドル74264)。結果確定前に完了にしない |
+| T15 | 隔離Linux環境で外向き遮断スクリプトの実動作を測定する | `docs/lab/egress_probe/`、`board/` | codex | 完了 | Linux実カーネルのnft/iptablesで適用前・適用中・解除後を実測。5経路と健全性判定が期待通り。macOS pfは非対話sudo不可で未実測 |
 
 ---
 
@@ -231,10 +232,10 @@
 | K1 実MCP2種・10課題以上 | `/tmp/pauth-lab-run/k1_fs_run7.jsonl` は11/11、承認不要10、`k1_git_run4.jsonl` は5/5、承認不要5。攻撃16件はnot_dispatched | 保存された台本実行の結果は確認。人間確認の有無は別項で評価 |
 | K2 過不足なし60/97・不足なし80/97 | 台帳41/47。方向修正3で関門から外している | 元の数値条件は未達。条件変更と数値達成を混同しない |
 | K3 強制攻撃全拒否・良性過剰拒否0 | `board/evidence-codex-k3.txt`: 9枠・2440攻撃の許可0、良性過剰拒否0、SKIP行なし | 現在版の有限な強制攻撃の部品検査で確認。人間確認付き実験の代用ではない |
-| K4 汚染値を人間が確認してから実行 | fs11保留1回。e2e_runner.pyの_approve_holdsは全件自動承認。serving検査もプログラムがTrueを渡す | 機構は検査済みだが人間確認の実測ではない。T14で承認主体を明示し、人間確認を測定する |
+| K4 汚染値を人間が確認してから実行 | fs11旧記録は旧_approve_holdsの自動承認。新しい実MCP試験はc0で保留し、元ファイル無変更・移動先不存在を実測してユーザー判断待ち | 機構は検査済みだが人間確認の実測ではない。T14で承認主体を明示し、人間確認を測定する |
 | T2 確定済み一括関門要件 | SYSTEM_MODEL.mdのC2は試作。gateway.pyの_resolve_confirmation_configはc2+humanをValueErrorにする | 未統合。確定要件を「設計待ち」と呼ぶだけでは完了にできない。ユーザーが指定した編集禁止パスには引き続き触らず、掲示板で接続を調整する |
 | K5 日常作業・T3保護水準の報告 | claudeログの混在依頼2/2、手順書。T3はprotection反映未、対話/clearも未実測 | 報告と実行記録を区別。対話経路と方針の状態報告が残る |
-| K6 hook/外向き遮断の検出 | T13で偽陽性を再現・修正。HTTPと実hookの停止ポート検査 | 実OS遮断の配備・通信測定は未実施。unknownを保護済みとはしない |
+| K6 hook/外向き遮断の検出 | T13で偽陽性を再現・修正。HTTPと実hookの停止ポート検査 | T15で隔離Linuxのnft/iptables実通信を測定。ホストmacOS pfは未実測。unknownを保護済みとはしない |
 | K7 セッション監査 | audit_reportとHTTP2セッション検査、実ログのsession_id | 実装・関連検査で確認済み。旧形式IDは復元不能 |
 | 作業規約 | lab上の自分のパスだけをコミット。8091は操作せず、鍵の表示なし | 維持。費用を使う場合は見積と実測を記録 |
 

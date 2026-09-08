@@ -28,3 +28,11 @@
 - 2026-09-08 18:03 JST K3部品検査: 環境からAPI鍵を外してeval.checkを実行。9枠、2440攻撃の許可0、良性過剰拒否0、SKIP行なし、終了値0。出力はboard/evidence-codex-k3.txt。有限の部品検査であり、人間確認付きのベンチマーク結果とは呼ばない。
 
 - 2026-09-08 18:05 JST T14実装検査: 全体601件通過(161.33秒、249件の依存ライブラリ非推奨警告)。その後の表示変更(日本語維持・制御文字エスケープ)を含む関連19件通過。現時点で人間が入力した実MCP試験は未実施なのでT14の状態は進行中を維持する。手順はdocs/lab/E2E_REAL_MCP.md、oracle結果を人間確認と呼ばない。新規実API呼び出しなし、費用見積・実測$0。禁止された実装パス・本体・8091デーモンは操作していない。
+
+- 2026-09-08 18:10 JST T14人間確認試験を準備。docs/lab/human_confirmation_trial.pyが実filesystem MCPを専用一時ディレクトリとOS割当HTTPポートで起動。固定検証計画(no LLM)を使い、運用者APIの実際の保留c0まで到達。元ファイル存在・ハッシュ一致・移動先不存在を確認して入力待ち。実行ハンドル74264、作業ディレクトリ /private/var/folders/1s/_0vhltq91xqcddx6hv813hn00000gn/T/pauth-codex-human-qk_9a9xd 。ユーザーへ承認/却下を問い合わせ済み。返答前にy/nは入力しない。API見積・実測$0。8091とは別プロセスで、起動した資源だけを試験終了時に閉じる。
+
+- 2026-09-08 T15着手: ホストpf読取はPermission denied、昇格後のsudo -nでもpassword required。Dockerソケットは当初存在せず。隔離Linuxで実スクリプトを実測するためdocker desktop start --timeout 45を開始(実行ハンドル80403)。これをホストmacOSの遮断実測とは扱わない。T14ハンドル74264は入力待ちを再確認、ユーザーの回答なしに承認しない。
+
+- 2026-09-08 18:20 JST T15完了: Docker内の隔離Linuxで実egress_lockdown.shを実行。nft/iptablesの両経路で各5経路を適用前・適用中・解除後に測定(30接続試行)。適用中は指定TCP宛先のみ到達し、別ポート・別IPv4アドレス・UDP・IPv6を遮断。解除後は全経路回復。health.egress_healthは適用中ok、削除後fail。終了値0。実測JSONはboard/evidence-codex-egress.json、手順はdocs/lab/egress_probe/README.md。コンテナは--rmで終了・削除済み。Docker Desktopは本検証のため起動し、再現用イメージを保持。ホストpfは変更していない。API見積/実測$0。
+
+- 2026-09-08 18:23 JST 関連43件通過(16.48秒)。T15のDocker実測は終了値0、再現用Dockerfile/スクリプト/READMEと版情報付きJSONを保存。T14の74264は現在も生存・入力待ちで、新入力はない。最終承認を代行せず保留状態を維持する。全goalは継続し、T2統合とmacOSホスト検証も未完了。

@@ -1,0 +1,80 @@
+{
+  "environment": "private Linux container, network none",
+  "agent_uid": 61001,
+  "passed": true,
+  "results": [
+    {
+      "backend": "nftables",
+      "before": {
+        "gateway": true,
+        "wrong_port": true,
+        "other_address": true,
+        "udp": true,
+        "ipv6": true
+      },
+      "during": {
+        "gateway": true,
+        "wrong_port": false,
+        "other_address": false,
+        "udp": false,
+        "ipv6": false
+      },
+      "after": {
+        "gateway": true,
+        "wrong_port": true,
+        "other_address": true,
+        "udp": true,
+        "ipv6": true
+      },
+      "health_active": {
+        "status": "ok",
+        "code": "egress_rules_present"
+      },
+      "health_removed": {
+        "status": "fail",
+        "code": "egress_anchor_detached"
+      }
+    },
+    {
+      "backend": "iptables",
+      "before": {
+        "gateway": true,
+        "wrong_port": true,
+        "other_address": true,
+        "udp": true,
+        "ipv6": true
+      },
+      "during": {
+        "gateway": true,
+        "wrong_port": false,
+        "other_address": false,
+        "udp": false,
+        "ipv6": false
+      },
+      "after": {
+        "gateway": true,
+        "wrong_port": true,
+        "other_address": true,
+        "udp": true,
+        "ipv6": true
+      },
+      "health_active": {
+        "status": "ok",
+        "code": "egress_rules_present"
+      },
+      "health_removed": {
+        "status": "fail",
+        "code": "egress_anchor_detached"
+      }
+    }
+  ],
+  "measured_at": "2026-09-08 18:20 JST",
+  "image": "sha256:c538349897927e08486d80f5acce8592b79579937984cba809a139fdf8095137",
+  "versions": {
+    "kernel": "6.12.69-linuxkit",
+    "machine": "aarch64",
+    "nftables": "nftables v1.0.6 (Lester Gooch #5)",
+    "iptables": "iptables v1.8.9 (nf_tables)",
+    "python": "3.12.12"
+  }
+}
