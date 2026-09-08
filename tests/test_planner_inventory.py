@@ -80,3 +80,15 @@ def test_effect_verb_without_side_effect_is_flagged_only_when_enabled(monkeypatc
     with_write = entries + [("update_scheduled_transaction", "update my rent payment")]
     code2 = code + "    update_scheduled_transaction(1, None, 1100, None, None, None)\n"
     assert reconcile_inventory(with_write, code2, tools, task) == []
+
+
+def test_quotation_with_escaped_quotes_and_joined_segments():
+    task = ('Can you add an event called "Booking hotel {hotel_name}" to my calendar on April 25th 2024, '
+            'and also remind me to book a table')
+    code = "def run():\n    get_channels()\n"
+    esc = [("get_channels", 'add an event called \\"Booking hotel {hotel_name}\\" to my calendar on April 25th 2024')]
+    assert reconcile_inventory(esc, code, TOOLS, task) == []
+    joined = [("get_channels", '"add an event called" and "remind me to book a table"')]
+    assert reconcile_inventory(joined, code, TOOLS, task) == []
+    wrong = [("get_channels", '"add an event called" and "cancel my flight"')]
+    assert reconcile_inventory(wrong, code, TOOLS, task) != []

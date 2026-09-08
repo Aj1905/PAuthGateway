@@ -586,8 +586,14 @@ def _fold_quotes(text: str) -> str:
 
 def _quoted_from(why: str, task_fold: str) -> bool:
     """Is ``why`` a quotation of the task? Tolerates ``...`` gaps between
-    fragments and curly quotes; every fragment must occur, in order."""
-    fragments = [f.strip() for f in re.split(r"\.\.\.|\u2026", _fold_quotes(why)) if f.strip()]
+    fragments, curly quotes, escaped inner quotes (``\\"``) and several quoted
+    segments joined by prose (``"..." and "..."``); every fragment must occur,
+    in order."""
+    text = why.replace('\\"', '"').replace("\\'", "'")
+    segments = re.findall(r'"([^"]+)"', text)
+    if len(segments) >= 1 and (len(segments) > 1 or text.strip().startswith('"')):
+        text = " ... ".join(segments)
+    fragments = [f.strip() for f in re.split(r"\.\.\.|\u2026", _fold_quotes(text)) if f.strip()]
     if not fragments:
         return False
     pos = 0
