@@ -167,3 +167,6 @@
   全 97 の 1 標本目(tag `c6ex_`)を開始。E7(抽出器に `numbers`/`urls`、`PAUTH_STRUCTURE_EXTENDED=1`
   で有効、既定は従来どおり)を実装し形式確認中(tag `c7nums_`)。同時に走っている run:
   E1(r1h_、高推論、長い)、E2(c2inv_)、E6(c6ex_)。費用見積: 各 $3〜4。
+- 2026-09-08 21:35 E7 形式確認(同じ 8 課題): 過不足なし 5/8(p4 4/8)。Planner は `structure_text(...).numbers`
+  で評価値を比較して予約条件を書き、`.urls` で本文中の URL を取り出して `get_webpage` に渡す
+  ようになった(travel/user_task_0、slack/user_task_1)。全 97 の 1 標本目(tag `c7num_`)を開始。
