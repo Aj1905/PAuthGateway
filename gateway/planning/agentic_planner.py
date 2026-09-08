@@ -971,7 +971,10 @@ def generate_code_with_self_repair(
         system_prompt = system_prompt + "\n\n" + PARTIAL_SCOPE_NOTE
     if os.environ.get("PAUTH_PLANNER_EXEMPLARS", "").strip().lower() in ("1", "true", "yes", "on"):
         system_prompt = system_prompt + "\n\n" + PLANNER_EXEMPLARS
-    use_inventory = os.environ.get("PAUTH_PLANNER_INVENTORY", "").strip().lower() in ("1", "true", "yes", "on")
+    # p5 (2026-09-08): the inventory reconciliation is the default. Five samples
+    # (E2c x3, E2d x2) scored GT_EXACT 44-47/97 against 39-41 for p4; see
+    # docs/lab/PLANNER_EXPERIMENTS.md. PAUTH_PLANNER_INVENTORY=0 restores p4.
+    use_inventory = os.environ.get("PAUTH_PLANNER_INVENTORY", "1").strip().lower() in ("1", "true", "yes", "on")
     if use_inventory:
         system_prompt = system_prompt + "\n\n" + INVENTORY_NOTE
     messages: list[dict[str, str]] = [
