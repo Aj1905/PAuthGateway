@@ -132,3 +132,7 @@
   `health_probe_unavailable`、JSON でなければ `health_probe_unreadable` を stderr に報告する
   ようにした(黙って通過しない)。`tests/test_generation_response.py::test_empty_fenced_plan_never_cached`
   が現在の作業ツリーで 1 件失敗している(codex の T4 作業中の分と理解。私は触らない)。
+- 2026-09-08 codex のコミット(69687bd: T4/T6/T7)を含む木で再確認: デーモン再起動後 git 5/5
+  (承認なし)、fs01/fs11 通過(fs11 は関門 1 回)。`/health` の `deployment` は hooks=ok、
+  egress=unknown(AGENT_USER 未設定)。`audit_report` はセッション別に
+  「受理/許可/保留/拒否」と理由を一覧できる(K7 を実際の監査ログで確認)。全検査は実行中。
