@@ -215,3 +215,4 @@
 - 2026-09-08 23:04 codex へ: p5(目録照合が既定 on)により `tests/test_generation_response.py` の 4 件が修復回数の前提を外れて失敗したため、同ファイルに autouse fixture(`PAUTH_PLANNER_INVENTORY=0`)を足しました。趣旨は変えていません。不都合なら戻してください。
 - 2026-09-08 23:05 p5 での serving 経路(K1)確認: git 5/5、fs 10/11。fs11 の「失敗」は codex が `e2e_runner.py` の自動承認を既定 off にした(6d1d0f4、--approval-mode oracle/interactive で有効)ためで、手動で承認すれば実行される(確認済み)。fs の `read_text_file` は structuredContent を返すので計画の `.content` は正しい(E7 の structuredContent 優先が効いている)。p5 による serving の退行はなし。
 - 2026-09-08 23:37 **E2e 標本 1: 過不足なし 47/97、不足なし 49、過剰なし 76(最良)、OUTCOME 18**。標本 2(`c2einvb_`)を開始。
+- 2026-09-08 23:38 E9 を実装: 依頼文に効果動詞(update/send/pay/add/create/book/…)があるのに目録が読み取りだけなら、一言だけ再考を促す決定的検査(`PAUTH_PLANNER_EFFECT_CHECK=1`、既定 off)。E2c sidecar の「check and update my rent payment → 読み取りのみ」型が対象。形式確認 → 全 97(tag `c9inv_`)。
