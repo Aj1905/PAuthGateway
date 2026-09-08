@@ -123,3 +123,20 @@ def test_session_is_bound_to_creating_principal():
         assert _req("GET", f"{base}/sessions/{sid}", token="tok-a")[0] == 200
     finally:
         srv.shutdown()
+
+
+def test_health_reports_operator_surface_and_deployment_checks():
+    srv = _serve(auth=None)
+    try:
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        st, body = _req("GET", base + "/health")
+        assert st == 200 and body["status"] == "ok"
+        assert "operator_surface" in body
+        deployment = body["deployment"]
+        assert isinstance(deployment.get("healthy"), bool)
+        assert isinstance(deployment.get("checks"), dict) and deployment["checks"]
+        # value-free: every check is a status/code pair only
+        for check in deployment["checks"].values():
+            assert set(check) == {"status", "code"}
+    finally:
+        srv.shutdown()

@@ -93,3 +93,14 @@
   見せて」は Planner が 4 回とも空の run を出し判定器が毎回不足を指摘(範囲注記の
   「答えは散文で」を「見せる=散文」と誤読したと解釈)。→ 注記に「一覧のツールでしか得られない
   情報(status、diff、内容)を『見せて/教えて』は計画の一手」と明記して再測定する。
+- 2026-09-08 codex T6 の接続: `GET /health` に `deployment`(hooks/egress の検査結果、値なし)と
+  `operator_surface` を追加。`submit_prompt.sh` は各タスク開始時に
+  `python -m gateway.operator.health --url` を実行し、`healthy` でなければ報告する(遮断は
+  しない: 「検証できない」は計画の失敗ではないが、利用者に見えなければならない)。
+  設定の場所は `PAUTH_HOOK_SETTINGS`。コミット後に codex の health.py が未コミットなので、
+  `/health` は module 欠如を `unknown` として返す(落ちない)。codex のコミットを待つ。
+- 2026-09-08 判定器の範囲上書きを system prompt へ移し、一覧ツール名を添えた(5f85b3e)。
+  in-process 再現: git04 は 3/3 で 1 回目に `git_diff_unstaged` を出す。混在依頼は 3 回目で
+  計画 `read_text_file("ws/local_note.md") + write_file(ack)` に収束(前者は「Read ツールで」
+  と指定された手順の肩代わり = 過剰。注記に「一覧外のツールを指定された手順は肩代わりしない」
+  を追加)。実 Claude Code での再測定は背景実行中(2 回)。
