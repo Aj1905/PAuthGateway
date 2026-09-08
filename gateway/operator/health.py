@@ -12,6 +12,7 @@ import platform
 import pwd
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 import urllib.request
@@ -19,6 +20,41 @@ import urllib.request
 
 def check(status: str, code: str) -> dict:
     return {'status': status, 'code': code}
+
+
+HOOK_DIRECTORY = Path(__file__).resolve().parents[1] / 'hooks'
+
+
+def _hook_command(command: str, script: str) -> dict:
+    """Verify a supported invocation without executing untrusted settings text.
+
+    Shell programs, wrappers, and environment expansion cannot be established
+    by filename matching. Report them as unknown instead of claiming coverage.
+    """
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return check('unknown', 'hook_command_unverifiable')
+    interpreted = False
+    if len(words) == 2 and words[0] in ('bash', '/bin/bash', '/usr/bin/bash'):
+        if shutil.which(words[0]) is None:
+            return check('fail', 'hook_interpreter_missing')
+        interpreted = True
+        words = words[1:]
+    if len(words) != 1 or any(c in words[0] for c in ('$', '`', ';', '|', '&', '<', '>', '\n')):
+        return check('unknown', 'hook_command_unverifiable')
+    target = Path(words[0])
+    if not target.is_absolute() or target.name != script:
+        return check('unknown', 'hook_command_unverifiable')
+    if not target.is_file():
+        return check('fail', 'hook_script_missing')
+    # A same-named script elsewhere is not evidence for this installation.
+    if target.resolve() != (HOOK_DIRECTORY / script).resolve():
+        return check('unknown', 'hook_script_unverified')
+    mode = os.R_OK if interpreted else os.R_OK | os.X_OK
+    if not os.access(target, mode):
+        return check('fail', 'hook_script_inaccessible')
+    return check('ok', 'hooks_registered')
 
 
 def hook_health(settings_path: str | None = None) -> dict:
@@ -30,10 +66,24 @@ def hook_health(settings_path: str | None = None) -> dict:
         hooks = data.get('hooks', {})
         required = {'UserPromptSubmit': 'submit_prompt.sh', 'PreToolUse': 'pretool.sh'}
         for event, script in required.items():
-            entries = hooks.get(event, [])
-            if not any(h.get('type') == 'command' and re.search(r'(?:^|[/\s])' + re.escape(script) + r'(?:\s|$)', h.get('command', ''))
-                       for entry in entries for h in entry.get('hooks', [])):
-                return check('fail', 'hook_unregistered')
+            candidates = []
+            covered = False
+            for entry in hooks.get(event, []):
+                # Restricted matchers do not cover all tool calls / prompts.
+                if entry.get('matcher', '') not in ('', '*'):
+                    candidates.append(check('fail', 'hook_coverage_incomplete'))
+                    continue
+                for hook in entry.get('hooks', []):
+                    if hook.get('type') != 'command':
+                        continue
+                    if hook.get('async'):
+                        candidates.append(check('fail', 'hook_async'))
+                        continue
+                    result = _hook_command(hook.get('command', ''), script)
+                    candidates.append(result)
+                    covered = covered or result['status'] == 'ok'
+            if not covered:
+                return candidates[0] if candidates else check('fail', 'hook_unregistered')
         return check('ok', 'hooks_registered')
     except FileNotFoundError:
         return check('fail', 'hook_unregistered')

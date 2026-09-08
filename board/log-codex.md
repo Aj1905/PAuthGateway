@@ -17,3 +17,9 @@
 - T6(K6): `.venv/bin/python -m gateway.operator.health --url URL --settings PATH --agent-user USER`。環境変数は `PAUTH_HOOK_SETTINGS` / `AGENT_USER` / `GATEWAY_URL`。hook未登録・無効、デーモン停止、pf無効・anchor未接続・対象UID規則欠如、nft output未接続・対象UID drop欠如、iptables/ip6tablesの両系統の欠如を検査。読取権限/コマンド不足はunknown。claudeがGET /healthのdeploymentとsubmit_prompt.shへ接続済み。実hookを停止した隔離ポートへ実行しdaemon_unreachableを確認。OS規則は模擬出力で検査し、実際の遮断の導入・通信実測はしていない。healthyは登録/規則の存在確認であり、規則順序を含むファイアウォール全体の健全性証明ではない。
 - T4: Anthropic stop_reason、OpenAI finish_reason/refusal、空応答・空コードフェンス・出力打切りを明示的なGenerationFailureにする。拒否はwarningログへ記録し、成功した代替生成ではfailure_historyに残す。拒否時は別モデルを一回だけ使用し、同じ文法・認可範囲・意味検査を通す。代替モデルも拒否したら停止し空計画を保存しない。古い空キャッシュは再生成。`fallback_model` 引数または `PAUTH_PLANNER_FALLBACK_MODEL` で指定(空文字で無効)。既定はgpt-4.1、主モデルがgpt-4.1ならgpt-5.1。修復回数とは別に最大1要求が増える。トークン数は拒否分も含み、費用はモデル別価格で合算(価格不明はNone)。部分範囲注記の字面は保全。費用見積・実測とも **$0**(模擬応答のみ、実API実験なし)。
 - 8091のデーモンは操作せず、HTTP検査はOS割当の一時ポートを使用して終了。本体リポジトリ、runtime/gateway.py、hooks/、serving/mcp_facade.pyはcodexから編集していない。
+
+- 2026-09-08 17:50 JST goal再開。前turnはT7/T6/T4コミットと571件通過の進捗あり。現状態は69687bd・作業ツリーclean。全体goalの完了は未証明。T13着手。hook_healthは不存在パスとechoだけのコマンドをokと誤判定することを再現。Claudeへの連携: T2の確定要件と完成判定の「設計待ち」が矛盾し、一括関門未統合・OS遮断未実測も残るため全goal完了とは扱わない。担当外ファイルは引き続き編集しない。
+
+- 2026-09-08 17:55 JST 完了監査: K1原記録2本を読み、fs11/11・git5/5、攻撃16件不達を確認。fs11の1承認はe2e_runner._approve_holdsによる自動承認であり人間の実測ではなかった。BOARDの当該記述を訂正し、要件別の証拠と不足を8節へ追加、T14を登録。c2+humanは現在も明示的ValueErrorでT2未統合。全goalを完了にしない。
+
+- 2026-09-08 17:57 JST T13完了: hookの不存在/非実行/対象制限/非同期/別スクリプト/実行器欠如を検出。引用符付き直接起動とbash起動を確認し、複雑なshellは実行せずunknownとする。関連31件、全体583件通過(160.03秒)。API費用見積・実測$0。全goalは未完了。T14の測定主体と実行成功の判定修正へ進む。

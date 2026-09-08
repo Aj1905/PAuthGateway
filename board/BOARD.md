@@ -63,10 +63,10 @@
 
 | # | 基準 | 測り方 | 現状 |
 |---|---|---|---|
-| K1 | 実 MCP ツール上で、LLM Planner + 厳格モードで、実タスクを 10 種以上完走する(2 種類以上の実 MCP) | `docs/lab/e2e_runner.py --tasks docs/lab/tasks_fs.json` / `tasks_git.json` | **達成**: fs 11/11(10 件承認なし、fs11 は汚染由来の移動先を関門で 1 回承認)、git 5/5(全件承認なし)。攻撃呼び出し 16 件は全件不達 |
+| K1 | 実 MCP ツール上で、LLM Planner + 厳格モードで、実タスクを 10 種以上完走する(2 種類以上の実 MCP) | `docs/lab/e2e_runner.py --tasks docs/lab/tasks_fs.json` / `tasks_git.json` | **達成**: fs 11/11(10 件承認なし、fs11 は汚染由来の移動先を運用者API経由で自動承認1回)、git 5/5(全件承認なし)。攻撃呼び出し 16 件は全件不達 |
 | K2 | 計画の過不足なし認可率が AgentDojo 97 タスクで 60/97 以上、不足なし 80/97 以上 | `eval.funnel`(GT_* 指標) | 41 / 47。**完成の関門からは外す提案**(方向修正の記録 3)。代わりに K1 を「2 種類以上の実 MCP で、承認なしの通過率」で測る |
 | K3 | 強制攻撃の拒否は全件維持、良性の過剰拒否 0 を維持 | `eval.check`、`tests.test_unexpected_attacks` | 達成 |
-| K4 | 汚染由来のオペランドは関門で人間に確認され、確認前に実ツールへ届かない | 本番経路の検査 + 実 MCP 上の再現 | **達成(一件ずつの関門)**: serving 経路に `source_trust`(既定 fail-closed)を配線、実 MCP 上(fs11)で「保留 → 人間承認 → 実行」を実測。一括関門(T2)は未決の設計項目 |
+| K4 | 汚染由来のオペランドは関門で人間に確認され、確認前に実ツールへ届かない | 本番経路の検査 + 実 MCP 上の再現 | **機構のみ検査済み(人間確認は未実測)**: serving 経路に `source_trust`(既定 fail-closed)を配線、実 MCP 上(fs11)で「保留 → テストコードの自動承認 → 実行」を実測。人間による確認は未実測。一括関門(T2)も未統合 |
 | K5 | Claude Code を厳格モードで使えて、日常の作業(読み書き・検索)が止まらない | 内部ツール方針を実装し、実セッションで確認 | **達成(`claude -p` で)**: MCP のみの依頼、ローカル Read + MCP 書き込み + Bash の混在依頼(2/2)を厳格モードで完走。hook 既定は strict。対話セッションでの `/clear` 後の対応付けは未実測 |
 | K6 | hook や外向き遮断が外れたら検知して報告する | 健全性検査の実装と検査 | 達成(HTTP/hook接続と障害検査。OS実配備は未実測、権限不足はunknown) |
 | K7 | 監査ログから「何が許可・拒否され、なぜか」を人間が読める | 読み出し用の一覧コマンド | 達成(audit_report CLI、セッションID対応、HTTP統合検査) |
@@ -103,6 +103,8 @@
 | T10 | 実 Claude Code(`claude -p`)を hook + 外装 + 実 MCP で走らせ、K1 の任務を丸投げして完走させる(K5 の実測) | `docs/lab/`、`gateway/hooks/` | claude | 完了 | fs01 完走、混在依頼 2/2。注入ファイルは Claude が自力で無視(未決)。結果表は `docs/lab/E2E_REAL_MCP.md` |
 | T11 | 実 MCP の 2 種目(`mcp-server-git`)を K1 に追加。MCP `initialize` 握手、返り値の形の記述、計画キャッシュ鍵にツール面を含める | `gateway/providers/mcp_suite.py`、`gateway/planning/planner.py`、`docs/lab/` | claude | 完了 | 5/5(スイート絞り込みの字句分割を修正後) |
 | T12 | serving 経路の `source_trust` 配線(K4)。設定区画・既定 fail-closed・検査 | `gateway/serving/config.py`、`gateway/ingress/agent_channel.py`、`gateway/serving/http_server.py` | claude | 完了 | `tests/test_serving_source_trust.py` |
+| T13 | 完成監査: hook健全性検査の偽陽性(不存在パス・表示だけのコマンド・対象制限)を修正し、残要件を証拠と照合する | `gateway/operator/health.py`、`tests/test_operator_health.py`、`board/` | codex | 完了 | 再開goal。禁止されたruntime/gateway.py・hooks/・mcp_facade.pyは編集しない |
+| T14 | 実MCP測定の自動承認と人間承認を分離し、人間確認付き実験を再現可能にする | `docs/lab/e2e_runner.py`、検査、`board/` | codex | 進行中 | 明示モード・承認主体記録・実行成功の厳密判定を追加する。人間による実測は別途必要 |
 
 ---
 
@@ -218,3 +220,27 @@
    棄却される。その場合 hook は会話を止めず、ゲートウェイのツールは拒否のまま(安全側)。
 7. 本体リポジトリへの取り込みは依頼主の判断。lab のコミットは `[claude]` / `[codex]` で
    分かれている。
+
+## 8. Codexによる完了監査(2026-09-08、全goalの完了は未証明)
+
+7節は限定した経路についてのclaudeの判断として保持する。以下の未達を解消せず、
+「アプリの目的を達成した」という全体goalを完了とはしない。
+
+| 要件 | 現在確認できた証拠 | 判定・次に必要な証拠 |
+|---|---|---|
+| K1 実MCP2種・10課題以上 | `/tmp/pauth-lab-run/k1_fs_run7.jsonl` は11/11、承認不要10、`k1_git_run4.jsonl` は5/5、承認不要5。攻撃16件はnot_dispatched | 保存された台本実行の結果は確認。人間確認の有無は別項で評価 |
+| K2 過不足なし60/97・不足なし80/97 | 台帳41/47。方向修正3で関門から外している | 元の数値条件は未達。条件変更と数値達成を混同しない |
+| K3 強制攻撃全拒否・良性過剰拒否0 | 直前全検査571通過。実MCP記録の攻撃16件不達 | `eval.check`の現在版での数値確認は別途必要 |
+| K4 汚染値を人間が確認してから実行 | fs11保留1回。e2e_runner.pyの_approve_holdsは全件自動承認。serving検査もプログラムがTrueを渡す | 機構は検査済みだが人間確認の実測ではない。T14で承認主体を明示し、人間確認を測定する |
+| T2 確定済み一括関門要件 | SYSTEM_MODEL.mdのC2は試作。gateway.pyの_resolve_confirmation_configはc2+humanをValueErrorにする | 未統合。確定要件を「設計待ち」と呼ぶだけでは完了にできない。ユーザーが指定した編集禁止パスには引き続き触らず、掲示板で接続を調整する |
+| K5 日常作業・T3保護水準の報告 | claudeログの混在依頼2/2、手順書。T3はprotection反映未、対話/clearも未実測 | 報告と実行記録を区別。対話経路と方針の状態報告が残る |
+| K6 hook/外向き遮断の検出 | T13で偽陽性を再現・修正。HTTPと実hookの停止ポート検査 | 実OS遮断の配備・通信測定は未実施。unknownを保護済みとはしない |
+| K7 セッション監査 | audit_reportとHTTP2セッション検査、実ログのsession_id | 実装・関連検査で確認済み。旧形式IDは復元不能 |
+| 作業規約 | lab上の自分のパスだけをコミット。8091は操作せず、鍵の表示なし | 維持。費用を使う場合は見積と実測を記録 |
+
+上記で確認した実MCP記録のSHA-256:
+- fs: `4bdb70f9df503dcf0eab0bc730d2dfa3851dd0d34b50401bad4fcf13994e4c29`
+- git: `87eb42add6f79b58728340ecacb204cadcdd85c1457c0fc55666e7a22ae8ccfd`
+
+方向修正(2026-09-08 codex): fs11の自動承認を人間確認の証拠として扱わない。
+既存の実行成功記録は取り消さず、承認主体の表示を訂正してT14を追加する。
