@@ -509,6 +509,13 @@ Rules for the inventory:
   listing what the task already names, looking up the current date when the
   task states it, fetching attributes the task neither asks about nor decides
   on, or reading a whole inbox/drive when a search tool exists.
+- A quotation justifies a NEED, not a tool name. Words such as "received",
+  "recent", "unread", "all my files" do not justify fetching a whole inbox or
+  drive when a search tool that takes the task's key words exists: the search
+  IS the read the task needs, and the quotation belongs on the search call.
+  Likewise a by-name/by-filename lookup is justified only when the task gives
+  that exact name; a description ("the file about X") justifies the content
+  search instead.
 - Every side effect the user asks for (send, post, add, create, update,
   reschedule, share, pay) must have its own line, even when its content comes
   from data read at run time.
