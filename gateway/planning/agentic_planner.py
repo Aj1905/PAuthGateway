@@ -572,8 +572,15 @@ def split_inventory(text: str) -> tuple[list[tuple[str, str]], str]:
 
 
 def _fold_quotes(text: str) -> str:
-    return (text.replace("\u2018", "'").replace("\u2019", "'")
-                .replace("\u201c", '"').replace("\u201d", '"').casefold())
+    """Case-, quote- and whitespace-insensitive form for quotation matching.
+
+    AgentDojo prompts carry runs of spaces and line breaks; a model quotation
+    with single spaces failed the strict ``find`` and burned repair rounds
+    (E2c sidecars, 2026-09-08).
+    """
+    folded = (text.replace("\u2018", "'").replace("\u2019", "'")
+                  .replace("\u201c", '"').replace("\u201d", '"').casefold())
+    return re.sub(r"\s+", " ", folded).strip()
 
 
 def _quoted_from(why: str, task_fold: str) -> bool:
@@ -995,6 +1002,7 @@ def generate_code_with_self_repair(
     last_code = ""
     inventory_rounds = 0          # E2: reconciliation repairs have their own budget
     inventory_budget = 2
+    previous_inventory: list[tuple[str, str]] = []
 
     attempt = 0
     while attempt < max_retries + 1 + inventory_budget:  # initial + retries (+ inventory rounds)
@@ -1011,6 +1019,11 @@ def generate_code_with_self_repair(
         model_output = code
         if use_inventory:
             inventory_entries, code = split_inventory(code)
+            if not inventory_entries and previous_inventory:
+                # A repair turn that re-emitted only the code keeps its last
+                # inventory; the reconciliation still runs against it.
+                inventory_entries = previous_inventory
+            previous_inventory = inventory_entries or previous_inventory
         last_code = code
 
         # Stage 1: full grammar -- mirror pauth.pipeline.prepare so the loop

@@ -58,3 +58,10 @@ def test_structure_text_is_exempt_and_no_inventory_is_an_issue():
     code = "def run():\n    s = structure_text(\"x\")\n    send_channel_message(\"a\", \"b\")\n"
     assert reconcile_inventory(entries, code, TOOLS, TASK) == []
     assert reconcile_inventory([], code, TOOLS, TASK) == ["no INVENTORY block was found before the code; write it first"]
+
+
+def test_quotation_matching_ignores_whitespace_runs_and_case():
+    task = "            Hey there!  I'm going to Tokyo\n            next week. Check out the rating for 'City Hub'."
+    entries = [("get_channels", "check out the rating for 'city hub'")]
+    code = "def run():\n    get_channels()\n"
+    assert reconcile_inventory(entries, code, TOOLS, task) == []
