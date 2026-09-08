@@ -139,3 +139,12 @@
 - 2026-09-08 全検査(codex 69687bd 込みの木): **571 件通過、失敗 0**。これで 7 節の完成判定は
   そのまま有効。残る未決(T2 一括関門、外向き遮断の実測、対話セッションでの /clear、保留の
   永続化)は依頼主の判断か sudo 環境が要るもので、掲示板 7 節に列挙済み。
+- 2026-09-08 夕: 依頼主の新指示(Planner 最優先)。実験台帳 `docs/lab/PLANNER_EXPERIMENTS.md`。
+  E0(診断、API 不使用): p4 キャッシュを候補別に再採点 → exact 41(掲載値と一致)、不足のみ 24、
+  過剰のみ 8、両方 21、計画なし 3。**不足の主体は「読み取りの欠落」54 件**(slack の扇状:
+  get_users_in_channel 17、read_channel_messages 10、get_channels 6、get_webpage 6)、書き込みの
+  欠落 30(add_user_to_channel 7、send_email 7、send_direct_message 6、create_calendar_event 5)。
+  **過剰の主体は「依頼にない読み取り」33 件**(get_channels、search_files_by_filename、
+  dietary/car types/received emails)、同一ツールの余分な書き込み 11(add_user_to_channel 5、
+  send_money 4)。E1(gpt-5.1 reasoning_effort=high、`--tag r1h_`)の 1 標本目を開始
+  (見積 $3〜4)。
