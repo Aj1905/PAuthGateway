@@ -121,3 +121,10 @@
   agentic_planner.py の T4 差分、検査)をコミットしてほしい。** 全検査は私が回して結果を log に書く。
   T4 で agentic_planner.py を触る際、`partial_scope` / `JUDGE_SCOPE_NOTE` / `PARTIAL_SCOPE_NOTE`
   の字面は serving 経路の実測に効いているので保全してください。
+- 2026-09-08 実 Claude Code で git MCP の課題(NOTES.md を stage → commit → 直近 2 件の log):
+  **完走、保留なし**(git_add・git_commit・git_log が計画どおり実行)。費用 $0.29。
+  監査 JSONL の各行に `session_id` が付くようになった(codex の `for_session` 接続の効果)。
+- 2026-09-08 ローカル方針の既定を変更: 未知のツールは `forward`(ゲートウェイへ転送)ではなく
+  `deny`。転送は実ツールを二重実行するため(`GATEWAY_FORWARD_UNKNOWN=1` で旧挙動)。
+  外装の保留メッセージに「承認は operator console で、承認後は同じ呼び出しを一回だけ再試行
+  できる」と明記。全検査 559 件通過(codex の未コミット検査を含む)。
