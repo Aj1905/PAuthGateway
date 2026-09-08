@@ -194,8 +194,17 @@ class Facade:
         if body.get("reauthorization_required"):
             reason += (
                 " This call is HELD for the user's approval. Do not retry it "
-                "immediately; either continue with the approved plan or tell the "
-                "user it is awaiting approval."
+                "immediately; continue with the rest of the task, then tell the "
+                "user which call is awaiting approval. The user approves it with "
+                "the gateway's operator console (python -m gateway.operator.cli); "
+                "after approval, one retry of the exact same call is permitted."
+            )
+        elif "confirm" in reason.lower() or "pending" in reason.lower():
+            reason += (
+                " The value came from data the gateway does not trust (tool "
+                "output), so the user must confirm it in the operator console "
+                "before this call runs. Continue with the rest of the task and "
+                "report which call is waiting."
             )
         return _text_result(f"PAuth gateway denied this call: {reason}", True)
 
