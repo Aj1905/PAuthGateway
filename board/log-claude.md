@@ -104,3 +104,11 @@
   計画 `read_text_file("ws/local_note.md") + write_file(ack)` に収束(前者は「Read ツールで」
   と指定された手順の肩代わり = 過剰。注記に「一覧外のツールを指定された手順は肩代わりしない」
   を追加)。実 Claude Code での再測定は背景実行中(2 回)。
+- 2026-09-08 K5 混在依頼の再測定(実 Claude Code、2 回): **2/2 成功**。ローカルの Read は hook が
+  通し、pauth MCP の `write_file` はゲートウェイが計画どおり実行(ack.txt に書けた)、Bash は
+  ローカル方針で遮断。Claude Code は三つの結果を正直に報告した。費用 $0.07〜0.08/回。
+- 2026-09-08 git04 の根本原因: Planner ではなく**スイート絞り込み**。`_tokens` がツール名
+  `git_diff_unstaged` を一語として扱い、「unstaged diff」の依頼が git スイートと 0 点で
+  一致せず、fs スイートだけが Planner に渡っていた(in-process 再現は絞り込みを通らないので
+  3/3 成功していた)。→ 識別子を `_`/`-` で分割して語も数えるよう修正(dc758ed)、検査追加。
+  教訓: デーモン経由の失敗は、Planner の前段(絞り込み)も疑うこと。
