@@ -15,8 +15,13 @@ Decisions
                  servers registered outside the facade). ``strict`` blocks;
                  ``log`` allows and records. Bash can be allowed explicitly by
                  the deployment that has verified OS egress lockdown.
-* ``forward`` -- anything else is sent to the gateway as a tool call (the
-                 legacy hook-only deployments, e.g. the shopping demo).
+* ``deny``    -- anything else. A tool the policy does not know is neither a
+                 workspace tool nor behind the facade, so it is unobserved.
+                 ``GATEWAY_FORWARD_UNKNOWN=1`` restores the legacy behaviour
+                 (``forward``: send it to the gateway as a tool call, as the
+                 hook-only shopping demo does). Forwarding a *real* tool this
+                 way double-executes it (the gateway runs it, then the agent
+                 does), which is why it is no longer the default.
 
 Environment
 -----------
@@ -87,7 +92,9 @@ def decide(tool_name: str, env: dict[str, str] | None = None) -> Decision:
         return Decision("deny", "egress tool the gateway cannot see")
     if tool_name in local:
         return Decision("allow", "local workspace tool")
-    return Decision("forward", "unknown tool: ask the gateway")
+    if env.get("GATEWAY_FORWARD_UNKNOWN", "").strip().lower() in ("1", "true", "yes", "on"):
+        return Decision("forward", "unknown tool: ask the gateway (GATEWAY_FORWARD_UNKNOWN)")
+    return Decision("deny", "unknown tool: not a workspace tool and not behind the facade")
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -208,6 +208,7 @@ def test_local_policy_decisions():
     assert decide("Bash", env).action == "deny"
     assert decide("Bash", {"GATEWAY_BASH_POLICY": "allow"}).action == "allow"
     assert decide("WebFetch", env).action == "deny"
-    assert decide("get_product_details", env).action == "forward"
+    assert decide("get_product_details", env).action == "deny"
+    assert decide("get_product_details", {"GATEWAY_FORWARD_UNKNOWN": "1"}).action == "forward"
     assert decide("mcp__gw__x", {"GATEWAY_FACADE_NAME": "gw"}).action == "allow"
     assert decide("MyTool", {"GATEWAY_LOCAL_TOOLS": "MyTool"}).action == "allow"
