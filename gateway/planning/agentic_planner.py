@@ -564,6 +564,26 @@ def split_inventory(text: str) -> tuple[list[tuple[str, str]], str]:
     return entries, code.lstrip("\n")
 
 
+def _fold_quotes(text: str) -> str:
+    return (text.replace("\u2018", "'").replace("\u2019", "'")
+                .replace("\u201c", '"').replace("\u201d", '"').casefold())
+
+
+def _quoted_from(why: str, task_fold: str) -> bool:
+    """Is ``why`` a quotation of the task? Tolerates ``...`` gaps between
+    fragments and curly quotes; every fragment must occur, in order."""
+    fragments = [f.strip() for f in re.split(r"\.\.\.|\u2026", _fold_quotes(why)) if f.strip()]
+    if not fragments:
+        return False
+    pos = 0
+    for frag in fragments:
+        idx = task_fold.find(frag, pos)
+        if idx < 0:
+            return False
+        pos = idx + len(frag)
+    return True
+
+
 def _called_tools(code: str, tool_names: set[str]) -> list[str]:
     try:
         module = ast.parse(code)
@@ -583,13 +603,14 @@ def reconcile_inventory(
     issues: list[str] = []
     if not entries:
         return ["no INVENTORY block was found before the code; write it first"]
-    task_fold = task.casefold()
+    task_fold = _fold_quotes(task)
     inv_tools = [t for t, _ in entries]
-    called = _called_tools(code, tool_names)
-    quoted_tools = {
-        t for t, why in entries
-        if why and not _INVENTORY_DERIVED_RE.match(why) and why.casefold() in task_fold
-    }
+    # Gateway-internal helpers (structure_text) are not actions the user asks
+    # for; they never need an inventory line and never count as excess.
+    internal = {"structure_text"}
+    called = [t for t in _called_tools(code, tool_names) if t not in internal]
+    entries = [(t, why) for t, why in entries if t not in internal]
+    inv_tools = [t for t, _ in entries]
     for tool, why in entries:
         if tool not in tool_names:
             issues.append(f"inventory names {tool!r}, which is not an available tool")
@@ -606,7 +627,7 @@ def reconcile_inventory(
                     f"inventory says {tool} supplies an operand to {target}, but {target} is "
                     "not itself in the inventory with a quotation of the USER TASK"
                 )
-        elif why and why.casefold() not in task_fold:
+        elif why and not _quoted_from(why, task_fold):
             issues.append(
                 f"inventory justification for {tool} (\"{why}\") is not a quotation of the "
                 "USER TASK; quote the task's own words, write `-> <tool>` if this call only "
