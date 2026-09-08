@@ -253,6 +253,65 @@ class AgentChannel:
         return self._gateway.current_execution_state()
 
     # ------------------------------------------------------------------
+    # Operator surface (the human). Deliberately NOT reachable through
+    # ``receive`` / ``receive_json``: an agent message can never list or
+    # resolve a hold. These carry operand values, so the transport that
+    # exposes them must authenticate the human separately from the agent.
+    # ------------------------------------------------------------------
+    def operator_pending(self) -> dict[str, list[dict[str, Any]]]:
+        """Every hold awaiting a human decision, with the values the human needs."""
+        params_by_tool: dict[str, list[str]] = {}
+        session = self._gateway._session  # noqa: SLF001 -- operator-side introspection
+        if session is not None:
+            params_by_tool = dict(session.tool_params)
+        reauthorizations = []
+        for item in self._gateway.pending_reauthorizations():
+            names = params_by_tool.get(item.tool) or []
+            operands = (
+                {name: _to_wire(value) for name, value in zip(names, item.args)}
+                if len(names) == len(item.args)
+                else {"args": [_to_wire(value) for value in item.args]}
+            )
+            reauthorizations.append(
+                {
+                    "id": item.reauthorization_id,
+                    "kind": "reauthorization",
+                    "tool": item.tool,
+                    "operands": operands,
+                    "summary": (
+                        f"計画外のツール呼び出し {item.tool} を一回だけ許可するか"
+                    ),
+                }
+            )
+        confirmations = []
+        for pc in self._gateway.pending_confirmations():
+            confirmations.append(
+                {
+                    "id": pc.confirmation_id,
+                    "kind": "confirmation",
+                    "tool": pc.tool,
+                    "param_name": pc.param_name,
+                    "value": _to_wire(pc.value),
+                    "source": list(pc.source),
+                    "unverifiable": pc.unverifiable,
+                    "bulk_rule": pc.bulk_rule,
+                    "display": pc.structured_display(),
+                    "warning": pc.human_warning(),
+                }
+            )
+        return {"reauthorizations": reauthorizations, "confirmations": confirmations}
+
+    def operator_decide(self, kind: str, hold_id: str, approved: bool) -> bool:
+        """Resolve one hold. Returns False when the id is unknown or stale."""
+        if not isinstance(hold_id, str) or not isinstance(approved, bool):
+            return False
+        if kind == "reauthorization":
+            return self._gateway.reauthorize(hold_id, approved)
+        if kind == "confirmation":
+            return self._gateway.confirm(hold_id, approved)
+        return False
+
+    # ------------------------------------------------------------------
     # Primary entry: receive a typed message, return a typed response.
     # ------------------------------------------------------------------
     def receive(self, message: AgentMessage) -> AgentResponse:

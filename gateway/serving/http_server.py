@@ -17,6 +17,19 @@ Wire protocol
   unauthenticated localhost surface (unlike the audit log, which is
   operator-facing and may quote values).
 
+Operator surface (the human, NOT the agent)
+-------------------------------------------
+Holds (off-plan reauthorizations, confirmation-gated sinks) are resolved by a
+human. These routes quote operand values, so they require the separate
+``--operator-token`` (``GATEWAY_OPERATOR_TOKEN``); an agent token is refused
+(403) and without an operator token the routes are disabled (404). The
+operator may act on any session regardless of which principal created it.
+
+* ``GET /sessions`` -- every live session with its value-free status.
+* ``GET /sessions/<id>/pending`` -- holds awaiting a decision, with values.
+* ``POST /sessions/<id>/decisions`` -- body
+  ``{"kind": "reauthorization"|"confirmation", "id": "...", "approved": bool}``.
+
 Authentication
 --------------
 With ``--auth-token`` (or ``--auth-tokens <principal:token map>``) every route
@@ -138,6 +151,8 @@ def default_suite_loader(name: str) -> SuiteSpec:
 # Accept any non-trivial path-safe string.
 _SESSION_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})/messages$")
 _SESSION_DELETE_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})$")
+_SESSION_PENDING_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})/pending$")
+_SESSION_DECISIONS_RE = re.compile(r"^/sessions/([A-Za-z0-9_\-.]{1,128})/decisions$")
 
 
 class SessionRestoreError(RuntimeError):
@@ -189,6 +204,7 @@ def restore_channel(
 
 class _Handler(BaseHTTPRequestHandler):
     sessions: dict[str, AgentChannel] = {}
+    operator_token: str | None = None   # human-only credential; never an agent's
     session_owners: dict[str, str] = {}  # session_id -> authenticated principal
     _lock = threading.Lock()             # guards the session tables (threaded server)
     # Serialize the full lookup -> restore/create -> receive -> persist transition
@@ -234,6 +250,30 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
         return principal
+
+    def _authenticate_operator(self) -> bool:
+        """True when the caller presents the operator token; otherwise respond.
+
+        404 when no operator token is configured (the surface does not exist),
+        401 when no/invalid Bearer, 403 when a valid *agent* token is presented
+        (an agent must never resolve its own holds).
+        """
+        if not self.operator_token:
+            self._send_json(404, {"error": "operator surface disabled (no --operator-token)"})
+            return False
+        header = self.headers.get("Authorization") or ""
+        prefix = "Bearer "
+        presented = header[len(prefix):] if header.startswith(prefix) else ""
+        if presented and hmac.compare_digest(presented, self.operator_token):
+            return True
+        if self.auth is not None and self.auth.principal_for(header) is not None:
+            self._send_json(403, {"error": "agent tokens cannot access the operator surface"})
+            return False
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", "Bearer")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        return False
 
     def _owner_of(self, session_id: str) -> str | None:
         """The principal that owns ``session_id`` (in memory or persisted), or None."""
@@ -291,6 +331,29 @@ class _Handler(BaseHTTPRequestHandler):
                 "audit_persisted": self.audit_log is not None,
             })
             return
+        if self.path == "/sessions":  # operator: list live sessions
+            if not self._authenticate_operator():
+                return
+            with self._lock:
+                items = [
+                    {"session_id": sid, "principal": self.session_owners.get(sid), **ch.status()}
+                    for sid, ch in self.sessions.items()
+                ]
+            self._send_json(200, {"sessions": items})
+            return
+        m = _SESSION_PENDING_RE.match(self.path)  # operator: holds with values
+        if m:
+            if not self._authenticate_operator():
+                return
+            session_id = m.group(1)
+            with self._session_lock_for(session_id):
+                channel = self.sessions.get(session_id)
+                if channel is None:
+                    self._send_json(404, {"error": "no such session", "session_id": session_id})
+                    return
+                payload = {"session_id": session_id, **channel.operator_pending()}
+            self._send_json(200, payload)
+            return
         principal = self._authenticate()
         if principal is None:
             return
@@ -332,6 +395,12 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(413, {"error": "request body too large"})
             return
         body = self.rfile.read(length) if length else b""
+        m = _SESSION_DECISIONS_RE.match(self.path)
+        if m:
+            if not self._authenticate_operator():
+                return
+            self._handle_decision(m.group(1), body)
+            return
         principal = self._authenticate()
         if principal is None:
             return
@@ -433,6 +502,37 @@ class _Handler(BaseHTTPRequestHandler):
                     "detail": f"{type(exc).__name__}: {exc}",
                 }
         return 200, response
+
+    def _handle_decision(self, session_id: str, body: bytes) -> None:
+        try:
+            payload = json.loads(body or b"{}")
+        except json.JSONDecodeError as exc:
+            self._send_json(400, {"error": f"invalid JSON: {exc}"})
+            return
+        if not isinstance(payload, dict):
+            self._send_json(400, {"error": "request JSON must be an object"})
+            return
+        kind = payload.get("kind")
+        hold_id = payload.get("id")
+        approved = payload.get("approved")
+        if (
+            kind not in ("reauthorization", "confirmation")
+            or not isinstance(hold_id, str)
+            or not isinstance(approved, bool)
+        ):
+            self._send_json(400, {
+                "error": "decision needs kind (reauthorization|confirmation), id (string), approved (bool)"
+            })
+            return
+        with self._session_lock_for(session_id):
+            channel = self.sessions.get(session_id)
+            if channel is None:
+                self._send_json(404, {"error": "no such session", "session_id": session_id})
+                return
+            resolved = channel.operator_decide(kind, hold_id, approved)
+        self._send_json(200 if resolved else 409, {
+            "resolved": resolved, "kind": kind, "id": hold_id, "approved": approved,
+        })
 
     # ------------------------------------------------------------------
     # DELETE
@@ -558,6 +658,12 @@ def main() -> int:
         help="path to a JSON {principal: token} map for per-principal Bearer auth",
     )
     parser.add_argument(
+        "--operator-token", default=os.environ.get("GATEWAY_OPERATOR_TOKEN", ""),
+        help="separate Bearer token for the HUMAN operator surface (list sessions, "
+             "view and resolve holds). Must differ from every agent token; empty = "
+             "operator surface disabled (holds can then never be approved)",
+    )
+    parser.add_argument(
         "--llm-upstream", default=os.environ.get("PAUTH_LLM_UPSTREAM", ""),
         help="if set (e.g. https://api.anthropic.com), proxy /v1/* to this upstream "
              "so the agent's LLM traffic and tool calls share the gateway as their "
@@ -576,6 +682,22 @@ def main() -> int:
         )
     else:
         print("auth: Bearer token required on all routes; sessions bound to principal", file=sys.stderr)
+
+    _Handler.operator_token = args.operator_token or None
+    if _Handler.operator_token:
+        agent_tokens = [args.auth_token] if args.auth_token else []
+        if args.auth_tokens:
+            agent_tokens += list(json.loads(Path(args.auth_tokens).read_text()).values())
+        if any(hmac.compare_digest(_Handler.operator_token, t) for t in agent_tokens if isinstance(t, str)):
+            print("ERROR: --operator-token must differ from every agent token", file=sys.stderr)
+            return 2
+        print("operator surface: enabled (GET /sessions, /sessions/<id>/pending, POST /sessions/<id>/decisions)", file=sys.stderr)
+    else:
+        print(
+            "operator surface: DISABLED (no --operator-token). Held tool calls "
+            "(off-plan reauthorizations, confirmation gates) cannot be approved.",
+            file=sys.stderr,
+        )
 
     _Handler.llm_upstream = args.llm_upstream or None
     if _Handler.llm_upstream:
