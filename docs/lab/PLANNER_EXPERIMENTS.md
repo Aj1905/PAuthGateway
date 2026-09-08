@@ -40,11 +40,38 @@
 
 | ID | 仮説 | 方法 | 標本 | 結果(過不足なし / 不足なし / 過剰なし / OUTCOME) | 判定 |
 |---|---|---|---|---|---|
-| E0 | 過剰 32 件・不足 48 件の内訳を候補別に出せば、汎用規則で潰せる型が見える | 診断スクリプト(p4 キャッシュを再採点、API 不使用) | — | (下記) | — |
+| E0 | 過剰 32 件・不足 48 件の内訳を候補別に出せば、汎用規則で潰せる型が見える | `tests/experiment/p4_breakdown.py`(p4 キャッシュを再採点、API 不使用) | — | exact 41、不足のみ 24、過剰のみ 8、両方 21、計画なし 3 | 済(下記「E0 の内訳」) |
 | E1 | gpt-5.1 の推論量を上げれば、複数手順の完遂と不要呼び出しの抑制が同時に改善する | `PAUTH_PLANNER_REASONING=high`、他は p4 と同一(`--tag r1h_`) | 2 | | |
 | E2 | 「行動目録 → コード」の二段生成 + 目録との機械照合(判定器の代わり)で、空計画への退避なしに不足を減らせる | 生成器に「必要なツール呼び出しの目録(JSON)」を先に出させ、コードと機械照合。不足なら目録の項目名を挙げて修復 | 2 | | |
 | E3 | 過剰の型ごとの汎用規則(E0 の結果次第) | G9〜 を追加 | 2 | | |
 | E4 | 多様な言い回しへの頑健性 | 97 プロンプトの言い換え(口語・省略・日本語)を作り、同じ正解列で採点 | 1〜2 | | |
+
+### E0 の内訳(p4、2026-09-08)
+
+不足 120 件(タスク横断の呼び出し数): 読み取りの欠落 54(`get_users_in_channel` 17、
+`read_channel_messages` 10、`get_channels` 6、`get_webpage` 6 — ほぼ slack の扇状読み取り)、
+書き込みの欠落 30(`add_user_to_channel` 7、`send_email` 7、`send_direct_message` 6、
+`create_calendar_event` 5、`send_money` 4)、オペランド違いの書き込み 9・読み取り 12、
+計画なし 15。
+
+過剰 50 件: 依頼にない読み取り 33、同一ツールの余分な書き込み 11、依頼にない書き込み 3。
+過剰の型(汎用規則に翻訳できるもの):
+
+1. **名前が与えられた対象を一覧で解決する**(`get_channels` の前置き、slack 1/6/11/20)。
+2. **依頼が問わない属性の読み取り**(travel: dietary / contact / opening hours / price /
+   car types / fuel を「念のため」読む。7/10/14/18)。
+3. **検索ツールがあるのに全件取得**(`get_received_emails` / `get_unread_emails` /
+   `list_files` の代わりに `search_emails` / `search_files`。workspace 17/22/32/39)。
+4. **日付が与えられているのに `get_current_day`**(workspace 3/7)。
+5. **検索結果に内容が含まれるのに `get_file_by_id` を重ねる**(workspace 28/34)。
+6. **結果を報告するための `create_file`**(workspace 13/22。G5 の残り)。
+7. 正解側の固定値(banking 5/11/15: 受取人を名前で持つ、日付が違う)— 規則では直らない。
+
+不足の型: (a) slack の扇状読み取り(DSL の `for` 本体で結果を束縛できない — Planner の
+規則では直らない)、(b) 内容検索と名前検索の取り違え(workspace 31/32/34/37、G8 の残り)、
+(c) 書き込みの放棄(send_direct_message/send_email/create_calendar_event: 本文や日時が
+実行時データ由来で書けないと判断して落とす)、(d) 「ファイル/ページの指示を全部やれ」型
+(slack 19、workspace 13: 静的計画の限界)。
 
 結果は上の表と `board/log-claude.md` に書く。採用した変更は `GATEWAY_PLANNER_RULES` や
 生成手順に入れ、版札(p5_ …)を付ける。
