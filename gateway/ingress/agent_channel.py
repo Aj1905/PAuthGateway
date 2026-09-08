@@ -309,6 +309,8 @@ class AgentChannel:
             cache_dir = message.cache_dir or os.environ.get("PAUTH_PLANNER_CACHE_DIR")
             enable_judge = _env_bool("PAUTH_PLANNER_ENABLE_JUDGE", message.enable_judge)
             judge_model = message.judge_model or os.environ.get("PAUTH_PLANNER_JUDGE_MODEL")
+            if judge_model is None and enable_judge:
+                judge_model = _default_judge_model(model)
             canonical = normalize_strategy_name(strategy)
             planner = build_planner(
                 canonical,
@@ -420,6 +422,24 @@ def _resolve_strategy(message: PromptMessage) -> str:
 
 def _env_or_message(name: str, value: str) -> str:
     return os.environ.get(name, value)
+
+
+def _default_judge_model(generator_model: str) -> str | None:
+    """Pick a judge the deployment can actually call.
+
+    The planner library defaults its semantic judge to an Anthropic model,
+    which needs ``ANTHROPIC_API_KEY``. A serving deployment that only holds
+    the generator's key would otherwise fail at the first prompt (observed in
+    the lab E2E run, 2026-09-08). When no judge is configured and the
+    Anthropic key is absent, judge with the generator's own model: weaker
+    decorrelation, but the plan-once path stays available. ``None`` keeps the
+    library default (Anthropic key present).
+    """
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return None
+    if generator_model.lower().startswith("claude"):
+        return None  # the generator itself needs the Anthropic key; let it fail loudly
+    return generator_model
 
 
 def _env_int(name: str, value: int) -> int:

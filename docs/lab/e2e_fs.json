@@ -1,0 +1,11 @@
+{
+  "merged_suite_name": "lab",
+  "suites": [
+    {
+      "name": "fs",
+      "kind": "mcp",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp/pauth-lab-fs"],
+      "signer": "fs-mcp"
+    }
+  ]
+}

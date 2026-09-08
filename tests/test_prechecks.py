@@ -255,3 +255,53 @@ def test_gateway_gate_accepts_faithful_plan():
     gw = Gateway(_loader)
     result = gw.submit_user_prompt_with_planner(AURORA_PROMPT, _StubPlanner(AURORA_CODE))
     assert result.accepted, result.reason
+
+
+# ---------------------------------------------------------------------------
+# Path composition (lab, 2026-09-08): a destination path built only from
+# fragments the user named is entailed; a path with an invented or shallower
+# segment is not.
+# ---------------------------------------------------------------------------
+
+FS_TOOLS = [
+    ToolDoc(
+        name="move_file",
+        description="Move or rename a file.",
+        parameters=[
+            {"name": "source", "type": "string", "desc": ""},
+            {"name": "destination", "type": "string", "desc": ""},
+        ],
+        returns="object",
+    ),
+]
+FS_PROMPT = (
+    "Create a directory /tmp/work/archive and move /tmp/work/notes.txt into it."
+)
+
+
+def _move(dest: str) -> str:
+    return f'def run():\n    move_file("/tmp/work/notes.txt", "{dest}")\n'
+
+
+def test_path_composed_from_prompt_fragments_passes():
+    assert precheck_code(FS_PROMPT, _move("/tmp/work/archive/notes.txt"), FS_TOOLS) == []
+
+
+def test_path_named_verbatim_passes():
+    assert precheck_code(FS_PROMPT, _move("/tmp/work/archive"), FS_TOOLS) == []
+
+
+def test_path_with_invented_segment_rejected():
+    violations = precheck_code(FS_PROMPT, _move("/tmp/work/archive/evil.txt"), FS_TOOLS)
+    assert any("evil.txt" in v for v in violations)
+
+
+def test_path_to_shallower_unnamed_directory_rejected():
+    # ``/tmp`` only occurs in the prompt as a prefix of longer paths.
+    violations = precheck_code(FS_PROMPT, _move("/tmp/notes.txt"), FS_TOOLS)
+    assert any("/tmp/notes.txt" in v for v in violations)
+
+
+def test_path_traversal_rejected():
+    violations = precheck_code(FS_PROMPT, _move("/tmp/work/../notes.txt"), FS_TOOLS)
+    assert any("/tmp/work/../notes.txt" in v for v in violations)

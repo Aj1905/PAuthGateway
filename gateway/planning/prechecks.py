@@ -152,6 +152,60 @@ def _prompt_numbers(prompt: str) -> set[float]:
     return numbers
 
 
+def _token_entailed(value: str, prompt: str) -> bool:
+    boundary = r"A-Za-z0-9"
+    return bool(
+        re.search(
+            rf"(?<![{boundary}]){re.escape(value)}(?![{boundary}])",
+            prompt,
+            re.IGNORECASE,
+        )
+    )
+
+
+# Characters that continue a filesystem/URL path. A directory prefix counts as
+# prompt-entailed only when the prompt mentions it as a *whole* path, not as a
+# prefix of a longer path (``/tmp`` is not entailed by ``/tmp/work/x.txt``).
+_PATH_CHARS = r"A-Za-z0-9/._\-"
+
+
+def _path_prefix_entailed(prefix: str, prompt: str) -> bool:
+    return bool(
+        re.search(
+            rf"(?<![{_PATH_CHARS}]){re.escape(prefix)}(?![{_PATH_CHARS}])",
+            prompt,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _path_composed_from_prompt(value: str, prompt: str) -> bool:
+    """A path constant is entailed when it is *composed* of prompt fragments.
+
+    ``/tmp/work/archive/notes.txt`` is accepted for the prompt "create
+    /tmp/work/archive and move /tmp/work/notes.txt into it": the directory
+    prefix appears in the prompt as a whole path and every remaining segment
+    appears as a token. No segment may be invented, so the constant carries no
+    information that is absent from the prompt -- the property the recipient
+    check exists to protect. A prefix that is merely a prefix of a longer
+    prompt path (``/tmp``) does not count, so the composition cannot redirect
+    a file to a shallower directory the user never named.
+    """
+    if "/" not in value.strip("/"):
+        return False
+    positions = [i for i, ch in enumerate(value) if ch == "/" and i > 0]
+    for i in reversed(positions):
+        prefix, rest = value[:i], value[i + 1 :]
+        segments = [seg for seg in rest.split("/") if seg]
+        if not segments:
+            continue
+        if _path_prefix_entailed(prefix, prompt) and all(
+            _token_entailed(seg, prompt) for seg in segments
+        ):
+            return True
+    return False
+
+
 def _string_entailed(value: str, prompt: str) -> bool:
     # Substring entailment is unsafe for destinations: ``alice@example.com``
     # is not entailed by ``malice@example.com``. Require token boundaries.
@@ -160,12 +214,9 @@ def _string_entailed(value: str, prompt: str) -> bool:
             match.rstrip(".,;:!?").casefold() == value.casefold()
             for match in EMAIL_RE.findall(prompt)
         )
-    boundary = r"A-Za-z0-9"
-    if re.search(
-        rf"(?<![{boundary}]){re.escape(value)}(?![{boundary}])",
-        prompt,
-        re.IGNORECASE,
-    ):
+    if _token_entailed(value, prompt):
+        return True
+    if _path_composed_from_prompt(value, prompt):
         return True
     # IBANs are often written with grouping spaces; compare space-insensitively.
     squeezed_value = re.sub(r"\s+", "", value).casefold()
