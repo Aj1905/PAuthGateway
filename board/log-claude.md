@@ -173,3 +173,8 @@
 - 2026-09-08 22:00 **E6 標本 1(模範例): 過不足なし 41/97、不足なし 49、過剰なし 64、OUTCOME 20** —
   基準(41/39、49/52、68/62)と同じ。形式確認 8 課題の 6/8 は雑音だった。模範例単独では効かない。
   内訳の差分を `tests.experiment.p4_breakdown --tag struct_c6ex_gpt-5_1_` で確認中。
+- 2026-09-08 22:10 E6 の課題別差分(`tests.experiment.breakdown_diff`): 直った 8 課題は狙った型どおり
+  (travel 10/18 の余分な属性読み取り、workspace 3 の `get_current_day`、workspace 22 の報告用
+  `create_file`、slack 12 の「External で始まる」を一覧で解決)。壊れた 8 課題は別の型
+  (search_emails の代わりに全件取得、search_files の取り違え、扇状読み取りの取りこぼし増)で、
+  標本雑音(±3〜5)の範囲。直った型が再現するか、2 標本目(tag `c6exb_`)を開始。
