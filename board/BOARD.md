@@ -63,13 +63,13 @@
 
 | # | 基準 | 測り方 | 現状 |
 |---|---|---|---|
-| K1 | 実 MCP ツール上で、LLM Planner + 厳格モードで、実タスクを 10 種以上完走する(2 種類以上の実 MCP) | `docs/lab/e2e_runner.py --tasks docs/lab/tasks_fs.json` / `tasks_git.json` | fs **10/10 承認なし**(汚染由来オペランドの fs11 は関門の実測用に追加)、git 4/5(初回。再測定中) |
+| K1 | 実 MCP ツール上で、LLM Planner + 厳格モードで、実タスクを 10 種以上完走する(2 種類以上の実 MCP) | `docs/lab/e2e_runner.py --tasks docs/lab/tasks_fs.json` / `tasks_git.json` | **達成**: fs 11/11(10 件承認なし、fs11 は汚染由来の移動先を関門で 1 回承認)、git 5/5(全件承認なし)。攻撃呼び出し 16 件は全件不達 |
 | K2 | 計画の過不足なし認可率が AgentDojo 97 タスクで 60/97 以上、不足なし 80/97 以上 | `eval.funnel`(GT_* 指標) | 41 / 47。**完成の関門からは外す提案**(方向修正の記録 3)。代わりに K1 を「2 種類以上の実 MCP で、承認なしの通過率」で測る |
 | K3 | 強制攻撃の拒否は全件維持、良性の過剰拒否 0 を維持 | `eval.check`、`tests.test_unexpected_attacks` | 達成 |
-| K4 | 汚染由来のオペランドは関門で人間に確認され、確認前に実ツールへ届かない | 本番経路の検査 + 実 MCP 上の再現 | serving 経路に `source_trust`(既定 fail-closed)を配線し、検査で確認。実 MCP 上の再現(fs11)は測定中。一括関門の昇格(T2)は未 |
-| K5 | Claude Code を厳格モードで使えて、日常の作業(読み書き・検索)が止まらない | 内部ツール方針を実装し、実セッションで確認 | 無改変 Claude Code(`claude -p`)で MCP タスク完走を確認。ローカルツール混在の依頼は Planner の範囲注記で対応中(測定中) |
-| K6 | hook や外向き遮断が外れたら検知して報告する | 健全性検査の実装と検査 | なし |
-| K7 | 監査ログから「何が許可・拒否され、なぜか」を人間が読める | 読み出し用の一覧コマンド | JSONL のみ |
+| K4 | 汚染由来のオペランドは関門で人間に確認され、確認前に実ツールへ届かない | 本番経路の検査 + 実 MCP 上の再現 | **達成(一件ずつの関門)**: serving 経路に `source_trust`(既定 fail-closed)を配線、実 MCP 上(fs11)で「保留 → 人間承認 → 実行」を実測。一括関門(T2)は未決の設計項目 |
+| K5 | Claude Code を厳格モードで使えて、日常の作業(読み書き・検索)が止まらない | 内部ツール方針を実装し、実セッションで確認 | **達成(`claude -p` で)**: MCP のみの依頼、ローカル Read + MCP 書き込み + Bash の混在依頼(2/2)を厳格モードで完走。hook 既定は strict。対話セッションでの `/clear` 後の対応付けは未実測 |
+| K6 | hook や外向き遮断が外れたら検知して報告する | 健全性検査の実装と検査 | codex の `gateway/operator/health.py` を `GET /health` の `deployment` と prompt hook の起動時検査に接続済み(codex のコミット待ち) |
+| K7 | 監査ログから「何が許可・拒否され、なぜか」を人間が読める | 読み出し用の一覧コマンド | codex の `gateway.operator.audit_report` + セッション別の監査記録を接続済み(codex のコミット待ち) |
 
 ---
 
@@ -100,8 +100,8 @@
 | T7 | 監査ログの読み出し(K7): セッション単位で許可/拒否/理由を一覧する命令 | `gateway/runtime/audit.py`、新規 CLI | codex | 進行中 | |
 | T8 | hook の既定を厳格にする判断(T3・T6 の後) | `gateway/hooks/` | claude | 完了 | `pretool.sh` の既定を `strict` に変更(5e42066)。ローカルツール方針と外装があるので日常作業は止まらない |
 | T9 | **ゲートウェイを MCP サーバーとして Claude Code に見せる外装**(`gateway/serving/mcp_facade.py`)。Claude Code の MCP 設定にこの外装だけを登録し、実 MCP はゲートウェイの内側に置く。外装は `tools/list` をデーモンから取り、`tools/call` を `POST /sessions/<id>/messages` に変換する。セッションの対応付けは hook が送る `CLAUDE_PID` を鍵にデーモンが持つ | `gateway/serving/mcp_facade.py`、`gateway/serving/http_server.py`(`GET /tools`、対応付け経路)、`gateway/hooks/`、検査 | claude | 完了 | 実 Claude Code で動作確認済み(T10) |
-| T10 | 実 Claude Code(`claude -p`)を hook + 外装 + 実 MCP で走らせ、K1 の任務を丸投げして完走させる(K5 の実測) | `docs/lab/`、`gateway/hooks/` | claude | 進行中 | fs01 完走(承認なし)。注入ファイルは Claude が自力で無視(未決)。ローカルツール混在は範囲注記で再測定中 |
-| T11 | 実 MCP の 2 種目(`mcp-server-git`)を K1 に追加。MCP `initialize` 握手、返り値の形の記述、計画キャッシュ鍵にツール面を含める | `gateway/providers/mcp_suite.py`、`gateway/planning/planner.py`、`docs/lab/` | claude | 進行中 | 初回 4/5 |
+| T10 | 実 Claude Code(`claude -p`)を hook + 外装 + 実 MCP で走らせ、K1 の任務を丸投げして完走させる(K5 の実測) | `docs/lab/`、`gateway/hooks/` | claude | 完了 | fs01 完走、混在依頼 2/2。注入ファイルは Claude が自力で無視(未決)。結果表は `docs/lab/E2E_REAL_MCP.md` |
+| T11 | 実 MCP の 2 種目(`mcp-server-git`)を K1 に追加。MCP `initialize` 握手、返り値の形の記述、計画キャッシュ鍵にツール面を含める | `gateway/providers/mcp_suite.py`、`gateway/planning/planner.py`、`docs/lab/` | claude | 完了 | 5/5(スイート絞り込みの字句分割を修正後) |
 | T12 | serving 経路の `source_trust` 配線(K4)。設定区画・既定 fail-closed・検査 | `gateway/serving/config.py`、`gateway/ingress/agent_channel.py`、`gateway/serving/http_server.py` | claude | 完了 | `tests/test_serving_source_trust.py` |
 
 ---

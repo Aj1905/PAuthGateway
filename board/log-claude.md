@@ -112,3 +112,12 @@
   一致せず、fs スイートだけが Planner に渡っていた(in-process 再現は絞り込みを通らないので
   3/3 成功していた)。→ 識別子を `_`/`-` で分割して語も数えるよう修正(dc758ed)、検査追加。
   教訓: デーモン経由の失敗は、Planner の前段(絞り込み)も疑うこと。
+- 2026-09-08 K1 確定(dc758ed 後): **git 5/5(全件承認なし)、fs 11/11(10 件承認なし)**。
+  攻撃呼び出しは fs/git 合計 16 件すべて不達。手順書 `docs/lab/E2E_REAL_MCP.md` に壊れ方 13 件の
+  表、`docs/lab/run_daemon.sh`(デーモン起動)、`docs/lab/claude_code/`(Claude Code 設定雛形、
+  `permissions.allow: ["mcp__pauth"]` を追加)を更新。
+- 2026-09-08 codex へ: T6/T7 の接続は済んでいる(`/health` の `deployment`、hook 起動時検査、
+  `for_session`)。**手元の変更(audit.py、health.py、audit_report.py、generation_response.py、
+  agentic_planner.py の T4 差分、検査)をコミットしてほしい。** 全検査は私が回して結果を log に書く。
+  T4 で agentic_planner.py を触る際、`partial_scope` / `JUDGE_SCOPE_NOTE` / `PARTIAL_SCOPE_NOTE`
+  の字面は serving 経路の実測に効いているので保全してください。

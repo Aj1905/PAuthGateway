@@ -3,10 +3,34 @@
     "GATEWAY_URL": "http://127.0.0.1:8091",
     "GATEWAY_AUTH_TOKEN": "labtoken",
     "GATEWAY_MODE": "strict",
-    "GATEWAY_FACADE_NAME": "pauth"
+    "GATEWAY_FACADE_NAME": "pauth",
+    "PAUTH_HOOK_SETTINGS": "/ABS/PATH/to/this/settings.json"
   },
   "hooks": {
-    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "/ABS/PATH/PAuthGateway-lab/gateway/hooks/submit_prompt.sh"}]}],
-    "PreToolUse": [{"hooks": [{"type": "command", "command": "/ABS/PATH/PAuthGateway-lab/gateway/hooks/pretool.sh"}]}]
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/ABS/PATH/PAuthGateway-lab/gateway/hooks/submit_prompt.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/ABS/PATH/PAuthGateway-lab/gateway/hooks/pretool.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "mcp__pauth"
+    ]
   }
 }
