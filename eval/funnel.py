@@ -572,6 +572,18 @@ def _bestof_plan(suite, task, scratch_dir, n=None):
             enable_judge=_JUDGE, judge_model=_MODEL,   # OpenAI-backed completeness judge
             executor=_crash_probe(suite) if _EXECUTOR else None)
         pf.write_text(res.code); cands.append(res.code)
+        # Diagnostic sidecar (lab, 2026-09-08): attempts and failure history per
+        # candidate, so repair behaviour can be studied without re-generating.
+        # Not read by the selection or the metrics.
+        try:
+            import json as _json
+            pf.with_suffix(".json").write_text(_json.dumps({
+                "model": res.model, "attempts": res.attempts,
+                "prompt_tokens": res.prompt_tokens, "completion_tokens": res.completion_tokens,
+                "failure_history": list(res.failure_history),
+            }, ensure_ascii=False, indent=1))
+        except Exception:  # noqa: BLE001 -- diagnostics must never break a run
+            pass
 
     def score(code):
         try:
