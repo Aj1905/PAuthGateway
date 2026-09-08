@@ -400,6 +400,9 @@ of the task are handled elsewhere and are NOT missing from this plan. Plan
 ONLY the steps that require the listed tools, in order, and ignore everything
 else. Never invent a tool for the other parts (no shell, read, print or
 report helper): a name that is not in the list above does not exist here.
+If the user assigns a step to a specific tool that is NOT in the list ("with
+your Read tool", "with Bash", "in the browser"), leave that step out entirely;
+do not substitute a listed tool for it.
 Information that only a listed tool can obtain (a status, a diff, a file's
 content, a listing, a record) is obtained by CALLING that tool -- "show me",
 "tell me", "check" or "what is" about such information is a plan step, not

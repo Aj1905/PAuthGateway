@@ -37,7 +37,23 @@ _STOPWORDS = frozenset({
 
 
 def _tokens(text: str) -> set[str]:
-    return {tok.lower() for tok in _TOKEN_RE.findall(text or "") if tok.lower() not in _STOPWORDS and len(tok) > 1}
+    """Bag of lower-cased word tokens.
+
+    Identifier-shaped tokens (``git_diff_unstaged``, ``read-only``) are kept
+    whole AND split on ``_``/``-`` so a tool *name* contributes its words:
+    without the split, the prompt "show the unstaged diff" scored 0 against a
+    suite whose only mention of "diff" was in tool names (lab, 2026-09-08),
+    and the filter dropped the very suite the task needed.
+    """
+    out: set[str] = set()
+    for tok in _TOKEN_RE.findall(text or ""):
+        low = tok.lower()
+        if low not in _STOPWORDS and len(low) > 1:
+            out.add(low)
+        for part in re.split(r"[_-]+", low):
+            if part and part not in _STOPWORDS and len(part) > 1:
+                out.add(part)
+    return out
 
 
 def _suite_keywords(suite: SuiteSpec) -> set[str]:
