@@ -283,6 +283,9 @@ class PendingConfirmation:
     # When empty, fall back to the tool name / raw provenance call.
     task_desc: str = ""
     source_desc: str = ""
+    # Complete concrete tool call shown at a batched barrier. Empty for the
+    # legacy per-operand confirmation surface. Operator-facing only.
+    action_operands: tuple[tuple[str, object], ...] = ()
 
     def structured_display(self, ground_truth: str = "") -> str:
         """The confirmation as a fixed 6-field template:
@@ -294,6 +297,10 @@ class PendingConfirmation:
         ground-truth line is added only when a benchmark passes it in."""
         lines = [f"【何をするタスク】{self.task_desc or self.tool}",
                  f"【どの情報が必要】{self.param_name} = {self.value!r}"]
+
+        if self.action_operands:
+            rendered = ", ".join(f"{name}={value!r}" for name, value in self.action_operands)
+            lines.insert(1, f"  承認するツール呼び出し: {self.tool}({rendered})")
 
         if self.source_desc:
             src = self.source_desc

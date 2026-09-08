@@ -26,6 +26,7 @@ caller can split rather than silently return a stale None.
 from __future__ import annotations
 
 import dataclasses
+import copy
 from typing import Any, Callable
 
 from pauth.enforcer import Decision, Enforcer
@@ -107,7 +108,7 @@ def execute_with_batched_confirmation(
             gated = gated_by_tool.get(name, []) if is_side_effecting(name) else []
             if gated:
                 srcs = tuple(sorted({s for i in gated for s in taint_map.get((name, i), ())}))
-                deferred.append(DeferredAction(name, arglist, gated, srcs))
+                deferred.append(DeferredAction(name, copy.deepcopy(arglist), gated, srcs))
                 return _DEFERRED  # DEFER: not executed until the barrier approves it
             params = tool_params.get(name, [])
             if not enforcer.begin(decision.token):
@@ -155,13 +156,20 @@ def execute_with_batched_confirmation(
         crashed = f"{type(exc).__name__}: {exc}"
 
     # ---- barrier: one confirmation over all deferred actions ----
-    for act in deferred:
-        pending = (build_pending(act) if build_pending
+    for index, act in enumerate(deferred):
+        # Presentation callbacks receive a snapshot, never the queued action.
+        pending = (build_pending(copy.deepcopy(act)) if build_pending
                    else PendingConfirmation(
-                       f"c{deferred.index(act)}", act.tool, act.gated_indices[0],
+                       f"c{index}", act.tool, act.gated_indices[0],
                        tool_params.get(act.tool, ["?"])[act.gated_indices[0]]
                        if act.gated_indices[0] < len(tool_params.get(act.tool, [])) else "?",
                        act.args[act.gated_indices[0]], source=act.sources))
+        params = tool_params.get(act.tool, [])
+        operands = tuple((params[i] if i < len(params) else str(i), value)
+                         for i, value in enumerate(act.args))
+        pending = copy.deepcopy(dataclasses.replace(
+            pending, tool=act.tool, action_operands=operands,
+        ))
         act.approved = bool(confirmer.confirm(pending))
 
     # ---- handover: the barrier has decided everything; confirm() is never

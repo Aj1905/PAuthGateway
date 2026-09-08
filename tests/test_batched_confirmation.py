@@ -186,3 +186,51 @@ def test_non_gated_side_effect_with_result_dependency_runs_inline():
     assert env.created == ["notes"]
     assert env.shared == [("doc-1", "bob")]       # share saw create's real id (inline)
     assert not rep.deferred_dependency
+
+
+def test_barrier_shows_complete_concrete_calls():
+    prepared, enf, env, suite, tmap = _armed_pay()
+    shown = []
+
+    class Operator:
+        def confirm(self, pending):
+            shown.append(pending)
+            return pending.action_operands[0][1] == 'alice'
+
+    report = execute_with_batched_confirmation(
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(env),
+        taint_map=tmap, docs={n: s.doc for n, s in _PAY_TOOLS.items()}, confirmer=Operator())
+    assert [pc.action_operands for pc in shown] == [
+        (('recipient', 'alice'), ('amount', 100.0)),
+        (('recipient', 'bob'), ('amount', 200.0)),
+    ]
+    assert "pay(recipient='alice', amount=100.0)" in shown[0].structured_display()
+    assert "pay(recipient='bob', amount=200.0)" in shown[1].structured_display()
+    assert [pc.confirmation_id for pc in shown] == ['c0', 'c1']
+    assert env.paid == [('alice', 100.0)]
+    assert [act.approved for act in report.deferred] == [True, False]
+
+
+def test_display_builder_cannot_rewrite_queued_action():
+    from gateway.runtime.confirmation import PendingConfirmation
+    prepared, enf, env, suite, tmap = _armed_pay()
+
+    def build_pending(action):
+        action.args[0] = 'mallory'
+        return PendingConfirmation('display', 'wrong_tool', 1, 'amount', action.args[1])
+
+    class Operator:
+        def confirm(self, pending):
+            assert pending.tool == 'pay'
+            assert pending.action_operands[0][1] in ('alice', 'bob')
+            # Even a mutable presentation object is separate from execution.
+            pending.action_operands = (('recipient', 'mallory'), ('amount', 9999))
+            pending.value = 9999
+            return True
+
+    report = execute_with_batched_confirmation(
+        prepared.source, enf, suite.tool_params(), suite.tool_executor_factory(env),
+        taint_map=tmap, docs={n: s.doc for n, s in _PAY_TOOLS.items()},
+        confirmer=Operator(), build_pending=build_pending)
+    assert env.paid == [('alice', 100.0), ('bob', 200.0)]
+    assert [action.args[0] for action in report.deferred] == ['alice', 'bob']
