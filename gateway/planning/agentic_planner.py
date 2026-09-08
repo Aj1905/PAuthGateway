@@ -597,34 +597,8 @@ def _get_generation_client(model: str, client: Any) -> Any:
 
 
 def _call_generator(client: Any, model: str, messages: list[dict[str, str]]):
-    """One generation turn. Returns (text, prompt_tokens, completion_tokens),
-    branching OpenAI vs Anthropic (which takes the system prompt as a top-level
-    param and returns content blocks + input/output token counts)."""
-    if _is_anthropic_model(model):
-        system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
-        convo = [m for m in messages if m["role"] != "system"]
-        resp = client.messages.create(
-            model=model, max_tokens=4096, system=system, messages=convo
-        )
-        text = "".join(
-            b.text for b in resp.content if getattr(b, "type", "") == "text"
-        )
-        u = resp.usage
-        return text, getattr(u, "input_tokens", 0) or 0, getattr(u, "output_tokens", 0) or 0
-    kwargs: dict[str, Any] = {
-        "model": model,
-        "messages": messages,
-        "max_completion_tokens": 4096,
-    }
-    # Omit temperature for every provider. GPT-5-family chat endpoints reject
-    # non-default values, so provider defaults are the only common contract.
-    resp = client.chat.completions.create(**kwargs)
-    u = resp.usage
-    return (
-        resp.choices[0].message.content or "",
-        getattr(u, "prompt_tokens", 0) or 0,
-        getattr(u, "completion_tokens", 0) or 0,
-    )
+    from gateway.planning.generation_response import call_generator
+    return call_generator(client, model, messages)
 
 
 def _read_cached(cache_path: Path, model: str) -> AgenticCodegenResult | None:
@@ -632,6 +606,10 @@ def _read_cached(cache_path: Path, model: str) -> AgenticCodegenResult | None:
         return None
     meta_path = cache_path.with_suffix(".json")
     meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+    code = cache_path.read_text()
+    # Old provider refusals produced empty caches; never reuse those as plans.
+    if not code.strip():
+        return None
     verdicts_raw = meta.get("judge_verdicts", [])
     judge_verdicts = [
         JudgeVerdict(
@@ -643,7 +621,7 @@ def _read_cached(cache_path: Path, model: str) -> AgenticCodegenResult | None:
         for v in verdicts_raw
     ]
     return AgenticCodegenResult(
-        code=cache_path.read_text(),
+        code=code,
         prompt_tokens=meta.get("prompt_tokens", 0),
         completion_tokens=meta.get("completion_tokens", 0),
         cost_usd=0.0,  # already paid
@@ -693,11 +671,20 @@ def generate_code_with_self_repair(
     initial_system_prompt: str | None = None,
     initial_user_prompt: str | None = None,
     partial_scope: bool = False,
+    fallback_model: str | None = None,
+    fallback_client: Any | None = None,
 ) -> AgenticCodegenResult:
     """Generate DSL code with grammar + semantic self-repair.
 
+    ``fallback_model`` chooses one alternative after an explicit provider refusal.
+    It defaults to PAUTH_PLANNER_FALLBACK_MODEL, or gpt-4.1 (gpt-5.1 when the
+    primary is gpt-4.1). An empty string disables fallback. Fallback adds at most
+    one provider request, runs the same validators, and its refusal is fatal.
+    Empty/truncated responses raise GenerationFailure and are not cached.
+    Token totals include refused requests; costs use each model's own price.
+
     ``max_retries`` bounds the number of repair turns; total LLM rounds are
-    ``1 + max_retries`` in the worst case. Each round runs two checks in
+    ``1 + max_retries`` plus at most one refusal fallback in the worst case. Each round runs two checks in
     sequence (grammar then semantic); both must pass to return.
 
     ``enable_judge`` lets callers turn the semantic check off for ablation
@@ -718,14 +705,23 @@ def generate_code_with_self_repair(
     one-stage prompts, so existing planner behavior is unchanged.
 
     The cache key (controlled by the caller via ``cache_path``) should
-    reflect ``model``, ``max_retries``, ``enable_judge``, and ``judge_model``
+    reflect ``model``, ``max_retries``, ``enable_judge``, ``judge_model``, and the fallback policy
     so different configurations do not contaminate each other's results.
     """
     cached = _read_cached(cache_path, model) if cache_path else None
     if cached is not None:
         return cached
 
+    from gateway.planning.generation_response import GenerationFailure, GenerationSession
     client = _get_generation_client(model, client)
+    fallback_model = fallback_model if fallback_model is not None else os.environ.get(
+        "PAUTH_PLANNER_FALLBACK_MODEL", "gpt-4.1" if model != "gpt-4.1" else "gpt-5.1"
+    )
+    generation = GenerationSession(
+        model, client, fallback_model=fallback_model or None,
+        fallback_client=fallback_client, resolve_client=_get_generation_client,
+        generate=_call_generator,
+    )
 
     if enable_judge and judge_client is None:
         judge_client = _get_judge_client(judge_model, client)
@@ -747,13 +743,15 @@ def generate_code_with_self_repair(
 
     total_prompt_tokens = 0
     total_completion_tokens = 0
-    failure_history: list[str] = []
+    failure_history = generation.failure_history
     judge_verdicts: list[JudgeVerdict] = []
     last_code = ""
 
     for attempt in range(1, max_retries + 2):  # initial + retries
-        raw, pt, ct = _call_generator(client, model, messages)
+        raw, pt, ct = generation(messages)
         code = _strip_fences(raw)
+        if not code.strip() or re.fullmatch(r"```[A-Za-z0-9]*\s*```", code.strip()):
+            raise GenerationFailure(generation.model, "empty_plan", pt, ct)
         total_prompt_tokens += pt
         total_completion_tokens += ct
         last_code = code
@@ -867,11 +865,11 @@ def generate_code_with_self_repair(
                 continue
 
         # Both stages passed.
-        cost = _cost(model, total_prompt_tokens, total_completion_tokens)
+        cost = generation.cost(_cost)
         if cache_path is not None:
             _write_cache(
-                cache_path, code, model, total_prompt_tokens, total_completion_tokens,
-                cost, attempt, failure_history, judge_verdicts,
+                cache_path, code, generation.model, total_prompt_tokens, total_completion_tokens,
+                cost, generation.calls, failure_history, judge_verdicts,
             )
         return AgenticCodegenResult(
             code=code,
@@ -879,8 +877,8 @@ def generate_code_with_self_repair(
             completion_tokens=total_completion_tokens,
             cost_usd=cost,
             cached=False,
-            model=model,
-            attempts=attempt,
+            model=generation.model,
+            attempts=generation.calls,
             failure_history=failure_history,
             judge_verdicts=judge_verdicts,
         )
@@ -895,11 +893,11 @@ def generate_code_with_self_repair(
     final_code = last_code
     if failure_history and failure_history[-1].startswith(("intent:", "precheck:", "runtime:")):
         final_code = "def run():\n    pass\n"
-    cost = _cost(model, total_prompt_tokens, total_completion_tokens)
+    cost = generation.cost(_cost)
     if cache_path is not None:
         _write_cache(
-            cache_path, final_code, model, total_prompt_tokens, total_completion_tokens,
-            cost, max_retries + 1, failure_history, judge_verdicts,
+            cache_path, final_code, generation.model, total_prompt_tokens, total_completion_tokens,
+            cost, generation.calls, failure_history, judge_verdicts,
         )
     return AgenticCodegenResult(
         code=final_code,
@@ -907,8 +905,8 @@ def generate_code_with_self_repair(
         completion_tokens=total_completion_tokens,
         cost_usd=cost,
         cached=False,
-        model=model,
-        attempts=max_retries + 1,
+        model=generation.model,
+        attempts=generation.calls,
         failure_history=failure_history,
         judge_verdicts=judge_verdicts,
     )

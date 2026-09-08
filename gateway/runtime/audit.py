@@ -27,6 +27,7 @@ class AuditEvent:
     reason_code: str         # a feedback.ReasonCode value, or "accepted"/"rejected"
     reason: str              # the internal, human-readable reason (operator-facing)
     args: list[Any] | None = None  # tool_call operands (operator-facing; may carry values)
+    session_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -42,7 +43,8 @@ class AuditLog:
     can read, exactly like the events themselves.
     """
 
-    def __init__(self, path: str | Path | None = None) -> None:
+    def __init__(self, path: str | Path | None = None, *, session_id: str | None = None) -> None:
+        self.session_id = session_id
         self._events: list[AuditEvent] = []
         self._lock = threading.RLock()
         self._path = Path(path) if path else None
@@ -52,6 +54,13 @@ class AuditLog:
             # keep it owner-readable only, not world-readable via the umask.
             self._path.touch(exist_ok=True)
             os.chmod(self._path, 0o600)
+
+    def for_session(self, session_id: str) -> AuditLog:
+        """Bind a separate in-memory trail to the same persistent destination."""
+        child = AuditLog(session_id=session_id)
+        child._path = self._path
+        child._lock = self._lock
+        return child
 
     def record(
         self, kind: str, decision: str, *, tool: str | None = None,
@@ -65,7 +74,7 @@ class AuditLog:
             event = AuditEvent(
                 seq=len(self._events), kind=kind, decision=decision,
                 tool=tool, reason_code=reason_code, reason=reason,
-                args=args_snapshot,
+                args=args_snapshot, session_id=self.session_id,
             )
             self._events.append(event)
             self._persist(event)
