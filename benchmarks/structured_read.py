@@ -33,8 +33,14 @@ STRUCTURE_TOOL = ToolSpec(
     doc=ToolDoc(
         name="structure_text",
         description=(
-            "Deterministically structure an untrusted text blob into typed "
-            "fields (amounts, ibans, dates, emails). The source is untrusted."
+            "Deterministically extract shape-matched fields from untrusted text. "
+            "amounts matches money tokens with exactly two decimal places "
+            "(e.g. 98.70 or 1,234.56), not bare integers or one-decimal ratings. "
+            "dates matches YYYY-MM-DD; ibans and emails match their token shapes. "
+            "lines contains the original text split into lines, not parsed names "
+            "or addresses. Missing matches produce empty lists. This tool does "
+            "not interpret arbitrary prose, compute values, or infer fields. "
+            "All extracted fields remain untrusted."
         ),
         parameters=[{"name": "text", "type": "string", "desc": "untrusted text"}],
         returns=_VIEW_SCHEMA,
