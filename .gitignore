@@ -60,7 +60,7 @@ docs/plan.md
 docs/solution.md
 
 # personal agent/advisory prefs — not project contributor guidance
-AGENTS.md
+# AGENTS.md is tracked in the lab repo (Codex reads it)
 tests/experiment/regen_scratch/
 tests/experiment/g5_scratch/
 tests/experiment/tau_scratch/
