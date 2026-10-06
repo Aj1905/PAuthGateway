@@ -1,9 +1,11 @@
+# .gitignore — 3 節構成 (再現可能 / 秘密情報 / 端末固有) + 4 (この repo には載せない)。
+# ここに書いたものは端末間で同期されない。
+# 大きいファイルは除外しない。data/ に置き、必要になった時点で `git lfs track "data/**"` で追跡する。
+
+# ---- 1. 再現可能: コマンドで作り直せるもの。再現手順は README に書く ----
 .venv/
 __pycache__/
 *.pyc
-.env
-me.env
-.DS_Store
 
 # experiment caches (large, regenerable)
 tests/experiment/cache/
@@ -21,6 +23,42 @@ gateway/cache/
 # (regenerable via tests/fixtures/extract_real_prompts.py)
 tests/fixtures/real_external_prompts.jsonl
 
+# graphify tool output — generated caches/reports, regenerable
+graphify-out/
+
+# local scratch — 使い捨ての作業領域
+tmp/
+tests/experiment/regen_scratch/
+tests/experiment/g5_scratch/
+tests/experiment/tau_scratch/
+tests/experiment/bestofn_scratch/
+tests/experiment/funnel_scratch/
+
+# LaTeX build artifacts
+paper/PAuthGateway/build/
+paper/**/*.aux
+paper/**/*.log
+paper/**/*.fls
+paper/**/*.fdb_latexmk
+paper/**/*.bbl
+paper/**/*.blg
+paper/**/*.synctex.gz
+
+# ---- 2. 秘密情報: git に入れない。値は 1Password に置き、参照だけ .env.tpl に書く ----
+.env
+.env.*
+!.env.tpl
+!.env.example
+!.env.*.example
+me.env
+
+# ---- 3. 端末固有: OS・エディタが作る付随ファイル ----
+.DS_Store
+
+# ---- 4. この repo には載せない: 別に正本があるか、公開しないもの ----
+#      ここにあるものはこの端末にしか無い。端末を替えると引き継げない。
+#      引き継ぎたいものは私的な別 repo に移すこと (特に paper/PAuthGateway/ と docs/*.md)。
+
 # not part of the OSS library — kept local, untracked
 slides/
 *.pdf
@@ -36,24 +74,8 @@ docs/slides/*/*
 !docs/slides/*/index.html
 !docs/slides/*/img/
 
-# graphify tool output — generated caches/reports, regenerable
-graphify-out/
-
-# local scratch — not part of the repo
-tmp/
-
 # thesis manuscript — kept local, not published
 paper/PAuthGateway/
-
-# LaTeX build artifacts
-paper/PAuthGateway/build/
-paper/**/*.aux
-paper/**/*.log
-paper/**/*.fls
-paper/**/*.fdb_latexmk
-paper/**/*.bbl
-paper/**/*.blg
-paper/**/*.synctex.gz
 
 # internal Japanese working logs — kept local, not published
 docs/plan.md
@@ -61,8 +83,3 @@ docs/solution.md
 
 # personal agent/advisory prefs — not project contributor guidance
 AGENTS.md
-tests/experiment/regen_scratch/
-tests/experiment/g5_scratch/
-tests/experiment/tau_scratch/
-tests/experiment/bestofn_scratch/
-tests/experiment/funnel_scratch/
