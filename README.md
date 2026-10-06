@@ -334,7 +334,7 @@ RESULT: PASS -- no tested forced injection was permitted.
 **LLM による計画生成込みの完全評価**(OpenAI API キーが必要)。ここまでは決定的な部分だけを見てきたが、実運用では Planner が LLM である。その誤差を測る:
 
 ```bash
-cp .env.example .env                                       # OPENAI_API_KEY を書く
+op inject -i .env.tpl -o .env                              # 鍵は 1Password (op://dev/PAuthGateway/OPENAI_API_KEY)。op が無ければ cp .env.example .env して手で書く
 .venv/bin/python -m eval.fpfn --suites banking --limit 3   # まず 3 タスクだけ
 .venv/bin/python -m eval.fpfn --suites all                 # 全 97 タスク(約 $1–4)
 ```
