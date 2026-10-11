@@ -13,6 +13,7 @@ import dataclasses
 import ipaddress
 import json
 import re
+import socket
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -63,12 +64,18 @@ def _parse_host_ip(host: str) -> ipaddress._BaseAddress | None:
 
     ``getaddrinfo`` accepts ``2852039166`` and ``0xA9FEA9FE`` as 169.254.169.254,
     so a link-local check that only understands dotted-quad is trivially bypassed.
-    Try dotted/colon first, then a bare integer literal (base 0 covers 0x/0o/decimal).
+    Try strict IP syntax, then the platform IPv4 numeric parser (no DNS),
+    then a bare integer literal. The platform parser also handles short and
+    dotted octal/hex forms accepted by the HTTP connection resolver.
     """
     candidate = host.strip("[]")  # bracketed IPv6 literal
     try:
         return ipaddress.ip_address(candidate)
     except ValueError:
+        pass
+    try:
+        return ipaddress.IPv4Address(socket.inet_aton(candidate))
+    except (OSError, ValueError):
         pass
     try:
         value = int(candidate, 0)
@@ -91,6 +98,8 @@ def _is_link_local_host(host: str) -> bool:
     link-local address remains a documented residual risk.
     """
     ip = _parse_host_ip(host)
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
     return ip is not None and ip.is_link_local
 
 
@@ -119,6 +128,19 @@ class _ValidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         _require_http_url(newurl, "redirect")
+        source = urllib.parse.urlsplit(req.full_url)
+        target = urllib.parse.urlsplit(newurl)
+        source_origin = (source.scheme.lower(), source.hostname,
+                         source.port if source.port is not None else
+                         (443 if source.scheme.lower() == "https" else 80))
+        target_origin = (target.scheme.lower(), target.hostname,
+                         target.port if target.port is not None else
+                         (443 if target.scheme.lower() == "https" else 80))
+        # Headers may carry arbitrary provider-specific secrets. Fail closed
+        # instead of guessing which headers are safe to forward to another
+        # origin. This also rejects HTTPS-to-HTTP credential downgrades.
+        if target_origin != source_origin:
+            raise OpenAPIError("redirect: refusing cross-origin redirect")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -572,7 +594,15 @@ def _execute_operation(env: _OpenAPIEnv, op: _Operation, kwargs: dict[str, Any])
                 raise OpenAPIError(f"{op.method} {op.path}: response exceeds size cap")
             content_type = resp.headers.get("Content-Type", "")
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:500]
+        try:
+            raw_error = exc.read(_MAX_RESPONSE_BYTES + 1)
+            if len(raw_error) > _MAX_RESPONSE_BYTES:
+                raise OpenAPIError(
+                    f"{op.method} {op.path}: error response exceeds size cap"
+                ) from exc
+            detail = raw_error.decode("utf-8", "replace")[:500]
+        finally:
+            exc.close()
         raise OpenAPIError(f"{op.method} {op.path} failed: HTTP {exc.code}: {detail}") from exc
 
     text = raw.decode("utf-8", "replace")
