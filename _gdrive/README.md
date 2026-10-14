@@ -27,3 +27,9 @@ rclone check _gdrive/ gdrive:repo-local/PAuthGateway/ --exclude README.md
 ```
 
 片方向の copy だけ使う (sync は片側を消せる)。再生成できるもの (.venv、ビルド物、モデル重み) はここに入れない。
+
+## このリポジトリで置いているもの
+
+- `paper/PAuthGateway/` : 論文原稿 (公開しない)
+- `paper/<名前>/*.pdf` : 参照している先行研究の PDF
+- `output/` : 手元で生成した出力
