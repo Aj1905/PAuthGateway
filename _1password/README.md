@@ -3,6 +3,11 @@
 このフォルダの中身は README.md 以外 git に入らない。正本は 1Password の保管庫 `dev`、項目 `PAuthGateway` (個人アカウント my.1password.com)。
 値そのものをここに書き残さず、必ず 1Password から取り出す。
 
+## 自動同期
+
+`git push` のとき手元の内容が 1Password へ (pre-push)、`git pull` で新しいコミットが来たとき 1Password から手元へ (post-merge) 同期される。新しい方が勝つ。
+手で動かすなら `repo-side-sync push` / `repo-side-sync pull` / `repo-side-sync status` (~/bin)。差分の無い pull では自動では走らない。
+
 ## 取り出す (端末を新しくしたとき)
 
 ```

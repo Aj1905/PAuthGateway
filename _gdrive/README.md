@@ -3,6 +3,11 @@
 このフォルダの中身は README.md 以外 git に入らない。再現できないが公開もしない作業物 (計画メモ、原稿、実験の生データなど) を置く。
 正本は Google Drive の `repo-local/PAuthGateway/` (rclone の remote `gdrive:`)。Google Drive のデスクトップ版は使わない。
 
+## 自動同期
+
+`git push` のとき `_gdrive/` が Drive へ (pre-push)、`git pull` で新しいコミットが来たとき Drive から `_gdrive/` へ (post-merge) 同期される。rclone copy --update なので新しい方が勝つ。
+手で動かすなら `repo-side-sync push` / `repo-side-sync pull` / `repo-side-sync status` (~/bin)。差分の無い pull では自動では走らない。
+
 ## 取り出す
 
 ```
