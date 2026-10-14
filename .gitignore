@@ -1,13 +1,15 @@
-# .gitignore — 3 節構成 (再現可能 / 秘密情報 / 端末固有) + 4 (この repo には載せない)。
-# ここに書いたものは端末間で同期されない。
+# .gitignore — 4 節構成。置き場が名前で分かるようにし、CLI で編集できるようにする。
+#   1. 再現可能   : ツールが固定パスに作るので動かせない。保管せず再生成する。手順は README に書く。
+#   2. _1password/: 秘密情報。正本は 1Password。手順は _1password/README.md
+#   3. _gdrive/   : 再現できないが追跡もしない作業物。正本は Google Drive。手順は _gdrive/README.md
+#   4. 端末固有   : OS・エディタが作る付随ファイル。
 # 大きいファイルは除外しない。data/ に置き、必要になった時点で `git lfs track "data/**"` で追跡する。
 
-# ---- 1. 再現可能: コマンドで作り直せるもの。再現手順は README に書く ----
+# ---- 1. 再現可能 ----
 .venv/
 __pycache__/
 *.pyc
-
-# experiment caches (large, regenerable)
+# 実験キャッシュと結果 (大きいが再実行で作れる。論文で参照する 7 件だけ追跡)
 tests/experiment/cache/
 tests/experiment/results/*
 !tests/experiment/results/agentdojo_factorial_gpt41_t0_single_20260803.jsonl
@@ -18,24 +20,14 @@ tests/experiment/results/*
 !tests/experiment/results/agentdojo_reference_trace_g1_g2_20260803.json
 !tests/experiment/results/pauth_core_fpfn_gpt41_cached_20260803.json
 gateway/cache/
-
-# real-user prompt corpus extracted from local Claude Code transcripts
-# (regenerable via tests/fixtures/extract_real_prompts.py)
+# 実利用プロンプト集 (tests/fixtures/extract_real_prompts.py で再生成)
 tests/fixtures/real_external_prompts.jsonl
-
-# graphify tool output — generated caches/reports, regenerable
 graphify-out/
-
-# local scratch — 使い捨ての作業領域
+# 使い捨ての作業領域
 tmp/
-tests/experiment/regen_scratch/
-tests/experiment/g5_scratch/
-tests/experiment/tau_scratch/
-tests/experiment/bestofn_scratch/
-tests/experiment/funnel_scratch/
-
-# LaTeX build artifacts
-paper/PAuthGateway/build/
+tests/experiment/*_scratch/
+# LaTeX
+paper/**/build/
 paper/**/*.aux
 paper/**/*.log
 paper/**/*.fls
@@ -44,7 +36,9 @@ paper/**/*.bbl
 paper/**/*.blg
 paper/**/*.synctex.gz
 
-# ---- 2. 秘密情報: git に入れない。値は 1Password に置き、参照だけ .env.tpl に書く ----
+# ---- 2. 秘密情報: 正本は 1Password (op://dev/PAuthGateway/KEY)。.env.tpl (追跡) から op inject で _1password/.env を作り、ルートの .env はそこへのリンク ----
+_1password/*
+!_1password/README.md
 .env
 .env.*
 !.env.tpl
@@ -52,34 +46,18 @@ paper/**/*.synctex.gz
 !.env.*.example
 me.env
 
-# ---- 3. 端末固有: OS・エディタが作る付随ファイル ----
-.DS_Store
-
-# ---- 4. この repo には載せない: 別に正本があるか、公開しないもの ----
-#      ここにあるものはこの端末にしか無い。端末を替えると引き継げない。
-#      引き継ぎたいものは私的な別 repo に移すこと (特に paper/PAuthGateway/ と docs/*.md)。
-
-# not part of the OSS library — kept local, untracked
-slides/
-*.pdf
-vercel.json
-.vercelignore
-
-# exception: decks under docs/slides/ deploy to GitHub Pages, so each deck's
-# index.html and img/ are tracked (scripts, hosting/, site/, .vercel stay local)
-!docs/slides/
+# ---- 3. 再現できないが追跡しない: 正本は Google Drive (rclone gdrive:repo-local/PAuthGateway/) ----
+_gdrive/*
+!_gdrive/README.md
+# 以下は _gdrive/ に実体を置き、ルートにはリンクだけ置くもの (Codex がルートの AGENTS.md を読むため)
+AGENTS.md
+# 移行待ち: docs/slides/ の deck は GitHub Pages 配備物 (index.html, img/) だけ追跡し、
+# 生成用の scripts/hosting/site/.vercel は未追跡。_gdrive/ へ移すまでの暫定。
 docs/slides/*
 !docs/slides/*/
 docs/slides/*/*
 !docs/slides/*/index.html
 !docs/slides/*/img/
 
-# thesis manuscript — kept local, not published
-paper/PAuthGateway/
-
-# internal Japanese working logs — kept local, not published
-docs/plan.md
-docs/solution.md
-
-# personal agent/advisory prefs — not project contributor guidance
-AGENTS.md
+# ---- 4. 端末固有 ----
+.DS_Store
